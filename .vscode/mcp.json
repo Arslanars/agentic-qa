@@ -1,0 +1,24 @@
+{
+  "servers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${input:github_mcp_pat}"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "github_mcp_pat",
+      "type": "promptString",
+      "description": "GitHub Personal Access Token for MCP",
+      "password": true
+    }
+  ]
+}

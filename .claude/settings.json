@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__playwright-test__generator_setup_page",
+      "mcp__playwright-test__generator_write_test",
+      "mcp__playwright-test__test_run",
+      "PowerShell($items = Get-ChildItem -Path \"c:\\\\Users\\\\HP\\\\Desktop\\\\Agentic_QA_Automation_Pipeline\" -Force | Where-Object { $_.Name -ne \"node_modules\" }; $items | ForEach-Object { \"$\\($_.Mode\\)  $\\($_.Name\\)\" })",
+      "PowerShell($paths = @\\(\"specs\", \"tests\", \"user-stories\", \"test-results\", \".playwright-mcp\", \".claude\"\\); foreach \\($p in $paths\\) { Write-Output \"=== $p ===\"; if \\(Test-Path \"c:\\\\Users\\\\HP\\\\Desktop\\\\Agentic_QA_Automation_Pipeline\\\\$p\"\\) { Get-ChildItem -Path \"c:\\\\Users\\\\HP\\\\Desktop\\\\Agentic_QA_Automation_Pipeline\\\\$p\" -Recurse -Force | ForEach-Object { $_.FullName.Replace\\(\"c:\\\\Users\\\\HP\\\\Desktop\\\\Agentic_QA_Automation_Pipeline\\\\\", \"\"\\) } } })",
+      "PowerShell($root = \"c:\\\\Users\\\\HP\\\\Desktop\\\\Agentic_QA_Automation_Pipeline\"; $toRemove = @\\(\"user-stories\", \"specs\", \"tests\", \"test-results\", \".playwright-mcp\", \"checkout-complete.png\"\\); foreach \\($item in $toRemove\\) { $full = Join-Path $root $item; if \\(Test-Path $full\\) { Remove-Item -Path $full -Recurse -Force; Write-Output \"Removed: $item\" } else { Write-Output \"Not found: $item\" } })",
+      "mcp__playwright-test__browser_evaluate",
+      "mcp__playwright-test__browser_console_messages",
+      "mcp__playwright-test__browser_network_requests",
+      "mcp__playwright-test__browser_network_request",
+      "mcp__playwright-test__browser_wait_for"
+    ]
+  }
+}

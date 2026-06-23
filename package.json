@@ -1,0 +1,64 @@
+{
+  "name": "agentic-qa",
+  "version": "0.1.0",
+  "description": "AI-driven QA pipeline for Playwright — converts user stories into runnable tests, runs them in a visible browser, and produces an AI-written report. Installable as a dev-dependency in any existing Playwright project.",
+  "main": "lib/index.js",
+  "bin": {
+    "agentic-qa": "bin/agentic-qa.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "ui/",
+    "templates/",
+    ".claude/agents/",
+    "ONBOARDING.md",
+    "INTEGRATE.md",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "playwright test",
+    "test:chromium": "playwright test --project=chromium",
+    "test:firefox": "playwright test --project=firefox",
+    "test:webkit": "playwright test --project=webkit",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "setup": "node bin/setup.js",
+    "ui": "node bin/agentic-qa.js ui",
+    "allure:clean": "node -e \"require('fs').rmSync('allure-results',{recursive:true,force:true});require('fs').rmSync('allure-report',{recursive:true,force:true})\"",
+    "allure:generate": "allure generate allure-results --clean -o allure-report",
+    "allure:open": "allure open allure-report",
+    "allure:serve": "allure serve allure-results"
+  },
+  "keywords": [
+    "playwright",
+    "qa",
+    "automation",
+    "ai",
+    "agentic",
+    "anthropic",
+    "claude",
+    "mcp",
+    "page-object-model",
+    "test-generation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
+    "@playwright/test": "^1.60.0",
+    "allure-playwright": "^3.9.0",
+    "express": "^5.2.1",
+    "marked": "^18.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "allure-commandline": "^2.41.0"
+  }
+}

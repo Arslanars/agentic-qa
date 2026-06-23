@@ -1,0 +1,11 @@
+# --- agentic-qa runtime artifacts (do not commit) ---
+.env
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+/allure-results/
+/allure-report/
+/.allure/
+.playwright-mcp/
