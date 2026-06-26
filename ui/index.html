@@ -79,11 +79,29 @@
     .brand .title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
     .brand .subtitle { color: var(--text-faint); font-size: 12px; margin-top: 1px; }
     .spacer { flex: 1; }
-    .topbar-actions { display: flex; align-items: center; gap: 10px; color: var(--text-dim); font-size: 13px; }
+    .topbar-actions { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 13px; }
     .topbar-actions kbd {
       background: var(--bg-2); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px;
       font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--text-dim);
     }
+    .topbar-actions .verb {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 11px; border-radius: 6px; border: 1px solid var(--border);
+      background: rgba(7,9,26,0.5); color: var(--text);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .topbar-actions .verb:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-hover); }
+    .topbar-actions .verb:disabled { opacity: 0.45; cursor: not-allowed; }
+    .topbar-actions .verb svg { width: 13px; height: 13px; }
+    .topbar-actions .verb kbd {
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      padding: 1px 5px; border-radius: 3px; font-size: 10.5px;
+    }
+    .topbar-actions .verb.run { background: var(--grad); color: #06091f; border: 0; }
+    .topbar-actions .verb.run:hover:not(:disabled) { filter: brightness(1.07); }
+    .topbar-actions .verb.stop { color: var(--danger); border-color: rgba(248,113,113,0.4); }
+    .topbar-actions .verb.stop:hover:not(:disabled) { background: rgba(248,113,113,0.10); }
 
     /* ---------- Main ---------- */
     main {
@@ -581,6 +599,81 @@
     }
     .report-drawer-backdrop.show { display: block; }
 
+    /* ---------- Failure triage panel ---------- */
+    /* The post-run job-to-be-done: see every failure with its error +
+       screenshot + trace in one glance, click to drill in. */
+    .triage {
+      border-top: 1px solid var(--border);
+      background: rgba(248, 113, 113, 0.04);
+      padding: 14px 18px;
+      max-height: 360px;
+      overflow: auto;
+    }
+    .triage.hidden { display: none; }
+    .triage-head {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--danger);
+    }
+    .triage-head::before {
+      content: "";
+      width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
+      box-shadow: 0 0 12px rgba(248,113,113,0.6);
+    }
+    .triage-card {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 12px;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: rgba(7, 9, 26, 0.55);
+      border: 1px solid rgba(248,113,113,0.20);
+      border-radius: 8px;
+      transition: border-color 0.15s;
+    }
+    .triage-card:hover { border-color: rgba(248,113,113,0.50); }
+    .triage-card .thumb {
+      width: 96px; height: 64px; border-radius: 5px; background: #000;
+      object-fit: cover; cursor: pointer;
+      border: 1px solid var(--border);
+    }
+    .triage-card .thumb.empty {
+      display: grid; place-items: center;
+      color: var(--text-faint); font-size: 20px;
+    }
+    .triage-card .meta { min-width: 0; }
+    .triage-card .title {
+      font-size: 13px; font-weight: 600; color: var(--text);
+      margin-bottom: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .triage-card .file {
+      font-family: ui-monospace, monospace; font-size: 11px;
+      color: var(--text-faint);
+      margin-bottom: 6px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .triage-card .error {
+      font-family: ui-monospace, monospace; font-size: 11.5px;
+      color: var(--danger);
+      background: rgba(248,113,113,0.06);
+      padding: 4px 8px; border-radius: 4px;
+      max-height: 64px; overflow: auto;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .triage-card .actions-row {
+      display: flex; gap: 8px; margin-top: 6px;
+    }
+    .triage-card .actions-row a, .triage-card .actions-row button {
+      font-size: 11px; padding: 3px 8px; border-radius: 4px;
+      background: transparent; color: var(--text-dim);
+      border: 1px solid var(--border); cursor: pointer; text-decoration: none;
+    }
+    .triage-card .actions-row a:hover, .triage-card .actions-row button:hover {
+      color: var(--text); border-color: var(--border-strong);
+    }
+
     /* ---------- Log linkification ---------- */
     .log a.spec-link, .log a.shot-link {
       color: var(--accent-2);
@@ -617,8 +710,20 @@
       </div>
       <div class="spacer"></div>
       <div class="topbar-actions">
-        <span>Run with</span>
-        <kbd>npm run ui</kbd>
+        <button id="topbar-run" type="button" class="verb run" aria-label="Run tests (Ctrl+R)">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          Run <kbd>Ctrl·R</kbd>
+        </button>
+        <button id="topbar-stop" type="button" class="verb stop" aria-label="Stop running tests (Ctrl+.)" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+          Stop <kbd>Ctrl·.</kbd>
+        </button>
+        <button id="topbar-rerun-failed" type="button" class="verb" aria-label="Re-run only failed tests (Ctrl+Shift+R)" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/>
+          </svg>
+          Re-run failed
+        </button>
       </div>
     </header>
 
@@ -748,6 +853,13 @@
               <div>Live test output will appear here</div>
             </div>
           </div>
+        </div>
+
+        <div id="triage" class="triage hidden" aria-live="polite">
+          <div class="triage-head">
+            <span id="triage-title">Failures — 0</span>
+          </div>
+          <div id="triage-list"></div>
         </div>
 
         <div id="gallery" class="gallery hidden">
@@ -1306,18 +1418,140 @@ INSTRUCTIONS FOR CLAUDE:
       return { passed, failed, time };
     }
 
-    $('run').addEventListener('click', async () => {
-      const feature = $('feature').value;
+    // ---- Failure triage panel ------------------------------------------------
+    // After every run we pull /api/last-failures and surface a card per failure
+    // with thumbnail + error excerpt + jump-to-source / trace links.
+    async function refreshTriage() {
+      const panel = $('triage');
+      const list = $('triage-list');
+      const title = $('triage-title');
+      try {
+        const resp = await fetch('/api/last-failures');
+        if (!resp.ok) { panel.classList.add('hidden'); return; }
+        const data = await resp.json();
+        const failures = data.failures || [];
+        if (failures.length === 0) { panel.classList.add('hidden'); return; }
+        panel.classList.remove('hidden');
+        title.textContent = `Failures — ${failures.length}`;
+        list.innerHTML = '';
+        failures.forEach((f, idx) => {
+          const card = document.createElement('div');
+          card.className = 'triage-card';
+
+          // Thumbnail (clickable → lightbox)
+          if (f.screenshot) {
+            const img = document.createElement('img');
+            img.className = 'thumb';
+            img.loading = 'lazy';
+            img.src = f.screenshot;
+            img.alt = `${f.title} failure screenshot`;
+            img.addEventListener('click', () => openLightbox({ test: f.title, file: 'failure', url: f.screenshot }));
+            card.appendChild(img);
+          } else {
+            const ph = document.createElement('div');
+            ph.className = 'thumb empty';
+            ph.textContent = '⚠';
+            card.appendChild(ph);
+          }
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          const t = document.createElement('div');
+          t.className = 'title';
+          t.textContent = f.fullTitle || f.title;
+          const file = document.createElement('div');
+          file.className = 'file';
+          file.textContent = f.file + (f.line ? `:${f.line}` : '');
+          const err = document.createElement('div');
+          err.className = 'error';
+          err.textContent = (f.errorMessage || '').split('\n').slice(0, 3).join('\n') || '(no error message)';
+          const actions = document.createElement('div');
+          actions.className = 'actions-row';
+          if (f.file) {
+            const open = document.createElement('a');
+            open.href = `vscode://file/${f.file}${f.line ? `:${f.line}` : ''}`;
+            open.target = '_blank';
+            open.rel = 'noopener';
+            open.textContent = 'Open in VS Code';
+            actions.appendChild(open);
+          }
+          if (f.trace) {
+            const trace = document.createElement('a');
+            trace.href = f.trace;
+            trace.target = '_blank';
+            trace.rel = 'noopener';
+            trace.textContent = 'Trace ↗';
+            actions.appendChild(trace);
+          }
+          meta.appendChild(t);
+          meta.appendChild(file);
+          meta.appendChild(err);
+          meta.appendChild(actions);
+          card.appendChild(meta);
+          list.appendChild(card);
+        });
+        // Header gains the "Re-run failed" affordance
+        $('topbar-rerun-failed').disabled = false;
+      } catch {
+        panel.classList.add('hidden');
+      }
+    }
+
+    // ---- Header verb cluster + keyboard shortcuts ---------------------------
+    const topbarRunBtn = $('topbar-run');
+    const topbarStopBtn = $('topbar-stop');
+    const topbarRerunFailedBtn = $('topbar-rerun-failed');
+
+    function setRunInFlight(inFlight) {
+      $('run').disabled = inFlight;
+      topbarRunBtn.disabled = inFlight;
+      topbarStopBtn.disabled = !inFlight;
+      // Re-run-failed becomes available when there's something to re-run (set by refreshTriage).
+      if (inFlight) topbarRerunFailedBtn.disabled = true;
+    }
+
+    async function abortRun() {
+      try {
+        const resp = await fetch('/api/abort', { method: 'POST' });
+        if (resp.status === 204) showToast('Aborting run…');
+        else if (resp.status === 404) showToast('Nothing to abort', 'error');
+        else showToast('Abort failed', 'error');
+      } catch { showToast('Abort failed', 'error'); }
+    }
+
+    topbarRunBtn.addEventListener('click', () => $('run').click());
+    topbarStopBtn.addEventListener('click', abortRun);
+    topbarRerunFailedBtn.addEventListener('click', () => runTests({ lastFailed: true }));
+
+    document.addEventListener('keydown', (e) => {
+      // Don't hijack typing in inputs.
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === '.') { e.preventDefault(); abortRun(); }
+      else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        if (!topbarRerunFailedBtn.disabled) runTests({ lastFailed: true });
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        $('run').click();
+      }
+    });
+
+    // Extract the run logic into a callable so the Re-run Failed button can
+    // reuse it without going through the form's click handler.
+    async function runTests(opts = {}) {
+      const feature = opts.lastFailed ? null : $('feature').value;
       const project = $('project').value;
       const headed = $('headed').checked;
+      const lastFailed = !!opts.lastFailed;
 
       logEl.classList.add('empty');
-      logEl.innerHTML = '<div><div class="empty-art">⏳</div><div>Starting…</div></div>';
+      logEl.innerHTML = `<div><div class="empty-art" aria-hidden="true">⏳</div><div>${lastFailed ? 'Re-running failed tests…' : 'Starting…'}</div></div>`;
       logStartedFlag = false;
       statPills.hidden = true;
       pillFail.hidden = true;
-      setStatus('running', `running ${feature || 'all features'} on ${project}${headed ? ' (headed)' : ''}…`);
-      $('run').disabled = true;
+      setStatus('running', lastFailed ? 'Re-running last-failed tests…' : `running ${feature || 'all features'} on ${project}${headed ? ' (headed)' : ''}…`);
+      setRunInFlight(true);
 
       // Reset the live waterfall for this run.
       const wfState = { total: 0, cursor: 0, results: [] };
@@ -1356,8 +1590,13 @@ INSTRUCTIONS FOR CLAUDE:
         const resp = await fetch('/api/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ feature, project, headed }),
+          body: JSON.stringify({ feature, project, headed, lastFailed }),
         });
+        if (resp.status === 409) {
+          setStatus('idle', 'A run is already in progress.');
+          showToast('A run is already in progress', 'error');
+          return;
+        }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
@@ -1403,11 +1642,15 @@ INSTRUCTIONS FOR CLAUDE:
         setStatus('fail', String(err && err.message));
         showToast('Run failed', 'error');
       } finally {
-        $('run').disabled = false;
+        setRunInFlight(false);
         refreshReports();
         refreshGallery();
+        refreshTriage();
       }
-    });
+    }
+
+    // The form's primary Run button reuses runTests().
+    $('run').addEventListener('click', () => runTests());
 
     function escapeHtml(s) {
       return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1416,6 +1659,7 @@ INSTRUCTIONS FOR CLAUDE:
     loadFeatures();
     refreshReports();
     refreshGallery();
+    refreshTriage();
     updatePrompt();
   </script>
 </body>

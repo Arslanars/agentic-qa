@@ -243,10 +243,77 @@ function clearAllureResults(write) {
   } catch (_) { /* best-effort */ }
 }
 
+// Track the active Playwright run so /api/abort can kill it from a separate
+// HTTP request. Only one run is allowed at a time anyway (the UI disables
+// the button while a run is in flight), so a single global slot is fine.
+let activeRun = null;
+
+// Stop the active Playwright run, if any. Returns 204 if a kill was sent,
+// 404 if nothing was running.
+app.post('/api/abort', (_req, res) => {
+  if (activeRun && activeRun.proc && !activeRun.proc.killed) {
+    killProcessTree(activeRun.proc);
+    return res.status(204).end();
+  }
+  res.status(404).json({ error: 'no active run' });
+});
+
+// Return a flat list of failed tests from the last Playwright JSON results.
+// Each entry: { title, file, line, error, screenshot, trace }
+app.get('/api/last-failures', (_req, res) => {
+  try {
+    const jsonPath = path.join(CFG_PATHS.testResults, 'results.json');
+    if (!fs.existsSync(jsonPath)) return res.json({ failures: [], runTimestamp: null });
+    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    const failures = [];
+    const FAIL_STATUSES = new Set(['failed', 'timedOut', 'interrupted']);
+    const visit = (suite, parentTitles = []) => {
+      const titles = suite.title ? [...parentTitles, suite.title] : parentTitles;
+      for (const spec of suite.specs || []) {
+        for (const test of spec.tests || []) {
+          const last = (test.results || []).slice(-1)[0];
+          if (!last || !FAIL_STATUSES.has(last.status)) continue;
+          // Find screenshot + trace attachments in this test result.
+          let screenshot = null, trace = null;
+          for (const att of last.attachments || []) {
+            if (!att.path) continue;
+            const rel = path.relative(CFG_PATHS.testResults, att.path).split(path.sep).join('/');
+            const url = `/test-results/${rel}`;
+            if (att.contentType?.includes('image/') && !screenshot) screenshot = url;
+            else if (att.name === 'trace' || att.path.endsWith('.zip')) trace = url;
+          }
+          failures.push({
+            title: spec.title,
+            fullTitle: [...titles, spec.title].filter(Boolean).join(' › '),
+            file: (suite.file || spec.file || '').replace(/\\/g, '/'),
+            line: spec.line,
+            project: test.projectName,
+            duration: last.duration,
+            status: last.status,
+            errorMessage: last.error?.message || (last.errors && last.errors[0]?.message) || null,
+            errorStack: last.error?.stack || null,
+            screenshot,
+            trace,
+          });
+        }
+      }
+      for (const child of suite.suites || []) visit(child, titles);
+    };
+    for (const top of data.suites || []) visit(top);
+    res.json({
+      failures,
+      runTimestamp: data.stats?.startTime || null,
+      duration: data.stats?.duration || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
 // Run Playwright with NDJSON streaming so the browser can read the log live.
 // Flow: clear allure → run → rebuild allure → done.
 app.post('/api/run', async (req, res) => {
-  const { feature, project, headed } = req.body || {};
+  const { feature, project, headed, lastFailed } = req.body || {};
 
   // Validate input. Empty/undefined feature = run all features (no path arg);
   // any provided feature/project must match the safe-name regex AND, for
@@ -265,8 +332,22 @@ app.post('/api/run', async (req, res) => {
     }
   }
 
+  // Refuse to start a new run while one is already in flight — check BEFORE
+  // we commit to streaming response headers.
+  if (activeRun) {
+    return res.status(409).json({ error: 'a run is already in progress; abort or wait' });
+  }
+
   const testsRel = path.relative(ROOT, CFG_PATHS.tests).split(path.sep).join('/') || 'tests';
-  const args = ['playwright', 'test', feature ? `${testsRel}/${feature}/` : `${testsRel}/`];
+  const args = ['playwright', 'test'];
+  // --last-failed runs only the tests that failed in the previous run.
+  // Playwright doesn't combine it with a path filter, so when lastFailed=true
+  // we skip the feature/tests filter entirely.
+  if (lastFailed) {
+    args.push('--last-failed');
+  } else {
+    args.push(feature ? `${testsRel}/${feature}/` : `${testsRel}/`);
+  }
   if (project) args.push(`--project=${project}`);
   if (headed !== false) {
     args.push('--headed');
@@ -293,7 +374,11 @@ app.post('/api/run', async (req, res) => {
   try {
     clearAllureResults(write);
     write({ type: 'start', cmd: 'npx ' + args.join(' '), cwd: ROOT });
-    const code = await runPlaywrightProcess(args, write, (p) => { currentProc = p; });
+    const code = await runPlaywrightProcess(args, write, (p) => {
+      currentProc = p;
+      activeRun = { proc: p, startedAt: Date.now() };
+    });
+    activeRun = null;
     currentProc = null;
 
     // Regenerate per-feature markdown reports from this run's JSON results,
@@ -330,9 +415,12 @@ app.post('/api/run', async (req, res) => {
     if (!res.writableEnded) res.end();
   } catch (err) {
     finished = true;
+    activeRun = null;
     write({ type: 'error', message: String((err && err.message) || err) });
     write({ type: 'done', exitCode: 1 });
     if (!res.writableEnded) res.end();
+  } finally {
+    activeRun = null;
   }
 });
 
