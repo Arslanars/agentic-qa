@@ -27,10 +27,11 @@ const COLUMN_DEFS = [
 const SUMMARY_COLUMNS = [
   { header: 'FEATURE',       key: 'feature',     width: 26 },
   { header: 'STORY ID',      key: 'storyId',     width: 18 },
-  { header: 'TOTAL TESTS',   key: 'total',       width: 14 },
+  { header: 'TOTAL CASES',   key: 'total',       width: 14 },
+  { header: 'AUTOMATED',     key: 'automated',   width: 14 },
+  { header: 'MANUAL',        key: 'manual',      width: 12 },
   { header: 'PASSED',        key: 'passed',      width: 12 },
   { header: 'FAILED',        key: 'failed',      width: 12 },
-  { header: 'SKIPPED',       key: 'skipped',     width: 12 },
   { header: 'LAST RUN',      key: 'lastRun',     width: 22 },
   { header: 'STATUS',        key: 'status',      width: 14 },
 ];
@@ -46,6 +47,8 @@ const SKIP_FILL   = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9E
 const SKIP_FONT   = { color: { argb: 'FF6C757D' }, bold: true };
 const NOT_RUN_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
 const NOT_RUN_FONT = { color: { argb: 'FF856404' }, bold: true };
+const MANUAL_FILL  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7E5FF' } };
+const MANUAL_FONT  = { color: { argb: 'FF4338CA' }, bold: true };
 const BORDER = {
   top:    { style: 'thin', color: { argb: 'FFCBD5E1' } },
   bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -171,21 +174,33 @@ function buildFeatureSheet(workbook, feature, testCases, resultMap) {
   sheet.columns = COLUMN_DEFS.map((c) => ({ ...c }));
   styleHeaderRow(sheet);
 
-  let passCount = 0, failCount = 0, skipCount = 0;
+  let passCount = 0, failCount = 0, skipCount = 0, manualCount = 0;
 
   for (const tc of testCases) {
-    const result = lookupResult(resultMap, tc.linkedSpec, tc.linkedTestTitle);
-    const badge = statusBadge(result?.status);
+    // Cases without a linked spec are MANUAL — they belong in the test-case
+    // design doc even though no automated run produces a result for them.
+    const isManual = !tc.linkedSpec || !tc.linkedTestTitle;
+    const result = isManual ? null : lookupResult(resultMap, tc.linkedSpec, tc.linkedTestTitle);
+
+    let badge;
     let actualResult;
-    if (!result) {
+    if (isManual) {
+      badge = { label: 'MANUAL', fill: MANUAL_FILL, font: MANUAL_FONT };
+      actualResult = 'Manual test case — execute per the TEST STEPS column.';
+      manualCount++;
+    } else if (!result) {
+      badge = statusBadge();
       actualResult = 'No run data — execute the suite to capture the actual result.';
     } else if (result.status === 'passed' || result.status === 'flaky') {
+      badge = statusBadge(result.status);
       actualResult = `Passed in ${fmtDuration(result.duration)} on ${result.project}.`;
       passCount++;
     } else if (result.status === 'skipped') {
+      badge = statusBadge(result.status);
       actualResult = 'Skipped.';
       skipCount++;
     } else {
+      badge = statusBadge(result.status);
       const firstLine = (result.errorMessage || '').split('\n')[0].slice(0, 600);
       actualResult = `Failed in ${fmtDuration(result.duration)}: ${firstLine || 'no error detail'}`;
       failCount++;
@@ -211,7 +226,7 @@ function buildFeatureSheet(workbook, feature, testCases, resultMap) {
     statusCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   }
 
-  return { passed: passCount, failed: failCount, skipped: skipCount, total: testCases.length };
+  return { passed: passCount, failed: failCount, skipped: skipCount, manual: manualCount, total: testCases.length };
 }
 
 function buildSummarySheet(workbook, perFeatureStats) {
@@ -225,25 +240,29 @@ function buildSummarySheet(workbook, perFeatureStats) {
   // Move summary to be the first sheet in the workbook for convenience.
   workbook.eachSheet((s, idx) => { /* no-op */ });
 
-  let totalPassed = 0, totalFailed = 0, totalSkipped = 0, totalCases = 0;
+  let totalPassed = 0, totalFailed = 0, totalManual = 0, totalCases = 0, totalAutomated = 0;
   for (const stat of perFeatureStats) {
     totalPassed += stat.passed;
     totalFailed += stat.failed;
-    totalSkipped += stat.skipped;
+    totalManual += stat.manual || 0;
     totalCases += stat.total;
-    const status = stat.failed > 0 ? 'FAIL' : (stat.passed === 0 && stat.total > 0 ? 'NOT RUN' : 'PASS');
+    const automated = stat.total - (stat.manual || 0);
+    totalAutomated += automated;
     const badge = stat.failed > 0
       ? { label: 'FAIL', fill: FAIL_FILL, font: FAIL_FONT }
-      : (stat.passed === 0 && stat.total > 0
+      : (stat.passed === 0 && automated > 0
           ? { label: 'NOT RUN', fill: NOT_RUN_FILL, font: NOT_RUN_FONT }
-          : { label: 'PASS', fill: PASS_FILL, font: PASS_FONT });
+          : (automated === 0 && stat.manual > 0
+              ? { label: 'MANUAL', fill: MANUAL_FILL, font: MANUAL_FONT }
+              : { label: 'PASS', fill: PASS_FILL, font: PASS_FONT }));
     const row = sheet.addRow({
       feature: stat.feature,
       storyId: stat.storyId || '—',
       total: stat.total,
+      automated,
+      manual: stat.manual || 0,
       passed: stat.passed,
       failed: stat.failed,
-      skipped: stat.skipped,
       lastRun: stat.lastRun,
       status: badge.label,
     });
@@ -259,9 +278,10 @@ function buildSummarySheet(workbook, perFeatureStats) {
     feature: 'TOTAL',
     storyId: '',
     total: totalCases,
+    automated: totalAutomated,
+    manual: totalManual,
     passed: totalPassed,
     failed: totalFailed,
-    skipped: totalSkipped,
     lastRun: '',
     status: '',
   });

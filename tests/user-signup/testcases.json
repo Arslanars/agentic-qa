@@ -5,44 +5,416 @@
   "applicationUrl": "https://moontower.aiimone.com/signup",
   "testCases": [
     {
-      "id": "SignUp-001-AC1-01",
-      "scenario": "AC1: Fill the signup form and register as a new user",
-      "testCase": "Submit step-1 + step-2 form data and confirm the server accepts the registration",
-      "preCondition": "Browser open at https://moontower.aiimone.com/signup; step-1 form 'Register Your Restaurant' is visible; Next button is enabled",
+      "id": "SignUp-001-AC1-POS-01",
+      "scenario": "AC1: Fill signup form and register — POSITIVE (happy path)",
+      "testCase": "Complete the 2-step signup with valid data; server accepts the registration",
+      "preCondition": "Browser open at /signup; step-1 'Register Your Restaurant' form is visible",
       "testSteps": [
         "Fill Restaurant Name with a unique timestamp-suffixed value",
         "Verify Subdomain auto-populates (read-only)",
-        "Fill Full Name, Business Email, Phone Number",
-        "Click 'Next' to advance to step 2",
-        "Fill Password and Confirm Password",
+        "Fill Full Name, Business Email, Phone Number with valid values",
+        "Click 'Next' → step-2 'Set Password' appears",
+        "Fill Password and Confirm Password (matching)",
         "Check 'I agree to the Terms and Conditions'",
         "Click 'Create Account'"
       ],
-      "testData": "Restaurant Name: MoonTest<timestamp>\nFull Name: Arslan Tester\nEmail: arslan.moon+ac1<timestamp>@yopmail.com\nPhone: 5555550199\nPassword: TestPass!2025",
-      "expectedResult": "Form is accepted; URL leaves /signup (no validation errors); the app navigates the user away from the signup screen",
-      "postCondition": "A new restaurant tenant exists on the server with the unique restaurant name; the user is on the post-signup flow",
+      "testData": "Restaurant: MoonTest<ts>\nFull Name: Arslan Tester\nEmail: arslan.moon+ac1<ts>@yopmail.com\nPhone: 5555550199\nPassword: TestPass!2025",
+      "expectedResult": "Server accepts registration; URL leaves /signup (typically navigates to /select-location)",
+      "postCondition": "New tenant created on server; user can proceed to choose a location",
       "linkedSpec": "user-signup/fill-and-submit.spec.ts",
       "linkedTestTitle": "AC1 — fills both steps and the app accepts the registration (URL leaves /signup)"
     },
     {
-      "id": "SignUp-001-AC2-01",
-      "scenario": "AC2: Verify the user is registered",
-      "testCase": "After Create Account, confirm three independent post-registration signals all hold",
-      "preCondition": "Browser open at https://moontower.aiimone.com/signup; step-1 form visible",
+      "id": "SignUp-001-AC2-POS-01",
+      "scenario": "AC2: Verify the user is registered — POSITIVE",
+      "testCase": "After Create Account, three independent post-registration signals all hold",
+      "preCondition": "Browser open at /signup; valid registration just submitted",
       "testSteps": [
-        "Fill all step-1 required fields with valid data",
-        "Click 'Next' to reach step 2",
-        "Fill passwords and accept Terms",
-        "Click 'Create Account'",
-        "Verify the URL is /select-location",
-        "Verify 'Select Your Location' heading is visible",
-        "Verify the 'Restaurant: <run-specific name>' paragraph is visible"
+        "Complete the full 2-step signup with valid data",
+        "Verify the URL equals /select-location",
+        "Verify the 'Select Your Location' heading is visible",
+        "Verify the 'Restaurant: <name>' paragraph references the just-created restaurant"
       ],
-      "testData": "Restaurant Name: MoonVerify<timestamp>\nFull Name: Arslan Verify\nEmail: arslan.moon+ac2<timestamp>@yopmail.com\nPhone: 5555550199\nPassword: TestPass!2025",
-      "expectedResult": "All three signals hold simultaneously: URL = /select-location; 'Select Your Location' heading visible; 'Restaurant: <run-specific name>' paragraph confirms the exact account just created",
-      "postCondition": "Registration is confirmed end-to-end; user can now choose a location to manage",
+      "testData": "Restaurant: MoonVerify<ts>\nEmail: arslan.moon+ac2<ts>@yopmail.com\nPassword: TestPass!2025",
+      "expectedResult": "All three signals visible simultaneously: URL = /select-location, heading visible, restaurant paragraph confirms the new account",
+      "postCondition": "Registration confirmed end-to-end",
       "linkedSpec": "user-signup/verify-registered.spec.ts",
       "linkedTestTitle": "AC2 — after Create Account, the app surfaces the post-registration screen referencing the new restaurant"
+    },
+    {
+      "id": "SignUp-001-NEG-01",
+      "scenario": "Step 1 validation — required field missing",
+      "testCase": "Submit step 1 with Restaurant Name empty",
+      "preCondition": "Browser open at /signup; step-1 form visible",
+      "testSteps": [
+        "Leave Restaurant Name empty",
+        "Fill all other required step-1 fields with valid values",
+        "Click 'Next'"
+      ],
+      "testData": "Restaurant Name: (empty)\nFull Name: Arslan\nEmail: arslan.moon+rn@yopmail.com\nPhone: 5555550199",
+      "expectedResult": "'Next' is disabled OR a validation message appears under Restaurant Name; form does not advance to step 2",
+      "postCondition": "User remains on step 1",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-02",
+      "scenario": "Step 1 validation — required field missing",
+      "testCase": "Submit step 1 with Full Name empty",
+      "preCondition": "Browser open at /signup; step-1 form visible",
+      "testSteps": [
+        "Fill Restaurant Name; leave Full Name empty",
+        "Fill remaining required fields",
+        "Click 'Next'"
+      ],
+      "testData": "Full Name: (empty)",
+      "expectedResult": "Validation message appears; form does not advance",
+      "postCondition": "User remains on step 1",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-03",
+      "scenario": "Step 1 validation — required field missing",
+      "testCase": "Submit step 1 with Business Email empty",
+      "preCondition": "Browser open at /signup; step-1 form visible",
+      "testSteps": [
+        "Fill all step-1 fields except Business Email",
+        "Click 'Next'"
+      ],
+      "testData": "Business Email: (empty)",
+      "expectedResult": "Validation message appears under Business Email; form does not advance",
+      "postCondition": "User remains on step 1",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-04",
+      "scenario": "Step 1 validation — invalid email format",
+      "testCase": "Submit step 1 with a Business Email that has no '@' symbol",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Fill all step-1 fields",
+        "In Business Email enter 'arslan.moon-yopmail.com' (no @)",
+        "Click 'Next'"
+      ],
+      "testData": "Business Email: arslan.moon-yopmail.com",
+      "expectedResult": "Validation message: 'Please enter a valid email address'; form does not advance",
+      "postCondition": "User remains on step 1",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-05",
+      "scenario": "Step 1 validation — invalid phone format",
+      "testCase": "Submit step 1 with letters in the Phone Number field",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Fill all step-1 fields",
+        "In Phone Number enter 'abc1234567'",
+        "Click 'Next'"
+      ],
+      "testData": "Phone Number: abc1234567",
+      "expectedResult": "Validation message rejects the input OR the field strips non-digits; form does not advance if invalid",
+      "postCondition": "User remains on step 1",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-06",
+      "scenario": "Step 1 — email uniqueness (server-side)",
+      "testCase": "Submit step 1 with an email already registered in the system",
+      "preCondition": "An account already exists for 'arslan.moon@yopmail.com'",
+      "testSteps": [
+        "Fill all step-1 fields, using the already-registered email",
+        "Click 'Next' (step 2 may appear depending on when the uniqueness check fires)",
+        "Complete step 2 if reached and click 'Create Account'"
+      ],
+      "testData": "Business Email: arslan.moon@yopmail.com",
+      "expectedResult": "Server rejects with a message such as 'Email already in use'; URL stays on /signup; no new tenant created",
+      "postCondition": "No duplicate account; existing account untouched",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-07",
+      "scenario": "Step 1 — Subdomain auto-population",
+      "testCase": "Subdomain is read-only and auto-derived from Restaurant Name",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Inspect the Subdomain input; confirm it has the readonly attribute",
+        "Type a Restaurant Name (e.g., 'My Eatery 42')",
+        "Observe the Subdomain field"
+      ],
+      "testData": "Restaurant Name: My Eatery 42",
+      "expectedResult": "Subdomain becomes 'myeatery42' (lowercased, alphanumeric only); user cannot edit it directly",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-08",
+      "scenario": "Step 2 — password validation (mismatch)",
+      "testCase": "Step 2 rejects mismatching Password and Confirm Password values",
+      "preCondition": "Step 2 'Set Password' is visible (step 1 completed)",
+      "testSteps": [
+        "Enter 'TestPass!2025' in Password",
+        "Enter 'DifferentPass!2025' in Confirm Password",
+        "Check the Terms checkbox",
+        "Attempt to click 'Create Account'"
+      ],
+      "testData": "Password: TestPass!2025\nConfirm Password: DifferentPass!2025",
+      "expectedResult": "Validation message: 'Passwords do not match'; Create Account is disabled OR submission is blocked",
+      "postCondition": "User remains on step 2",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-09",
+      "scenario": "Step 2 — password validation (too short)",
+      "testCase": "Step 2 enforces a minimum password length",
+      "preCondition": "Step 2 visible",
+      "testSteps": [
+        "Enter a short password (e.g., 'abc') in both Password and Confirm Password",
+        "Check Terms",
+        "Attempt Create Account"
+      ],
+      "testData": "Password: abc",
+      "expectedResult": "Validation message: minimum-length requirement is not met; submission is blocked",
+      "postCondition": "User remains on step 2",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NEG-10",
+      "scenario": "Step 2 — terms checkbox required",
+      "testCase": "Create Account is disabled until 'I agree to the Terms and Conditions' is checked",
+      "preCondition": "Step 2 visible; passwords filled with matching valid values",
+      "testSteps": [
+        "Fill Password and Confirm Password with valid matching values",
+        "Leave the Terms checkbox UNCHECKED",
+        "Observe the Create Account button state"
+      ],
+      "testData": "Terms checkbox: unchecked",
+      "expectedResult": "Create Account button is disabled; cannot be clicked",
+      "postCondition": "User remains on step 2",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-UI-01",
+      "scenario": "Step 1 — read-only fields",
+      "testCase": "Subdomain, Location Name, and Address fields are read-only and cannot be edited by clicking",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Open DevTools → Elements",
+        "Confirm each of #subDomain, #locationName, #locationAddress has the readonly attribute",
+        "Click into each and attempt to type"
+      ],
+      "testData": "n/a",
+      "expectedResult": "None of the three fields accept keyboard input; the readonly attribute is set on the input elements",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-UI-02",
+      "scenario": "Step 1/2 — Next button gating",
+      "testCase": "Next button reflects validity of step-1 required fields in real time",
+      "preCondition": "Browser open at /signup; form is empty",
+      "testSteps": [
+        "Observe the Next button state when the form is empty",
+        "Progressively fill each required field",
+        "Observe the Next button state at each step"
+      ],
+      "testData": "n/a",
+      "expectedResult": "Next button is disabled when any required field is empty/invalid; becomes enabled once all required fields have valid values",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-UI-03",
+      "scenario": "Step 2 — password visibility toggle",
+      "testCase": "Both Password and Confirm Password fields have a working show/hide toggle",
+      "preCondition": "Step 2 visible",
+      "testSteps": [
+        "Type into Password",
+        "Click the 'Show password' button next to Password",
+        "Click again to re-mask",
+        "Repeat for Confirm Password"
+      ],
+      "testData": "Password: TestPass!2025",
+      "expectedResult": "Each show-password button toggles the corresponding field between type='password' and type='text'; mask state is independent for the two fields",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-UI-04",
+      "scenario": "Step 2 — Back button preserves step-1 data",
+      "testCase": "Clicking Back from step 2 returns to step 1 with the previously entered values intact",
+      "preCondition": "Step 1 was filled and Next clicked; user is on step 2",
+      "testSteps": [
+        "On step 2, click 'Back'",
+        "Inspect each step-1 field"
+      ],
+      "testData": "n/a",
+      "expectedResult": "Step 1 reappears; all editable fields retain the values entered previously (no data loss)",
+      "postCondition": "User can navigate back and forth between steps without losing input",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NAV-01",
+      "scenario": "Signup page navigation",
+      "testCase": "'Sign in' link on /signup navigates to /login",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Click the 'Sign in' link below the form"
+      ],
+      "testData": "n/a",
+      "expectedResult": "Browser navigates to /login",
+      "postCondition": "User on the login screen",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-NAV-02",
+      "scenario": "Signup page navigation",
+      "testCase": "'← Back' link navigates to /",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Click the '← Back' link"
+      ],
+      "testData": "n/a",
+      "expectedResult": "Browser navigates to the homepage",
+      "postCondition": "User on the homepage",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-EDGE-01",
+      "scenario": "Signup edge cases",
+      "testCase": "Restaurant Name with leading/trailing whitespace",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Enter '   My Eatery   ' in Restaurant Name",
+        "Observe the Subdomain auto-fill",
+        "Complete the rest of step 1 and proceed"
+      ],
+      "testData": "Restaurant Name: '   My Eatery   '",
+      "expectedResult": "App trims whitespace before deriving the subdomain; subdomain is 'myeatery' not 'my-eatery'",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-EDGE-02",
+      "scenario": "Signup edge cases",
+      "testCase": "Restaurant Name with special characters",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Enter 'My Eatery & Café (2026)!' in Restaurant Name",
+        "Observe Subdomain auto-fill"
+      ],
+      "testData": "Restaurant Name: My Eatery & Café (2026)!",
+      "expectedResult": "Subdomain is derived to a URL-safe slug (alphanumeric + dashes only): e.g., 'myeaterycafe2026'; no special characters leak into the subdomain",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-EDGE-03",
+      "scenario": "Signup edge cases",
+      "testCase": "Disposable email (yopmail) is accepted (or rejected with clear message)",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Use a yopmail address (e.g., arslan.moon+test@yopmail.com)",
+        "Complete signup"
+      ],
+      "testData": "Email: arslan.moon+test<ts>@yopmail.com",
+      "expectedResult": "App either (a) accepts the email and proceeds with signup, or (b) explicitly rejects with 'Disposable email addresses are not allowed'. Silent failure is not acceptable.",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-EDGE-04",
+      "scenario": "Signup edge cases",
+      "testCase": "Subdomain collision — Restaurant Name yields a subdomain that already exists",
+      "preCondition": "An account 'demo' already exists; new user tries Restaurant Name 'Demo'",
+      "testSteps": [
+        "Enter 'Demo' as Restaurant Name (auto-derives to existing subdomain 'demo')",
+        "Complete the full form and click Create Account"
+      ],
+      "testData": "Restaurant Name: Demo (collides with existing tenant)",
+      "expectedResult": "Server rejects the registration with a clear message: 'Subdomain already in use' or similar; URL stays on /signup",
+      "postCondition": "No duplicate tenant created",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-SEC-01",
+      "scenario": "Signup security",
+      "testCase": "Password fields use type='password' (masked, not in DOM as plaintext)",
+      "preCondition": "Step 2 visible",
+      "testSteps": [
+        "Inspect both Password and Confirm Password inputs in DevTools",
+        "Confirm their initial type attribute"
+      ],
+      "testData": "n/a",
+      "expectedResult": "Both inputs default to type='password'; values are masked in the DOM by default",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-SEC-02",
+      "scenario": "Signup security",
+      "testCase": "Form posts over HTTPS (credentials encrypted in transit)",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Open DevTools → Network",
+        "Submit the form",
+        "Inspect the request URL and protocol"
+      ],
+      "testData": "n/a",
+      "expectedResult": "The form-submit request goes to an https:// endpoint; no plaintext HTTP credentials in transit",
+      "postCondition": "n/a",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-SEC-03",
+      "scenario": "Signup security",
+      "testCase": "XSS payload in Restaurant Name is sanitized",
+      "preCondition": "Browser open at /signup",
+      "testSteps": [
+        "Enter '<script>alert(1)</script>' as Restaurant Name",
+        "Complete signup and observe the post-signup screen 'Restaurant: <name>' paragraph"
+      ],
+      "testData": "Restaurant Name: <script>alert(1)</script>",
+      "expectedResult": "No JS alert fires; the value is either rejected at input validation OR rendered as escaped text (no HTML injection)",
+      "postCondition": "n/a — XSS does not execute",
+      "linkedSpec": null,
+      "linkedTestTitle": null
+    },
+    {
+      "id": "SignUp-001-SEC-04",
+      "scenario": "Signup security",
+      "testCase": "Password not echoed in the response or DOM after successful submission",
+      "preCondition": "Successful signup just completed",
+      "testSteps": [
+        "After Create Account succeeds, open DevTools",
+        "Search the DOM for the password string",
+        "Inspect the network response for any password field"
+      ],
+      "testData": "Password: TestPass!2025",
+      "expectedResult": "Password string does NOT appear anywhere in the DOM or in any HTTP response body. (Only the hashed/transient form submission contained it.)",
+      "postCondition": "Password not leaked",
+      "linkedSpec": null,
+      "linkedTestTitle": null
     }
   ]
 }
