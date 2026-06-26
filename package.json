@@ -1,7 +1,7 @@
 {
   "name": "agentic-qa",
-  "version": "0.1.0",
-  "description": "AI-driven QA pipeline for Playwright — converts user stories into runnable tests, runs them in a visible browser, and produces an AI-written report. Installable as a dev-dependency in any existing Playwright project.",
+  "version": "0.2.0",
+  "description": "QA pipeline for Playwright — POM convention, visual test runner with live streaming, screenshots gallery, and Allure reporting. Test authoring via Claude Code or by hand; no paid API required.",
   "main": "lib/index.js",
   "bin": {
     "agentic-qa": "bin/agentic-qa.js"
@@ -36,13 +36,9 @@
     "playwright",
     "qa",
     "automation",
-    "ai",
-    "agentic",
-    "anthropic",
-    "claude",
-    "mcp",
     "page-object-model",
-    "test-generation"
+    "test-runner",
+    "allure"
   ],
   "author": "",
   "license": "ISC",
@@ -51,7 +47,6 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.105.0",
     "@playwright/test": "^1.60.0",
     "allure-playwright": "^3.9.0",
     "express": "^5.2.1",

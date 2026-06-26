@@ -11,3 +11,7 @@ node_modules/
 /allure-results/
 /allure-report/
 /.allure/
+
+# Playwright MCP scratch (browser snapshots, console logs, seed test)
+/.playwright-mcp/
+/tests/seed.spec.ts

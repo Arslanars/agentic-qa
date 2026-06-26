@@ -53,7 +53,31 @@ AC2: <Given/When/Then>
 AC3: <Given/When/Then>
 <add more as needed>
 
-INSTRUCTIONS FOR CLAUDE:
+INSTRUCTIONS FOR CLAUDE — read all 10 rules before generating anything.
+
+THE 10 ENGINEERING-HYGIENE RULES (non-negotiable):
+1. REVIEW STRUCTURE FIRST. Before writing anything, Glob/list `pages/`, `tests/`, `lib/`, and `templates/` to learn what already exists. Don't generate in a vacuum.
+2. REUSE EXISTING CODE. If a similar page object, helper, fixture, or utility already exists, IMPORT and EXTEND it instead of writing a parallel implementation.
+3. NO DUPLICATE FILES. Two POMs for the same page is a bug. Two specs asserting the same AC is a bug. Grep before write.
+4. MINIMAL CHANGES. Touch only what's needed for the requested ACs. No drive-by refactors, no "while I'm here" rewrites.
+5. ASK BEFORE GUESSING. If an AC is ambiguous (missing nav path, success indicator, required field list), pause and ASK. Do not guess values that change what tests assert.
+6. DON'T BREAK EXISTING TESTS. When updating, re-run the full suite and make sure previously-passing tests still pass.
+7. UPDATE, DON'T REGENERATE. Same story → reuse + diff. If `pages/<slug>/` or `tests/<slug>/` already exists:
+     - DO NOT regenerate. Report what exists.
+     - Ask: "What specifically do you want changed/fixed?"
+     - Apply only the requested edits. Reuse existing POMs.
+     - Re-run the suite, report what changed.
+     - Skip the normal flow below in this case.
+   (The `agentic-qa generate` CLI and `/api/generate` UI endpoint enforce this in code via `detectExistingFeature` — but you must follow it in manual runs too.)
+8. STRICT AC FAILURE. ONE spec per acceptance criterion. Each spec:
+     a) includes the AC's GIVEN/WHEN/THEN as a comment at the top,
+     b) contains at least one `expect(...)` that DIRECTLY proves the AC,
+     c) uses `test.fail(true, '<reason>')` or `test.fixme('<reason>')` if the AC cannot be verified in this environment — NEVER a watered-down passing test.
+   A green suite that doesn't actually cover the ACs is worse than a red suite that's honest.
+9. SEARCH BEFORE WRITE. Before creating a new POM class or spec file, grep `pages/`, `tests/`, `lib/` for similar names/purposes and prefer reuse.
+10. FIX, DON'T REBUILD. A 3-line edit to an existing spec beats a fresh 50-line spec that duplicates 90% of the existing one.
+
+NORMAL FLOW (when the feature does NOT already exist and ACs are clear):
 1. Derive a kebab-case <feature-slug> from the story title (e.g. "User authentication" -> "user-authentication").
 2. Derive a <STORY-ID> from the slug if I didn't provide one (e.g. AUTO-001, AUTO-002, ...).
 3. Use the file paths defined in this workflow file.
@@ -61,12 +85,12 @@ INSTRUCTIONS FOR CLAUDE:
    - Create user-stories/<STORY-ID>-<feature-slug>.md from my input above
    - Step 2: planner -> specs/<feature-slug>-test-plan.md
    - Step 3: exploratory testing on the URL
-   - Step 4: generate Page Object classes in pages/<feature-slug>/ AND tests in tests/<feature-slug>/ (POM convention, no raw selectors in specs)
-   - Step 5: run the tests; if any fail due to selector/timing issues, heal them
-   - Step 6: write reports/<STORY-ID>-<feature-slug>-test-report.md with the strict Execution Summary block at the top
+   - Step 4: generate Page Object classes in pages/<feature-slug>/ AND tests in tests/<feature-slug>/ (POM convention, no raw selectors in specs) — apply Rules B & C
+   - Step 5: run the tests
+   - Step 6: write reports/<STORY-ID>-<feature-slug>-test-report.md with the strict Execution Summary block at the top, AND a per-AC coverage table that names which AC each spec proves (or marks as blocked, with reason)
 5. SKIP Step 7 (git commit) unless I explicitly give you a repo URL.
 6. If I didn't give credentials, automate only the scenarios that don't require login. Read any creds from process.env with safe fallbacks, and flag in the report that AC1/positive paths need real creds.
-7. Stream short status updates between steps. Do not ask follow-up questions unless the input above is ambiguous.
+7. Stream short status updates between steps.
 ```
 
 ---

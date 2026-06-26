@@ -40,7 +40,7 @@ step('Create .env from .env.example (if missing)', () => {
     return;
   }
   fs.copyFileSync(example, target);
-  console.log('    .env created — edit it to add ANTHROPIC_API_KEY if you want the Generate button');
+  console.log('    .env created — fill in any per-feature credentials your tests need');
 });
 
 console.log(`
@@ -50,7 +50,8 @@ ${'─'.repeat(64)}
   Next:
     npm run ui      # opens http://localhost:3001
 
-  Add ANTHROPIC_API_KEY to .env if you want the ✨ Generate button.
-  Get a key (with $5 free credit) at https://console.anthropic.com
+  To author new tests, either:
+    • use Claude Code with the prompt in QAEnd2EndPromptFile.md, or
+    • hand-author POMs + specs following pages/README.md.
 ${'─'.repeat(64)}
 `);

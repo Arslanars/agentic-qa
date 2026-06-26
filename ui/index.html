@@ -448,13 +448,7 @@
             </label>
 
             <div class="actions">
-              <button id="generate" class="btn primary">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" fill="currentColor"/>
-                </svg>
-                Generate &amp; Run
-              </button>
-              <button id="run" class="btn ghost">
+              <button id="run" class="btn primary">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/>
                 </svg>
@@ -809,64 +803,6 @@ INSTRUCTIONS FOR CLAUDE:
       }
     }
 
-    $('generate').addEventListener('click', async () => {
-      const url = $('url').value.trim();
-      const title = $('title').value.trim();
-      const ac = $('ac').value.trim();
-      const creds = $('creds').value.trim();
-      const storyId = $('storyId').value.trim();
-      const story = ''; // optional long-form description; not surfaced in UI today
-
-      if (!url || !title || !ac) {
-        showToast('URL, title, and AC are required', 'error');
-        return;
-      }
-
-      logEl.classList.add('empty');
-      logEl.innerHTML = '<div><div class="empty-art">✨</div><div>Generating tests with Claude…</div></div>';
-      logStartedFlag = false;
-      statPills.hidden = true;
-      pillFail.hidden = true;
-      setStatus('running', 'Exploring application + generating tests…');
-      $('generate').disabled = true;
-      $('run').disabled = true;
-
-      try {
-        const resp = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, title, ac, creds, storyId, story }),
-        });
-        let result = null;
-        await streamNDJSON(resp, (msg) => {
-          if (msg.type === 'start') appendMeta(`[generate] story=${msg.storyId} slug=${msg.slug}`);
-          else if (msg.type === 'log') appendLog(msg.text);
-          else if (msg.type === 'result') result = msg;
-          else if (msg.type === 'error') {
-            appendMeta(`[error] ${msg.message}`);
-            showToast(msg.message, 'error');
-          }
-        });
-        if (result && result.written) {
-          const pages = result.written.pages.length;
-          const tests = result.written.tests.length;
-          setStatus('pass', `Generated ${pages} page object(s) and ${tests} test(s).`);
-          showToast(`Generated ${tests} test(s)`);
-          await loadFeatures();
-          // Auto-select the new feature
-          $('feature').value = result.slug;
-        }
-      } catch (err) {
-        setStatus('fail', String(err && err.message));
-        showToast('Generation failed', 'error');
-      } finally {
-        $('generate').disabled = false;
-        $('run').disabled = false;
-        refreshReports();
-        refreshGallery();
-      }
-    });
-
     $('run').addEventListener('click', async () => {
       const feature = $('feature').value;
       const project = $('project').value;
@@ -926,6 +862,10 @@ INSTRUCTIONS FOR CLAUDE:
         refreshGallery();
       }
     });
+
+    function escapeHtml(s) {
+      return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
 
     loadFeatures();
     refreshReports();

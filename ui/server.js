@@ -1,14 +1,18 @@
 // Simple Express server that powers the UI at http://localhost:3001
 // - Lists features in tests/
-// - Saves a user story file
+// - Saves a user-story file
 // - Runs Playwright tests in headed mode and streams output as NDJSON
+// - Rebuilds the Allure HTML report after every run
+//
+// No paid-API features. POM + spec generation and self-healing are done via
+// the Claude Code path (see QAEnd2EndPromptFile.md), or by hand-authoring.
 
 const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const { explorePage, generateFiles } = require('./generator');
 const { renderReport } = require('./report-renderer');
+const { writeRunReports } = require('./report-writer');
 
 const app = express();
 const PORT = process.env.UI_PORT ? Number(process.env.UI_PORT) : 3001;
@@ -50,7 +54,7 @@ app.get('/api/features', (_req, res) => {
   res.json(features);
 });
 
-// Save a user-story file (Express prompt's first step, decoupled so the UI can do it standalone)
+// Save a user-story file from form input. Manual authoring path — no AI.
 app.post('/api/save-story', (req, res) => {
   try {
     const { url, title, ac, creds, storyId } = req.body || {};
@@ -96,13 +100,66 @@ function envWithJava() {
   return env;
 }
 
+// Spawn Playwright, stream its output via the NDJSON `write` callback,
+// resolve with the process exit code. Caller can stash the live process
+// (via onProcCreated) so it can be killed if the response disconnects.
+function runPlaywrightProcess(args, write, onProcCreated) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
+      cwd: ROOT,
+      env: process.env,
+      shell: process.platform === 'win32',
+    });
+    onProcCreated?.(proc);
+    proc.stdout.on('data', (data) => write({ type: 'log', stream: 'stdout', text: data.toString() }));
+    proc.stderr.on('data', (data) => write({ type: 'log', stream: 'stderr', text: data.toString() }));
+    proc.on('error', reject);
+    proc.on('close', (code) => resolve(code));
+  });
+}
+
+// Rebuild Allure HTML so /allure-report/index.html reflects the latest run.
+// Best-effort: resolves regardless of success (logs failure but doesn't throw).
+function rebuildAllure(write) {
+  return new Promise((resolve) => {
+    const allureResults = path.join(ROOT, 'allure-results');
+    if (!fs.existsSync(allureResults) || fs.readdirSync(allureResults).length === 0) {
+      write({ type: 'log', stream: 'stdout', text: '[ui] no allure-results to render; skipping report rebuild\n' });
+      return resolve();
+    }
+    write({ type: 'log', stream: 'stdout', text: '[ui] rebuilding Allure HTML report…\n' });
+    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
+      ['allure', 'generate', 'allure-results', '--clean', '-o', 'allure-report'],
+      { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
+    proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
+    proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
+    proc.on('close', (code) => {
+      if (code === 0) write({ type: 'log', stream: 'stdout', text: '[ui] Allure report rebuilt at /allure-report/index.html\n' });
+      else write({ type: 'log', stream: 'stderr', text: `[ui] allure generate exited ${code} (Java missing or path issue) — Playwright HTML report is still valid\n` });
+      resolve();
+    });
+    proc.on('error', (err) => {
+      write({ type: 'log', stream: 'stderr', text: `[ui] allure spawn failed: ${err.message}\n` });
+      resolve();
+    });
+  });
+}
+
+function clearAllureResults(write) {
+  try {
+    const allureResults = path.join(ROOT, 'allure-results');
+    if (fs.existsSync(allureResults)) {
+      fs.rmSync(allureResults, { recursive: true, force: true });
+      write({ type: 'log', stream: 'stdout', text: '[ui] cleared allure-results/ for fresh run\n' });
+    }
+  } catch (_) { /* best-effort */ }
+}
+
 // Run Playwright with NDJSON streaming so the browser can read the log live.
-// After tests finish, also wipe allure-results/ for this run and rebuild the
-// HTML report so the "Allure" link in the UI footer always reflects the latest run.
-app.post('/api/run', (req, res) => {
+// Flow: clear allure → run → rebuild allure → done.
+app.post('/api/run', async (req, res) => {
   const { feature, project, headed } = req.body || {};
-  const testPath = feature ? `tests/${feature}/` : 'tests/';
-  const args = ['playwright', 'test', testPath];
+  const args = ['playwright', 'test', feature ? `tests/${feature}/` : 'tests/'];
   if (project) args.push(`--project=${project}`);
   if (headed !== false) {
     args.push('--headed');
@@ -118,160 +175,43 @@ app.post('/api/run', (req, res) => {
 
   const write = (obj) => res.write(JSON.stringify(obj) + '\n');
 
-  // Clear previous Allure results so the upcoming report reflects only this run.
-  // (Otherwise the report accumulates across runs and looks "stuck" on an old count.)
-  try {
-    const allureResults = path.join(ROOT, 'allure-results');
-    if (fs.existsSync(allureResults)) {
-      fs.rmSync(allureResults, { recursive: true, force: true });
-      write({ type: 'log', stream: 'stdout', text: '[ui] cleared allure-results/ for fresh run\n' });
-    }
-  } catch (e) { /* best-effort */ }
-
-  write({ type: 'start', cmd: 'npx ' + args.join(' '), cwd: ROOT });
-
-  // Windows-friendly spawn (npm script wraps `playwright` via npx)
-  const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
-    cwd: ROOT,
-    env: process.env,
-    shell: process.platform === 'win32',
-  });
-
-  proc.stdout.on('data', (data) => write({ type: 'log', stream: 'stdout', text: data.toString() }));
-  proc.stderr.on('data', (data) => write({ type: 'log', stream: 'stderr', text: data.toString() }));
-
-  proc.on('error', (err) => write({ type: 'error', message: String(err && err.message) }));
-
+  let currentProc = null;
   let finished = false;
-  proc.on('close', (code) => {
-    finished = true;
-
-    // Rebuild Allure HTML so /allure-report/index.html reflects this run.
-    const allureResults = path.join(ROOT, 'allure-results');
-    if (!fs.existsSync(allureResults) || fs.readdirSync(allureResults).length === 0) {
-      write({ type: 'log', stream: 'stdout', text: '[ui] no allure-results to render; skipping report rebuild\n' });
-      write({ type: 'done', exitCode: code });
-      return res.end();
-    }
-
-    write({ type: 'log', stream: 'stdout', text: '[ui] rebuilding Allure HTML report…\n' });
-    const allureArgs = ['allure', 'generate', 'allure-results', '--clean', '-o', 'allure-report'];
-    const allureProc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', allureArgs, {
-      cwd: ROOT,
-      env: envWithJava(),
-      shell: process.platform === 'win32',
-    });
-
-    allureProc.stdout.on('data', (data) => write({ type: 'log', stream: 'stdout', text: data.toString() }));
-    allureProc.stderr.on('data', (data) => write({ type: 'log', stream: 'stderr', text: data.toString() }));
-
-    allureProc.on('close', (allureCode) => {
-      if (allureCode === 0) {
-        write({ type: 'log', stream: 'stdout', text: '[ui] Allure report rebuilt at /allure-report/index.html\n' });
-      } else {
-        write({ type: 'log', stream: 'stderr', text: `[ui] allure generate exited ${allureCode} (Java missing or path issue) — Playwright HTML report is still valid\n` });
-      }
-      write({ type: 'done', exitCode: code });
-      res.end();
-    });
-
-    allureProc.on('error', (err) => {
-      write({ type: 'log', stream: 'stderr', text: `[ui] allure spawn failed: ${err.message}\n` });
-      write({ type: 'done', exitCode: code });
-      res.end();
-    });
-  });
-
-  // Only kill the child if the *response* connection drops before finish.
-  // Avoids Express 5's `req.on('close')` firing as soon as the request body has
-  // been fully consumed, which would prematurely SIGTERM the test run.
   res.on('close', () => {
-    if (!finished && !proc.killed) proc.kill('SIGTERM');
+    if (!finished && currentProc && !currentProc.killed) currentProc.kill('SIGTERM');
   });
-});
-
-// AI-powered generation: explore URL → call Claude API → write POM + spec files
-app.post('/api/generate', async (req, res) => {
-  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders?.();
-
-  const write = (obj) => res.write(JSON.stringify(obj) + '\n');
-  const log = (text) => write({ type: 'log', text: text + '\n' });
-
-  if (!process.env.ANTHROPIC_API_KEY) {
-    write({
-      type: 'error',
-      message:
-        'ANTHROPIC_API_KEY is not set. Set it in your environment, restart `npm run ui`, then try again. Get a key at https://console.anthropic.com',
-    });
-    write({ type: 'done', ok: false });
-    return res.end();
-  }
 
   try {
-    const { url, title, story, ac, creds, storyId } = req.body || {};
-    if (!url || !title || !ac) {
-      write({ type: 'error', message: 'url, title, and ac are required' });
-      write({ type: 'done', ok: false });
-      return res.end();
+    clearAllureResults(write);
+    write({ type: 'start', cmd: 'npx ' + args.join(' '), cwd: ROOT });
+    const code = await runPlaywrightProcess(args, write, (p) => { currentProc = p; });
+
+    // Regenerate per-feature markdown reports from this run's JSON results,
+    // preserving any hand-written notes via the AUTO markers.
+    try {
+      const written = writeRunReports({
+        root: ROOT,
+        onLog: (msg) => write({ type: 'log', stream: 'stdout', text: msg + '\n' }),
+      });
+      if (written.length > 0) write({ type: 'reports_written', files: written });
+    } catch (err) {
+      write({ type: 'log', stream: 'stderr', text: `[reports] regeneration failed: ${err.message}\n` });
     }
 
-    const slug = safeSlug(title);
-    const id = (storyId && storyId.trim()) || `AUTO-${Date.now().toString(36).toUpperCase()}`;
+    await rebuildAllure(write);
 
-    write({ type: 'start', storyId: id, slug });
-    log(`Story ID: ${id}`);
-    log(`Feature slug: ${slug}`);
-
-    // 1. Save the user story file
-    log('Writing user-story file…');
-    const storyContent =
-      `# User Story: ${id} - ${title}\n\n` +
-      (story ? `## Story Description\n${story}\n\n` : '') +
-      `## Application URL\n${url}\n\n` +
-      (creds ? `## Test Credentials\n${creds}\n\n` : '') +
-      `## Acceptance Criteria\n${ac}\n`;
-    const storyDir = path.join(ROOT, 'user-stories');
-    fs.mkdirSync(storyDir, { recursive: true });
-    const storyFile = path.join(storyDir, `${id}-${slug}.md`);
-    fs.writeFileSync(storyFile, storyContent, 'utf8');
-    log(`Saved user-stories/${id}-${slug}.md`);
-
-    // 2. Explore the URL
-    log('Exploring the application with Playwright (headless)…');
-    const exploration = await explorePage(url, { onProgress: (msg) => log(msg) });
-
-    // 3. Ask Claude to generate POM + tests
-    const { written, usage } = await generateFiles({
-      slug,
-      storyId: id,
-      title,
-      story,
-      ac,
-      creds,
-      exploration,
-      onProgress: (msg) => log(msg),
-    });
-
-    log('');
-    log(`Generated ${written.pages.length} page object(s) and ${written.tests.length} test file(s).`);
-    log(`Tokens — input: ${usage.input_tokens}, output: ${usage.output_tokens}`);
-    log('');
-    log('Done. Reload the UI to pick this feature from the dropdown, then Run Tests.');
-
-    write({ type: 'result', slug, storyId: id, written, usage });
-    write({ type: 'done', ok: true });
+    finished = true;
+    write({ type: 'done', exitCode: code });
     res.end();
   } catch (err) {
+    finished = true;
     write({ type: 'error', message: String((err && err.message) || err) });
-    write({ type: 'done', ok: false });
+    write({ type: 'done', exitCode: 1 });
     res.end();
   }
 });
 
-// Generate Allure HTML report (needs Java)
+// Generate Allure HTML report on demand (needs Java).
 app.post('/api/allure-generate', (req, res) => {
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
   const write = (obj) => res.write(JSON.stringify(obj) + '\n');
@@ -279,7 +219,7 @@ app.post('/api/allure-generate', (req, res) => {
 
   const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
     ['allure', 'generate', 'allure-results', '--clean', '-o', 'allure-report'],
-    { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+    { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
 
   proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
   proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
@@ -317,7 +257,6 @@ app.get('/api/screenshots', (_req, res) => {
       });
     }
   }
-  // Newest first
   items.sort((a, b) => b.ts - a.ts);
   res.json(items);
 });

@@ -13,14 +13,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Optional: wire repository secrets here so generated tests can read real
-      # credentials from process.env. Example pattern (rename per your app):
+      # Wire repository secrets here so tests can read real credentials from
+      # process.env. Example pattern (rename per your app):
       #
       # APP_VERIFIED_EMAIL: ${{ secrets.APP_VERIFIED_EMAIL }}
       # APP_VERIFIED_PASSWORD: ${{ secrets.APP_VERIFIED_PASSWORD }}
-      #
-      # Required only if you want the in-UI Generate button to work in CI.
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      NODE_ENV: test
 
     steps:
       - uses: actions/checkout@v4
@@ -67,10 +65,10 @@ jobs:
           path: allure-report/
           retention-days: 30
 
-      - name: Upload AI-generated reports
+      - name: Upload execution reports
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: ai-reports
+          name: reports
           path: reports/
           retention-days: 30

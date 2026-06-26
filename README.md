@@ -1,43 +1,41 @@
 # Agentic QA Automation Pipeline
 
-An AI-driven solution that converts user stories into executable Playwright automation scripts and produces a structured execution summary report — without manual scripting.
+A structured Playwright framework with a **visual test runner**, **Page Object Model conventions**, and **Allure + Playwright reporting** — wired up so you (or Claude Code) can turn a user story into executable browser tests and watch them run.
 
-> **MVP focus:** user story → scenarios → Playwright tests → execution → AI summary report. Self-healing and multi-agent orchestration are included as bonus features.
-
----
-
-## Why this exists
-
-Manually turning requirements into Playwright tests is slow, repetitive, and inconsistent:
-
-- Manual conversion of requirements into automation scripts
-- Slow automation onboarding for new features
-- High script maintenance effort
-- Limited time for exploratory testing
-- Manual preparation of execution reports
-
-This pipeline collapses those steps into a single guided workflow driven by Claude + Playwright MCP.
+> **No paid API required.** Test authoring is done either by hand or via your existing Claude Code subscription. The UI ships zero AI features that need a third-party key.
 
 ---
 
-## How it works
+## What you get
+
+| Capability | How |
+|------------|-----|
+| Visual test runner with live NDJSON streaming | `npm run ui` → http://localhost:3001 |
+| Browser-headed runs you can actually watch | `--workers=1` enforced for headed mode |
+| Auto-rebuilt Allure HTML after every run | Built-in when Java is installed |
+| Screenshots gallery from the latest run | Click thumbnails for full-size lightbox |
+| POM convention with shared `BasePage` | `pages/<feature>/<Name>Page.ts` |
+| AI-driven test authoring (via Claude Code) | Reusable prompts in [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md) |
+| Self-healing for broken locators | Done manually via Claude Code's MCP browser tools |
+| CI workflow | [.github/workflows/playwright.yml](.github/workflows/playwright.yml) |
+
+---
+
+## How a feature gets tested
 
 ```
 ┌──────────────┐    ┌──────────────┐    ┌────────────────┐    ┌──────────┐    ┌────────────┐    ┌──────────┐
 │  User story  │ -> │  Test plan   │ -> │  Exploratory   │ -> │ Generate │ -> │  Execute   │ -> │  Report  │
-│  + AC (.md)  │    │  (planner)   │    │  testing (MCP) │    │  scripts │    │ (& heal)   │    │  (.md)   │
+│  + AC (.md)  │    │  (planner)   │    │  testing (MCP) │    │  scripts │    │            │    │  (.md)   │
 └──────────────┘    └──────────────┘    └────────────────┘    └──────────┘    └────────────┘    └──────────┘
+       ↑                                                                            ↑
+   Form in UI                                                                    UI ▶ Run
+   or `_TEMPLATE.md`                                                             button
 ```
 
-Each phase is driven by a specialized agent (see [.claude/agents/](.claude/agents/)):
+**Authoring (the planning + scripting part):** drive the Claude Code agents in [.claude/agents/](.claude/agents/) using the prompts in [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md). Those agents use the Playwright MCP server to explore the live app, write POMs, and write specs — using your Claude Code subscription, no separate API key.
 
-| Agent | Role | Output |
-|-------|------|--------|
-| `playwright-test-planner` | Explores the live app, designs positive/negative/edge scenarios | `specs/<feature>-test-plan.md` |
-| `playwright-test-generator` | Converts the plan into Page Object classes + Playwright TypeScript tests | `pages/<feature>/*.ts` and `tests/<feature>/*.spec.ts` |
-| `playwright-test-healer` | Re-runs failing tests, fixes selectors/timing/assertions | Updated `*.spec.ts` |
-
-The full prompt sequence used to drive the pipeline lives in [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md).
+**Running (the part you do every day):** open the UI, pick a feature, click ▶ Run Tests. Watch the visible browser, inspect screenshots, click into reports.
 
 ---
 
@@ -46,127 +44,122 @@ The full prompt sequence used to drive the pipeline lives in [QAEnd2EndPromptFil
 ```
 .
 ├── .claude/
-│   └── agents/                    # Planner / generator / healer agent definitions
+│   └── agents/                    # Planner / generator / healer agent prompts (Claude Code)
 ├── .github/workflows/
 │   └── playwright.yml             # CI: runs the suite on push/PR
 ├── .vscode/
-│   └── mcp.json                   # VSCode MCP server config (playwright + github)
+│   └── mcp.json                   # VSCode MCP server config (playwright)
 ├── user-stories/                  # INPUT: one .md per user story
-│   └── _TEMPLATE.md               # Copy this if you prefer the step-by-step flow
-├── specs/                         # OUTPUT 1: planner-generated test plans
-├── pages/                         # Page Object Model — one class per page (see pages/README.md)
+│   └── _TEMPLATE.md
+├── specs/                         # Test plans (markdown) — output of the planner
+├── pages/                         # Page Object Model — one class per page
 │   ├── BasePage.ts
 │   └── <feature>/<PageName>Page.ts
-├── tests/                         # OUTPUT 2: generated Playwright tests (use the POMs above)
+├── tests/                         # Playwright specs
 │   └── <feature>/*.spec.ts
-├── reports/                       # OUTPUT 3: execution summary + exploratory findings
-├── test-results/                  # Playwright runtime artifacts (gitignored, auto-cleared each run)
-├── ui/                            # Single-page web app for visual demos (`npm run ui`)
+├── reports/                       # Execution summaries (markdown)
+├── test-results/                  # Playwright runtime artifacts (gitignored)
+├── ui/                            # Visual test runner (`npm run ui`)
 │   ├── server.js                  #   Express server with NDJSON streaming
-│   └── index.html                 #   Form + live log + report links
+│   └── index.html                 #   Form + live log + reports + screenshots
 ├── playwright.config.js           # chromium / firefox / webkit projects
-├── QAEnd2EndPromptFile.md         # The 7-step workflow prompts (reusable)
+├── QAEnd2EndPromptFile.md         # Reusable Claude Code prompts (Express + 7-step)
 └── README.md
 ```
 
 ---
 
-## Quickstart — URL + user story is all you need
+## Quickstart
 
 ### 1. One-time setup
-```powershell
+```bash
 npm install
 npx playwright install
 ```
 
-### 2. Two ways to drive the pipeline
-
-#### Option A — Web UI (visual demo)
-```powershell
+### 2. Run the UI
+```bash
 npm run ui
-```
-Opens http://localhost:3001 — a single-page app where you paste URL + user story, pick a feature, and click **Run Tests**. Playwright opens in headed mode so you watch the browser execute the tests live. Reports (Playwright HTML, Allure, AI markdown) appear as clickable links when the run finishes.
-
-> The UI runs *existing* tests in a visible browser. To generate tests for a brand-new story, click **Save Story**, copy the Express prompt shown, paste it into Claude Code, and reload the UI when generation finishes.
-
-#### Option B — Claude Code Express Prompt (full AI generation)
-Open this folder in Claude Code and paste the Express Prompt from [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md). Replace the placeholders with:
-
-- Application URL
-- One-line story title
-- Acceptance criteria (Given/When/Then)
-- *(optional)* test credentials
-
-Claude derives the story ID, feature slug, and every file path automatically — then runs the full pipeline. Either option produces:
-
-| File | What it is |
-|------|-----------|
-| `user-stories/<STORY-ID>-<feature-slug>.md` | Your story, formalized |
-| `specs/<feature-slug>-test-plan.md` | Test plan with positive/negative/edge scenarios |
-| `pages/<feature-slug>/<PageName>Page.ts` | Page objects (POM) |
-| `tests/<feature-slug>/*.spec.ts` | Playwright tests using the POMs |
-| `reports/<STORY-ID>-<feature-slug>-test-report.md` | AI execution summary report |
-
-### 4. Run tests locally
-```powershell
-npm test                       # all browsers (chromium, firefox, webkit)
-npm run test:chromium          # chromium only
-npm run test:ui                # interactive UI mode
-npm run test:report            # open the Playwright HTML report
+# → http://localhost:3001
 ```
 
-#### Allure report (rich UI, trends, history)
+- If `tests/<feature>/*.spec.ts` already exists, those features show up in the dropdown automatically.
+- Click ▶ **Run Tests** → Playwright opens a Chromium window and runs each test you can watch.
+- Reports appear as clickable links in the footer when the run finishes.
 
-Every test run also emits Allure results into `allure-results/` (raw JSON). To view the HTML report:
+### 3. Add a new feature
 
-```powershell
-npm run allure:serve           # one-shot: build + open a temporary report
-# or
-npm run allure:generate        # write static HTML to allure-report/
-npm run allure:open            # open the static report in a browser
-npm run allure:clean           # wipe results and report folders
-```
+**Option A — Claude Code (recommended):**
+1. Open this folder in Claude Code.
+2. Paste the Express Prompt from [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md), filled with your URL + title + ACs.
+3. Claude derives the story ID + slug, generates POMs + specs, writes them to disk.
+4. Reload the UI — the new feature appears in the dropdown.
 
-Allure surfaces per-test steps, attachments (screenshots/traces), suite breakdowns, and trend graphs across runs.
-
-> **Prerequisite (local only):** the Allure CLI runs on Java. If you don't have Java installed, the `allure:generate / open / serve` commands will fail with `JAVA_HOME is set to an invalid directory`. CI is unaffected because Ubuntu runners ship with Java.
->
-> Install once on Windows:
-> ```powershell
-> winget install --id Microsoft.OpenJDK.21
-> # then restart your shell so JAVA_HOME / PATH refresh
-> ```
-> Or download Temurin/OpenJDK from <https://adoptium.net>. Java 8 or newer is sufficient.
->
-> Even without Java locally, the `allure-results/` JSON files are still written on every test run — you can upload them to a hosted Allure server or view them in CI.
-
-### 5. Run in CI
-Push or open a PR — [.github/workflows/playwright.yml](.github/workflows/playwright.yml) runs the suite and uploads four artifacts:
-
-- `playwright-report` — the native Playwright HTML report
-- `allure-results` — raw Allure JSON results (re-generatable)
-- `allure-report` — pre-built Allure HTML report
-- `ai-reports` — the AI execution summary report and exploratory findings
-
-Wire real credentials via GitHub Secrets.
-
-### Alternative: step-by-step
-If you want full control or to learn the pipeline, the [user-stories/_TEMPLATE.md](user-stories/_TEMPLATE.md) + the 7 individual prompts in [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md) get you the same result with no auto-derivation.
+**Option B — Manual:**
+1. Click **Save Story** in the UI to write `user-stories/<id>-<slug>.md`, or copy `user-stories/_TEMPLATE.md`.
+2. Hand-author `pages/<slug>/<Name>Page.ts` extending `BasePage`.
+3. Hand-author `tests/<slug>/*.spec.ts`.
+4. Reload the UI, pick the feature, ▶ Run.
 
 ---
 
-## Page Object Model
+## Running tests
 
-All generated tests use POM — locators and interactions live in `pages/<feature>/<PageName>Page.ts`, classes extend [`pages/BasePage.ts`](pages/BasePage.ts). Full conventions and examples are in [pages/README.md](pages/README.md).
+```bash
+npm test                       # all browsers
+npm run test:chromium          # chromium only
+npm run test:ui                # interactive Playwright UI mode
+npm run test:headed            # show the browser
+npm run test:report            # open the Playwright HTML report
+```
 
-In short:
+### Allure report (rich UI, trends, history)
+
+Each run emits raw Allure JSON into `allure-results/`. The UI rebuilds the HTML report automatically if Java is installed.
+
+```bash
+npm run allure:serve           # one-shot: build + open
+npm run allure:generate        # write static HTML to allure-report/
+npm run allure:open            # open the static report
+npm run allure:clean           # wipe results + report
+```
+
+> **Prereq (local only):** Allure CLI needs Java. Install once: `winget install Microsoft.OpenJDK.21` (Windows), `brew install openjdk` (macOS), or `apt install default-jdk` (Linux). CI runners already ship Java.
+>
+> Even without Java, `allure-results/` JSON is still written every run — you can upload it to a hosted Allure server.
+
+---
+
+## CI
+
+`.github/workflows/playwright.yml` runs the suite on push/PR and uploads four artifacts:
+
+- `playwright-report` — native Playwright HTML
+- `allure-results` — raw Allure JSON
+- `allure-report` — pre-built Allure HTML
+- `reports` — markdown execution summaries
+
+Wire test credentials via GitHub Secrets if your specs read from `process.env`.
+
+---
+
+## Page Object Model — at a glance
 
 ```typescript
 // pages/auth/LoginPage.ts
+import { type Locator, type Page } from '@playwright/test';
+import { BasePage } from '../BasePage';
+
 export class LoginPage extends BasePage {
   readonly url = 'https://example.com/login';
-  readonly emailInput = this.page.getByRole('textbox', { name: 'Email' });
-  readonly submitButton = this.page.getByRole('button', { name: 'Sign In' });
+  readonly emailInput: Locator;
+  readonly submitButton: Locator;
+
+  constructor(page: Page) {
+    super(page);
+    this.emailInput = page.getByRole('textbox', { name: 'Email' });
+    this.submitButton = page.getByRole('button', { name: 'Sign In' });
+  }
 
   async login(email: string, password: string) {
     await this.emailInput.fill(email);
@@ -182,60 +175,17 @@ test('happy path', async ({ page }) => {
 });
 ```
 
-A UI change touches one file (the page object), not every test.
-
----
-
-## Example execution summary
-
-Every generated report starts with a strict summary block. After your first run you'll see something like:
-
-```
-Total tests:     4
-Passed:          4
-Failed:          0
-Failure reason:  None
-```
-
-For runs with failures, the same block names the cause in one line — no scrolling through stack traces to find the headline.
-
----
-
-## Mapping to project objectives
-
-| Objective (from project brief) | Where it lives |
-|-------------------------------|----------------|
-| User story → Playwright test generation | Planner + generator agents, driven via [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md) |
-| Execution of generated tests | `npm test`, `mcp__playwright-test__test_run`, CI workflow |
-| AI-generated summary report | `reports/<STORY-ID>-*-test-report.md` (strict format at top) |
-| Positive / negative / edge scenarios | Test plan suites cover all three classes |
-| Scenario list as a distinct output | "Test Scenarios" section in each test plan |
-| Playwright script output | `tests/<feature>/*.spec.ts` — ready to run |
-| Execution summary (Total/Passed/Failed/Reason) | Top of every report |
-| **Bonus** — test execution integration | Native via Playwright MCP `test_run` |
-| **Bonus** — self-healing logic | `playwright-test-healer` agent |
-| **Bonus** — GitHub Actions integration | `.github/workflows/playwright.yml` |
-| **Bonus** — code quality | Role-based selectors, env-var creds, `expect()` assertions, test hooks |
-
----
-
-## What it does NOT try to do
-
-In line with the project scope limits:
-
-- It does **not** auto-fix arbitrary application bugs — only failing test code (via healer agent)
-- It does **not** chain dozens of micro-agents — only three specialized ones (planner / generator / healer)
-- It does **not** ship a custom UI — Claude Code is the interface
-- It does **not** require API keys to a separate LLM provider — runs via the Claude Code harness
+A UI change touches one file (the page object), not every test. Full conventions in [pages/README.md](pages/README.md).
 
 ---
 
 ## Tech stack
 
-- [Playwright](https://playwright.dev) for browser automation and test runner
-- [Playwright MCP](https://github.com/microsoft/playwright-mcp) for live browser tools accessible to the agent
-- Claude Code (Anthropic) for orchestrating the agents and producing the report
-- GitHub Actions for CI
+- [Playwright](https://playwright.dev) — browser automation + test runner
+- [Playwright MCP](https://github.com/microsoft/playwright-mcp) — browser tools for the Claude Code agents
+- [Allure](https://docs.qameta.io/allure/) — rich HTML reports
+- [Express](https://expressjs.com) — UI server
+- Claude Code (subscription) — optional authoring path
 
 ---
 
