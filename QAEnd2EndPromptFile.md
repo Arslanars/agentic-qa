@@ -68,7 +68,7 @@ THE 10 ENGINEERING-HYGIENE RULES (non-negotiable):
      - Apply only the requested edits. Reuse existing POMs.
      - Re-run the suite, report what changed.
      - Skip the normal flow below in this case.
-   (The `agentic-qa generate` CLI and `/api/generate` UI endpoint enforce this in code via `detectExistingFeature` — but you must follow it in manual runs too.)
+   (The Claude Code agents follow this rule via their system prompts — but you must follow it in manual / hand-authored runs too.)
 8. STRICT AC FAILURE. ONE spec per acceptance criterion. Each spec:
      a) includes the AC's GIVEN/WHEN/THEN as a comment at the top,
      b) contains at least one `expect(...)` that DIRECTLY proves the AC,
