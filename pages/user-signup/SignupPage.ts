@@ -27,9 +27,13 @@ export class SignupPage extends BasePage {
   readonly step2Heading: Locator;
   readonly passwordInput: Locator;
   readonly confirmPasswordInput: Locator;
+  readonly showPasswordButton: Locator;
   readonly termsCheckbox: Locator;
   readonly createAccountButton: Locator;
   readonly backButton: Locator;
+
+  readonly signInLink: Locator;
+  readonly backLink: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -44,9 +48,14 @@ export class SignupPage extends BasePage {
     this.step2Heading = page.getByText('Set Password', { exact: true });
     this.passwordInput = page.getByRole('textbox', { name: 'Password', exact: true });
     this.confirmPasswordInput = page.getByRole('textbox', { name: 'Confirm Password' });
+    // Button toggles label between "Show password" and "Hide password".
+    this.showPasswordButton = page.getByRole('button', { name: /show password|hide password/i });
     this.termsCheckbox = page.getByRole('checkbox', { name: /I agree to the Terms/i });
     this.createAccountButton = page.getByRole('button', { name: 'Create Account' });
     this.backButton = page.getByRole('button', { name: 'Back' });
+
+    this.signInLink = page.getByRole('link', { name: 'Sign in' });
+    this.backLink = page.getByRole('link', { name: '← Back' });
   }
 
   async fillStep1(data: SignupStep1Data): Promise<void> {

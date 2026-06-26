@@ -32,11 +32,11 @@
         "Enter a deliberately wrong password (e.g., 'WrongPass!2025') into the Password field",
         "Click 'Sign In'"
       ],
-      "testData": "Email: developers@moontower.com\nPassword: WrongPass!2025",
-      "expectedResult": "User remains on /Login; an error message (e.g., 'Invalid credentials' / 'Incorrect email or password') is visible; no redirect occurs",
+      "testData": "Email: developers@moontower.com\nPassword: WrongPassword!2025",
+      "expectedResult": "Auth API returns non-2xx (401); URL stays on /login; no redirect to /select-location",
       "postCondition": "User is NOT authenticated; no session cookie set",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-negative.spec.ts",
+      "linkedTestTitle": "AC1-NEG-01 — wrong password: URL stays on /login and auth API returns non-2xx"
     },
     {
       "id": "Login-AC1-NEG-02",
@@ -45,15 +45,15 @@
       "preCondition": "Browser open at /Login",
       "testSteps": [
         "Navigate to /Login",
-        "Enter a fresh, unregistered email into the Email field",
+        "Enter a fresh, unregistered email (e.g., no-such-user-<timestamp>@example.com)",
         "Enter any password",
         "Click 'Sign In'"
       ],
-      "testData": "Email: not-a-real-user@example.com\nPassword: AnyPass!123",
-      "expectedResult": "User remains on /Login; an error message indicates invalid credentials (the system should NOT leak whether the email exists, to prevent account enumeration)",
+      "testData": "Email: no-such-user-<timestamp>@example.com\nPassword: AnyPass!1234",
+      "expectedResult": "Auth API returns non-2xx; URL stays on /login",
       "postCondition": "User is NOT authenticated",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-negative.spec.ts",
+      "linkedTestTitle": "AC1-NEG-02 — non-existent email: URL stays on /login and auth API returns non-2xx"
     },
     {
       "id": "Login-AC1-NEG-03",
@@ -63,14 +63,14 @@
       "testSteps": [
         "Navigate to /Login",
         "Leave the Email field blank",
-        "Enter a valid password",
+        "Enter a password",
         "Click 'Sign In'"
       ],
-      "testData": "Email: (empty)\nPassword: 12345678",
-      "expectedResult": "Sign In button is either disabled OR a validation message appears under the Email field ('Email is required'); no network request is made",
-      "postCondition": "User remains on /Login; no authentication attempt",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "testData": "Email: (empty)\nPassword: Whatever!2025",
+      "expectedResult": "Form does not navigate to /select-location; user remains on /Login",
+      "postCondition": "User remains on /Login; no authentication",
+      "linkedSpec": "login-user/login-negative.spec.ts",
+      "linkedTestTitle": "AC1-NEG-03 — empty email: no redirect to /select-location"
     },
     {
       "id": "Login-AC1-NEG-04",
@@ -84,10 +84,10 @@
         "Click 'Sign In'"
       ],
       "testData": "Email: developers@moontower.com\nPassword: (empty)",
-      "expectedResult": "Sign In button is either disabled OR a validation message appears under the Password field ('Password is required'); no network request is made",
-      "postCondition": "User remains on /Login; no authentication attempt",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "expectedResult": "Form does not navigate to /select-location; user remains on /Login",
+      "postCondition": "User remains on /Login",
+      "linkedSpec": "login-user/login-negative.spec.ts",
+      "linkedTestTitle": "AC1-NEG-04 — empty password: no redirect to /select-location"
     },
     {
       "id": "Login-AC1-NEG-05",
@@ -100,14 +100,14 @@
         "Click 'Sign In'"
       ],
       "testData": "Email: (empty)\nPassword: (empty)",
-      "expectedResult": "Sign In button is disabled OR validation messages appear under both fields; no network request is made",
+      "expectedResult": "Form does not navigate to /select-location; user remains on /Login",
       "postCondition": "User remains on /Login",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-negative.spec.ts",
+      "linkedTestTitle": "AC1-NEG-05 — both fields empty: no redirect to /select-location"
     },
     {
       "id": "Login-AC1-NEG-06",
-      "scenario": "AC1: Visit site and try to login — NEGATIVE (invalid email format)",
+      "scenario": "AC1: Visit site and try to login — NEGATIVE (invalid email format, no @)",
       "testCase": "Submit form with an email that doesn't contain '@'",
       "preCondition": "Browser open at /Login",
       "testSteps": [
@@ -116,15 +116,15 @@
         "Enter any password",
         "Click 'Sign In'"
       ],
-      "testData": "Email: developersmoontower.com\nPassword: 12345678",
-      "expectedResult": "Validation message appears: 'Please enter a valid email address' (HTML5 or app-level validation); form is not submitted",
+      "testData": "Email: developersmoontower.com\nPassword: Whatever!2025",
+      "expectedResult": "Email field reports HTML5 typeMismatch validity; form does not navigate to /select-location",
       "postCondition": "User remains on /Login",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-negative.spec.ts",
+      "linkedTestTitle": "AC1-NEG-06 — invalid email format (no @): submission rejected, no redirect"
     },
     {
       "id": "Login-AC1-NEG-07",
-      "scenario": "AC1: Visit site and try to login — NEGATIVE (invalid email format)",
+      "scenario": "AC1: Visit site and try to login — NEGATIVE (invalid email format, missing domain)",
       "testCase": "Submit form with an email missing the domain part",
       "preCondition": "Browser open at /Login",
       "testSteps": [
@@ -133,48 +133,47 @@
         "Enter any password",
         "Click 'Sign In'"
       ],
-      "testData": "Email: developers@\nPassword: 12345678",
-      "expectedResult": "Validation message appears; form is not submitted",
+      "testData": "Email: developers@\nPassword: Whatever!2025",
+      "expectedResult": "Email field reports HTML5 typeMismatch validity; form does not navigate to /select-location",
       "postCondition": "User remains on /Login",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-negative.spec.ts",
+      "linkedTestTitle": "AC1-NEG-07 — invalid email format (missing domain): submission rejected, no redirect"
     },
     {
       "id": "Login-UI-01",
       "scenario": "Login form UI behavior",
-      "testCase": "Password field masks the input by default",
+      "testCase": "Password field masks the input by default (type='password')",
       "preCondition": "Browser open at /Login",
       "testSteps": [
         "Navigate to /Login",
-        "Type any text into the Password field",
-        "Inspect the input — characters should render as dots or asterisks"
+        "Inspect the Password input element"
       ],
-      "testData": "Password: TestPass123",
-      "expectedResult": "Password field has type='password'; the typed text is rendered as masked characters (•••••••••••), not as plaintext",
+      "testData": "n/a",
+      "expectedResult": "Password input has attribute type='password'; characters are rendered as masked dots",
       "postCondition": "n/a",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-ui.spec.ts",
+      "linkedTestTitle": "UI-01 — password field has type=\"password\" by default (input is masked)"
     },
     {
       "id": "Login-UI-02",
       "scenario": "Login form UI behavior",
-      "testCase": "'Show password' button reveals the password text",
-      "preCondition": "Browser open at /Login; password field has some text in it",
+      "testCase": "'Show password' button toggles input type between password and text",
+      "preCondition": "Browser open at /Login; password field has text in it",
       "testSteps": [
-        "Navigate to /Login",
         "Type a password into the Password field",
-        "Click the 'Show password' button (eye icon)"
+        "Click the 'Show password' button (eye icon)",
+        "Click again to re-mask"
       ],
-      "testData": "Password: TestPass123",
-      "expectedResult": "Password field's input type switches to 'text'; the typed characters are now visible in plaintext",
-      "postCondition": "n/a — the visibility toggle should be reversible",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "testData": "Password: Secret!2025",
+      "expectedResult": "Click 1: input type switches to 'text'; click 2: type switches back to 'password'",
+      "postCondition": "n/a",
+      "linkedSpec": "login-user/login-ui.spec.ts",
+      "linkedTestTitle": "UI-02 — \"Show password\" button toggles input type between password and text"
     },
     {
       "id": "Login-UI-03",
       "scenario": "Login form UI behavior",
-      "testCase": "Pressing Enter inside the Password field submits the form",
+      "testCase": "Pressing Enter inside the Password field submits the form (equivalent to clicking Sign In)",
       "preCondition": "Browser open at /Login with valid credentials filled in",
       "testSteps": [
         "Fill Email with valid value",
@@ -182,10 +181,10 @@
         "Press Enter key while focus is on the Password field"
       ],
       "testData": "Email: developers@moontower.com\nPassword: 12345678",
-      "expectedResult": "Form is submitted (equivalent to clicking Sign In); on success, user is redirected to /select-location",
+      "expectedResult": "Form submits; on success, user is redirected to /select-location",
       "postCondition": "User is signed in",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-ui.spec.ts",
+      "linkedTestTitle": "UI-03 — pressing Enter inside the password field submits the form"
     },
     {
       "id": "Login-UI-04",
@@ -213,10 +212,10 @@
         "Click the 'Forgot password?' link"
       ],
       "testData": "n/a",
-      "expectedResult": "Browser navigates to https://moontower.aiimone.com/forgot-password",
-      "postCondition": "User is on the forgot-password screen",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "expectedResult": "Link's href is '/forgot-password'; browser navigates to https://moontower.aiimone.com/forgot-password",
+      "postCondition": "User on the forgot-password screen",
+      "linkedSpec": "login-user/login-navigation.spec.ts",
+      "linkedTestTitle": "NAV-01 — \"Forgot password?\" link navigates to /forgot-password"
     },
     {
       "id": "Login-NAV-02",
@@ -228,10 +227,10 @@
         "Click the 'Sign up' link"
       ],
       "testData": "n/a",
-      "expectedResult": "Browser navigates to https://moontower.aiimone.com/signup",
-      "postCondition": "User is on the signup screen",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "expectedResult": "Link's href is '/signup'; browser navigates to https://moontower.aiimone.com/signup",
+      "postCondition": "User on the signup screen",
+      "linkedSpec": "login-user/login-navigation.spec.ts",
+      "linkedTestTitle": "NAV-02 — \"Sign up\" link navigates to /signup"
     },
     {
       "id": "Login-NAV-03",
@@ -243,10 +242,10 @@
         "Click the '← Back' link"
       ],
       "testData": "n/a",
-      "expectedResult": "Browser navigates to https://moontower.aiimone.com/ (homepage)",
-      "postCondition": "User is on the homepage",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "expectedResult": "Link's href is '/'; browser navigates to the homepage",
+      "postCondition": "User on the homepage",
+      "linkedSpec": "login-user/login-navigation.spec.ts",
+      "linkedTestTitle": "NAV-03 — \"← Back\" link navigates to the homepage"
     },
     {
       "id": "Login-EDGE-01",
@@ -275,7 +274,7 @@
         "Click Sign In"
       ],
       "testData": "Email: DEVELOPERS@MOONTOWER.COM\nPassword: 12345678",
-      "expectedResult": "App should authenticate successfully (email addresses are case-insensitive per RFC 5321 for the local part by convention, and case-insensitive for the domain part)",
+      "expectedResult": "App should authenticate successfully (email addresses are case-insensitive)",
       "postCondition": "User is signed in",
       "linkedSpec": null,
       "linkedTestTitle": null
@@ -286,12 +285,12 @@
       "testCase": "Login with very long email (256+ characters)",
       "preCondition": "Browser open at /Login",
       "testSteps": [
-        "Generate an email of 260 characters total (e.g., 250-char local part + '@x.co')",
+        "Generate an email of 260 characters total",
         "Paste into Email field",
         "Enter any password and click Sign In"
       ],
       "testData": "Email: <250 random chars>@x.co\nPassword: 12345678",
-      "expectedResult": "Validation rejects the email as invalid (RFC 5321 limit is 254 chars total); no buffer overflow / 500 error",
+      "expectedResult": "Validation rejects the email as invalid (RFC 5321 limit is 254 chars total); no 500 error",
       "postCondition": "User remains on /Login",
       "linkedSpec": null,
       "linkedTestTitle": null
@@ -309,8 +308,8 @@
       "testData": "n/a",
       "expectedResult": "The input has the attribute type='password'; the typed value is masked in the visible DOM",
       "postCondition": "n/a",
-      "linkedSpec": null,
-      "linkedTestTitle": null
+      "linkedSpec": "login-user/login-ui.spec.ts",
+      "linkedTestTitle": "UI-01 — password field has type=\"password\" by default (input is masked)"
     },
     {
       "id": "Login-SEC-02",
@@ -338,7 +337,7 @@
         "Click Sign In"
       ],
       "testData": "Email: admin' OR '1'='1\nPassword: anything",
-      "expectedResult": "The app treats the input as a normal string; either the email-format validator rejects it OR the backend rejects with 'Invalid credentials'. No DB error surfaces; no successful login.",
+      "expectedResult": "The app treats the input as a string; either email validator rejects it OR auth API rejects with 'Invalid credentials'. No DB error surfaces; no successful login.",
       "postCondition": "User remains on /Login; no DB compromise",
       "linkedSpec": null,
       "linkedTestTitle": null
@@ -352,9 +351,9 @@
         "Submit wrong-password attempt for the same email N times in quick succession (e.g., 5–10 times)",
         "Observe whether subsequent attempts are throttled or locked out"
       ],
-      "testData": "Email: developers@moontower.com\nPassword: wrong-password-attempts",
-      "expectedResult": "After a threshold of failed attempts, the system either rate-limits the next attempt (HTTP 429 / 'Too many attempts, try again later') or locks the account temporarily. Indefinite unlimited attempts are a security gap.",
-      "postCondition": "Account is throttled or locked; legitimate user notified via email (ideally)",
+      "testData": "Email: developers@moontower.com\nPassword: <wrong password attempts>",
+      "expectedResult": "After a threshold of failed attempts, the system rate-limits (HTTP 429) or locks the account temporarily. Indefinite unlimited attempts are a security gap.",
+      "postCondition": "Account is throttled or locked",
       "linkedSpec": null,
       "linkedTestTitle": null
     }
