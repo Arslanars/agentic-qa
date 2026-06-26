@@ -289,6 +289,15 @@
     .lightbox.show { display: flex; }
     .lightbox img { max-width: 95vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.7); }
     .lightbox .caption { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; color: var(--text-dim); font-size: 13px; }
+    .lightbox .lightbox-close {
+      position: absolute; top: 18px; right: 22px;
+      background: rgba(255,255,255,0.08); border: 1px solid var(--border-strong);
+      color: var(--text); font-size: 22px; line-height: 1;
+      width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+      display: grid; place-items: center;
+    }
+    .lightbox .lightbox-close:hover { background: rgba(255,255,255,0.16); }
+    .lightbox .lightbox-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* ---------- Reports footer ---------- */
     .reports {
@@ -403,25 +412,25 @@
           <div class="section">
             <div class="section-label">Story input</div>
             <div class="field">
-              <label>Application URL</label>
-              <input id="url" type="url" placeholder="https://example.com/login" />
+              <label for="url">Application URL</label>
+              <input id="url" type="url" placeholder="https://example.com/login" aria-required="true" />
             </div>
             <div class="row r-13">
               <div class="field">
-                <label>Story ID</label>
+                <label for="storyId">Story ID</label>
                 <input id="storyId" type="text" placeholder="LOGIN-001" />
               </div>
               <div class="field">
-                <label>Story Title</label>
-                <input id="title" type="text" placeholder="User authentication" />
+                <label for="title">Story Title</label>
+                <input id="title" type="text" placeholder="User authentication" aria-required="true" />
               </div>
             </div>
             <div class="field">
-              <label>Acceptance Criteria</label>
-              <textarea id="ac" placeholder="AC1: GIVEN ... WHEN ... THEN ...&#10;AC2: ...&#10;AC3: ..."></textarea>
+              <label for="ac">Acceptance Criteria</label>
+              <textarea id="ac" placeholder="AC1: GIVEN ... WHEN ... THEN ...&#10;AC2: ...&#10;AC3: ..." aria-required="true"></textarea>
             </div>
             <div class="field">
-              <label>Test Credentials (optional)</label>
+              <label for="creds">Test Credentials (optional)</label>
               <textarea id="creds" style="min-height: 60px;" placeholder="email: user@x.com&#10;password: secret"></textarea>
             </div>
           </div>
@@ -430,11 +439,11 @@
             <div class="section-label">Run configuration</div>
             <div class="row r-31">
               <div class="field">
-                <label>Feature suite</label>
+                <label for="feature">Feature suite</label>
                 <select id="feature"></select>
               </div>
               <div class="field">
-                <label>Browser</label>
+                <label for="project">Browser</label>
                 <select id="project">
                   <option value="chromium">chromium</option>
                   <option value="firefox">firefox</option>
@@ -533,7 +542,8 @@
     </main>
   </div>
 
-  <div id="lightbox" class="lightbox">
+  <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-labelledby="lightbox-cap">
+    <button id="lightbox-close" type="button" class="lightbox-close" aria-label="Close screenshot preview">×</button>
     <img id="lightbox-img" alt="screenshot" />
     <div id="lightbox-cap" class="caption"></div>
   </div>
@@ -551,7 +561,6 @@
     const badge = $('status-badge');
     const statusText = $('status-text');
     const reportsEl = $('reports');
-    const reportsEmpty = $('reports-empty');
     const statPills = $('stat-pills');
     const pillPass = $('pill-pass');
     const pillFail = $('pill-fail');
@@ -652,6 +661,24 @@
         .replace(/-/g, ' ');
     }
 
+    let lastFocusBeforeLightbox = null;
+    function openLightbox(shot) {
+      lastFocusBeforeLightbox = document.activeElement;
+      $('lightbox-img').src = shot.url;
+      $('lightbox-img').alt = `${shot.test} / ${shot.file}`;
+      $('lightbox-cap').textContent = `${shot.test} / ${shot.file}`;
+      const lb = $('lightbox');
+      lb.classList.add('show');
+      // Move focus into the lightbox for keyboard users
+      $('lightbox-close')?.focus();
+    }
+    function closeLightbox() {
+      $('lightbox').classList.remove('show');
+      if (lastFocusBeforeLightbox && typeof lastFocusBeforeLightbox.focus === 'function') {
+        lastFocusBeforeLightbox.focus();
+      }
+    }
+
     async function refreshGallery() {
       const grid = $('gallery-grid');
       const gallery = $('gallery');
@@ -667,17 +694,22 @@
         count.textContent = `${shots.length} captured`;
         grid.innerHTML = '';
         for (const shot of shots) {
+          // Server-supplied strings (test dir names, file names) could contain
+          // characters that break out of attribute context — build via DOM
+          // APIs so values are properly escaped.
           const fig = document.createElement('div');
           fig.className = 'shot';
-          fig.innerHTML = `
-            <img loading="lazy" src="${shot.url}" alt="${shot.file}" />
-            <div class="caption" title="${shot.test} / ${shot.file}">${prettifyTestName(shot.test)}</div>
-          `;
-          fig.addEventListener('click', () => {
-            $('lightbox-img').src = shot.url;
-            $('lightbox-cap').textContent = `${shot.test} / ${shot.file}`;
-            $('lightbox').classList.add('show');
-          });
+          const img = document.createElement('img');
+          img.loading = 'lazy';
+          if (typeof shot.url === 'string' && shot.url.startsWith('/test-results/')) img.src = shot.url;
+          img.alt = shot.file || 'screenshot';
+          const cap = document.createElement('div');
+          cap.className = 'caption';
+          cap.title = `${shot.test} / ${shot.file}`;
+          cap.textContent = prettifyTestName(shot.test);
+          fig.appendChild(img);
+          fig.appendChild(cap);
+          fig.addEventListener('click', () => openLightbox(shot));
           grid.appendChild(fig);
         }
       } catch {
@@ -685,10 +717,14 @@
       }
     }
 
-    $('lightbox').addEventListener('click', () => $('lightbox').classList.remove('show'));
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') $('lightbox').classList.remove('show');
+    $('lightbox').addEventListener('click', (e) => {
+      // Only close on backdrop click, not on the image / caption / close button
+      if (e.target.id === 'lightbox') closeLightbox();
     });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && $('lightbox').classList.contains('show')) closeLightbox();
+    });
+    $('lightbox-close').addEventListener('click', closeLightbox);
 
     async function refreshReports() {
       try {
@@ -708,12 +744,12 @@
         }
         for (const f of status.aiReports || []) {
           reportsEl.insertAdjacentHTML('beforeend',
-            `<a class="report-link" href="/reports-view/${encodeURIComponent(f)}" target="_blank">${reportIcon()}${f}</a>`);
+            `<a class="report-link" href="/reports-view/${encodeURIComponent(f)}" target="_blank">${reportIcon()}${escapeHtml(f)}</a>`);
           any = true;
         }
         for (const f of status.excelReports || []) {
           reportsEl.insertAdjacentHTML('beforeend',
-            `<a class="report-link" href="/reports/${encodeURIComponent(f)}" download>${excelIcon()}${f}</a>`);
+            `<a class="report-link" href="/reports/${encodeURIComponent(f)}" download>${excelIcon()}${escapeHtml(f)}</a>`);
           any = true;
         }
         if (!any) reportsEl.insertAdjacentHTML('beforeend', '<span class="empty">none yet</span>');
@@ -794,24 +830,6 @@ INSTRUCTIONS FOR CLAUDE:
       return { passed, failed, time };
     }
 
-    async function streamNDJSON(resp, onMsg) {
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (!line) continue;
-          try { onMsg(JSON.parse(line)); }
-          catch { appendLog(line + '\n'); }
-        }
-      }
-    }
-
     $('run').addEventListener('click', async () => {
       const feature = $('feature').value;
       const project = $('project').value;
@@ -856,9 +874,16 @@ INSTRUCTIONS FOR CLAUDE:
           }
         }
         const summary = parseSummary(allOutput);
-        if (summary.passed) { pillPass.textContent = `${summary.passed} passed`; statPills.hidden = false; }
-        if (summary.failed && summary.failed !== '0') { pillFail.textContent = `${summary.failed} failed`; pillFail.hidden = false; }
+        const hasPassed = !!summary.passed;
+        const hasFailed = !!(summary.failed && summary.failed !== '0');
+        if (hasPassed) { pillPass.textContent = `${summary.passed} passed`; pillPass.hidden = false; }
+        else { pillPass.hidden = true; }
+        if (hasFailed) { pillFail.textContent = `${summary.failed} failed`; pillFail.hidden = false; }
+        else { pillFail.hidden = true; }
         if (summary.time) { pillTime.textContent = summary.time; }
+        // Reveal the stat-pills container whenever ANY pill has content —
+        // not just on success — so an all-fail run still shows the failure count.
+        if (hasPassed || hasFailed || summary.time) { statPills.hidden = false; }
         if (exitCode === 0) { setStatus('pass', 'All tests passed.'); showToast('All tests passed'); }
         else if (exitCode != null) { setStatus('fail', `Run finished with exit code ${exitCode}.`); showToast(`Exit code ${exitCode}`, 'error'); }
         else setStatus('idle', 'Run ended.');

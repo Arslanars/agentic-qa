@@ -17,6 +17,15 @@ function uniqueEmail(tag: string): string {
 }
 
 test.describe('SignUp-001 / AC1: fill the signup form and register a new user', () => {
+  // This spec submits the full 2-step signup form and creates a real tenant on
+  // the production host every run. Gate behind RUN_DESTRUCTIVE_SIGNUP=1 so a
+  // default CI run does not leak production data; opt in on a dedicated
+  // staging job (or set the env var locally when you want to exercise it).
+  test.skip(
+    !process.env.RUN_DESTRUCTIVE_SIGNUP,
+    'Destructive — creates a real tenant on the live host. Set RUN_DESTRUCTIVE_SIGNUP=1 to run.'
+  );
+
   test('AC1 — fills both steps and the app accepts the registration (URL leaves /signup)', async ({ page }) => {
     const signup = new SignupPage(page);
     await signup.goto();

@@ -52,7 +52,9 @@ test.describe('Login / AC1: NEGATIVE — rejected credential cases', () => {
     await login.passwordInput.fill('Whatever!2025');
     await login.signInButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-submit) rather than the moment between click and redirect.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(page).not.toHaveURL(/\/select-location/, { timeout: 5_000 });
     await expect(login.signInButton).toBeVisible();
   });
@@ -65,7 +67,9 @@ test.describe('Login / AC1: NEGATIVE — rejected credential cases', () => {
     await login.emailInput.fill(VALID_EMAIL);
     await login.signInButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-submit) rather than the moment between click and redirect.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(page).not.toHaveURL(/\/select-location/, { timeout: 5_000 });
     await expect(login.signInButton).toBeVisible();
   });
@@ -77,7 +81,9 @@ test.describe('Login / AC1: NEGATIVE — rejected credential cases', () => {
 
     await login.signInButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-submit) rather than the moment between click and redirect.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(page).not.toHaveURL(/\/select-location/, { timeout: 5_000 });
     await expect(login.signInButton).toBeVisible();
   });
@@ -91,7 +97,9 @@ test.describe('Login / AC1: NEGATIVE — rejected credential cases', () => {
     await login.passwordInput.fill('Whatever!2025');
     await login.signInButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-submit) rather than the moment between click and redirect.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(page).not.toHaveURL(/\/select-location/, { timeout: 5_000 });
     // The browser's HTML5 validity check on input[type=email] should reject this.
     const isInvalid = await login.emailInput.evaluate(
@@ -109,7 +117,9 @@ test.describe('Login / AC1: NEGATIVE — rejected credential cases', () => {
     await login.passwordInput.fill('Whatever!2025');
     await login.signInButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-submit) rather than the moment between click and redirect.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(page).not.toHaveURL(/\/select-location/, { timeout: 5_000 });
     const isInvalid = await login.emailInput.evaluate(
       (el) => (el as HTMLInputElement).validity?.typeMismatch === true,

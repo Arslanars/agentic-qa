@@ -8,7 +8,7 @@
 // the Claude Code path (see QAEnd2EndPromptFile.md), or by hand-authoring.
 
 const express = require('express');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { renderReport } = require('./report-renderer');
@@ -17,6 +17,10 @@ const { writeTestCasesExcel } = require('./excel-writer');
 
 const app = express();
 const PORT = process.env.UI_PORT ? Number(process.env.UI_PORT) : 3001;
+// Bind to loopback by default; opt into LAN with UI_HOST=0.0.0.0 (or a
+// specific IP) — combined with the spawn surface that's not safe to expose
+// to arbitrary network peers.
+const HOST = process.env.UI_HOST || '127.0.0.1';
 
 // ROOT = consumer's project root. When invoked via the CLI (`agentic-qa ui`),
 // AGENTIC_QA_CWD is set to the consumer's cwd. When run standalone in this
@@ -24,6 +28,36 @@ const PORT = process.env.UI_PORT ? Number(process.env.UI_PORT) : 3001;
 const ROOT = process.env.AGENTIC_QA_CWD
   ? path.resolve(process.env.AGENTIC_QA_CWD)
   : path.resolve(__dirname, '..');
+
+// Resolve consumer-overridable paths. AGENTIC_QA_CONFIG_JSON is set by the
+// CLI's `agentic-qa ui` after running loadConfig(); when running standalone
+// (`npm run ui` in the framework's own repo) we fall back to repo defaults.
+let CFG_PATHS = {
+  tests: path.join(ROOT, 'tests'),
+  stories: path.join(ROOT, 'user-stories'),
+  reports: path.join(ROOT, 'reports'),
+  testResults: path.join(ROOT, 'test-results'),
+  allureResults: path.join(ROOT, 'allure-results'),
+  allureReport: path.join(ROOT, 'allure-report'),
+  playwrightReport: path.join(ROOT, 'playwright-report'),
+};
+if (process.env.AGENTIC_QA_CONFIG_JSON) {
+  try {
+    const cfg = JSON.parse(process.env.AGENTIC_QA_CONFIG_JSON);
+    if (cfg && cfg.paths) Object.assign(CFG_PATHS, cfg.paths);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[ui] could not parse AGENTIC_QA_CONFIG_JSON — using defaults:', err.message);
+  }
+}
+
+// Validation: feature folder names and Playwright project names must match a
+// safe subset to prevent argv/shell injection on Windows (we spawn with
+// shell:true so cmd.exe parses the argv).
+const SAFE_NAME_RE = /^[A-Za-z0-9._-]+$/;
+function isSafeName(s) {
+  return typeof s === 'string' && s.length > 0 && s.length <= 64 && SAFE_NAME_RE.test(s);
+}
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname));
@@ -39,20 +73,26 @@ function safeSlug(input) {
 
 // List feature folders under tests/
 app.get('/api/features', (_req, res) => {
-  const testsDir = path.join(ROOT, 'tests');
-  if (!fs.existsSync(testsDir)) return res.json([]);
-  const features = fs
-    .readdirSync(testsDir)
-    .filter((name) => {
-      const p = path.join(testsDir, name);
-      return fs.statSync(p).isDirectory();
-    })
-    .map((name) => {
-      const dir = path.join(testsDir, name);
-      const specs = fs.readdirSync(dir).filter((f) => f.endsWith('.spec.ts')).length;
-      return { name, specs };
-    });
-  res.json(features);
+  try {
+    if (!fs.existsSync(CFG_PATHS.tests)) return res.json([]);
+    const features = fs
+      .readdirSync(CFG_PATHS.tests)
+      .filter((name) => {
+        const stat = fs.statSync(path.join(CFG_PATHS.tests, name), { throwIfNoEntry: false });
+        return stat && stat.isDirectory();
+      })
+      .map((name) => {
+        const dir = path.join(CFG_PATHS.tests, name);
+        let specs = 0;
+        try {
+          specs = fs.readdirSync(dir).filter((f) => f.endsWith('.spec.ts')).length;
+        } catch (_) { /* dir vanished between readdir + readdir; treat as empty */ }
+        return { name, specs };
+      });
+    res.json(features);
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
 });
 
 // Save a user-story file from form input. Manual authoring path — no AI.
@@ -63,11 +103,22 @@ app.post('/api/save-story', (req, res) => {
       return res.status(400).json({ error: 'url, title, and ac are required' });
     }
     const slug = safeSlug(title);
-    const id = (storyId && storyId.trim()) || `UI-${Date.now().toString(36).toUpperCase()}`;
+    // Validate storyId aggressively — it lands in a path literal, so any
+    // separator characters open a path-traversal write.
+    const rawId = (storyId || '').trim();
+    if (rawId && !/^[A-Za-z0-9_-]{1,64}$/.test(rawId)) {
+      return res.status(400).json({ error: 'storyId must match /^[A-Za-z0-9_-]{1,64}$/' });
+    }
+    const id = rawId || `UI-${Date.now().toString(36).toUpperCase()}`;
     const fileName = `${id}-${slug}.md`;
-    const dir = path.join(ROOT, 'user-stories');
+    const dir = CFG_PATHS.stories;
     fs.mkdirSync(dir, { recursive: true });
     const filePath = path.join(dir, fileName);
+    // Defense-in-depth — even after regex validation, refuse to write
+    // outside the stories dir if path.resolve escapes it.
+    if (!path.resolve(filePath).startsWith(path.resolve(dir) + path.sep)) {
+      return res.status(400).json({ error: 'resolved path escapes user-stories directory' });
+    }
 
     const content =
       `# User Story: ${id} - ${title}\n\n` +
@@ -83,16 +134,23 @@ app.post('/api/save-story', (req, res) => {
 });
 
 // Locate a JDK install on Windows so allure (a Java tool) can run from this
-// process even if JAVA_HOME isn't set in the parent shell yet.
+// process even if JAVA_HOME isn't set in the parent shell yet. When multiple
+// jdk-N.x.x directories exist, pick the highest version.
 function envWithJava() {
   const env = { ...process.env };
   if (env.JAVA_HOME && fs.existsSync(path.join(env.JAVA_HOME, 'bin'))) return env;
   if (process.platform === 'win32') {
     const root = 'C:\\Program Files\\Microsoft';
     if (fs.existsSync(root)) {
-      const jdk = fs.readdirSync(root).find((name) => name.startsWith('jdk-'));
-      if (jdk) {
-        const home = path.join(root, jdk);
+      const jdks = fs.readdirSync(root)
+        .filter((name) => /^jdk-\d/.test(name))
+        .map((name) => {
+          const v = name.replace(/^jdk-/, '').split('.').map((n) => parseInt(n, 10) || 0);
+          return { name, key: v[0] * 1e6 + v[1] * 1e3 + (v[2] || 0) };
+        })
+        .sort((a, b) => b.key - a.key);
+      if (jdks.length > 0) {
+        const home = path.join(root, jdks[0].name);
         env.JAVA_HOME = home;
         env.PATH = path.join(home, 'bin') + path.delimiter + (env.PATH || '');
       }
@@ -101,11 +159,37 @@ function envWithJava() {
   return env;
 }
 
+// Kill a process tree. On Windows, SIGTERM only signals the cmd.exe wrapper
+// (because we spawn with shell:true), leaving the node/playwright/browser
+// tree alive. taskkill /T walks the tree.
+function killProcessTree(proc) {
+  if (!proc || proc.killed) return;
+  if (process.platform === 'win32' && proc.pid) {
+    exec(`taskkill /pid ${proc.pid} /T /F`, () => {});
+  } else {
+    try { proc.kill('SIGTERM'); } catch (_) { /* already dead */ }
+  }
+}
+
+// Safe write helper bound to a response. Suppresses ERR_STREAM_WRITE_AFTER_END
+// when the client disconnects mid-stream; returns false if the stream is gone.
+function makeSafeWrite(res) {
+  return (obj) => {
+    if (res.writableEnded || res.destroyed) return false;
+    try {
+      res.write(JSON.stringify(obj) + '\n');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+}
+
 // Spawn Playwright, stream its output via the NDJSON `write` callback,
 // resolve with the process exit code. Caller can stash the live process
 // (via onProcCreated) so it can be killed if the response disconnects.
 function runPlaywrightProcess(args, write, onProcCreated) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
       cwd: ROOT,
       env: process.env,
@@ -114,24 +198,28 @@ function runPlaywrightProcess(args, write, onProcCreated) {
     onProcCreated?.(proc);
     proc.stdout.on('data', (data) => write({ type: 'log', stream: 'stdout', text: data.toString() }));
     proc.stderr.on('data', (data) => write({ type: 'log', stream: 'stderr', text: data.toString() }));
-    proc.on('error', reject);
-    proc.on('close', (code) => resolve(code));
+    proc.on('error', (err) => {
+      write({ type: 'log', stream: 'stderr', text: `[ui] spawn failed: ${err.message}\n` });
+      resolve(1);
+    });
+    proc.on('close', (code) => resolve(code == null ? 1 : code));
   });
 }
 
 // Rebuild Allure HTML so /allure-report/index.html reflects the latest run.
 // Best-effort: resolves regardless of success (logs failure but doesn't throw).
-function rebuildAllure(write) {
+function rebuildAllure(write, onProcCreated) {
   return new Promise((resolve) => {
-    const allureResults = path.join(ROOT, 'allure-results');
-    if (!fs.existsSync(allureResults) || fs.readdirSync(allureResults).length === 0) {
+    if (!fs.existsSync(CFG_PATHS.allureResults) || fs.readdirSync(CFG_PATHS.allureResults).length === 0) {
       write({ type: 'log', stream: 'stdout', text: '[ui] no allure-results to render; skipping report rebuild\n' });
       return resolve();
     }
     write({ type: 'log', stream: 'stdout', text: '[ui] rebuilding Allure HTML report…\n' });
     const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      ['allure', 'generate', 'allure-results', '--clean', '-o', 'allure-report'],
+      ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
+        '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
       { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
+    onProcCreated?.(proc);
     proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
     proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
     proc.on('close', (code) => {
@@ -148,9 +236,8 @@ function rebuildAllure(write) {
 
 function clearAllureResults(write) {
   try {
-    const allureResults = path.join(ROOT, 'allure-results');
-    if (fs.existsSync(allureResults)) {
-      fs.rmSync(allureResults, { recursive: true, force: true });
+    if (fs.existsSync(CFG_PATHS.allureResults)) {
+      fs.rmSync(CFG_PATHS.allureResults, { recursive: true, force: true });
       write({ type: 'log', stream: 'stdout', text: '[ui] cleared allure-results/ for fresh run\n' });
     }
   } catch (_) { /* best-effort */ }
@@ -160,7 +247,26 @@ function clearAllureResults(write) {
 // Flow: clear allure → run → rebuild allure → done.
 app.post('/api/run', async (req, res) => {
   const { feature, project, headed } = req.body || {};
-  const args = ['playwright', 'test', feature ? `tests/${feature}/` : 'tests/'];
+
+  // Validate input. Empty/undefined feature = run all features (no path arg);
+  // any provided feature/project must match the safe-name regex AND, for
+  // feature, refer to an existing directory under testsDir.
+  if (feature !== undefined && feature !== null && feature !== '') {
+    if (!isSafeName(feature)) {
+      return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE} (got "${feature}")` });
+    }
+    if (!fs.existsSync(path.join(CFG_PATHS.tests, feature))) {
+      return res.status(404).json({ error: `feature "${feature}" does not exist under tests/` });
+    }
+  }
+  if (project !== undefined && project !== null && project !== '') {
+    if (!isSafeName(project)) {
+      return res.status(400).json({ error: `project must match ${SAFE_NAME_RE} (got "${project}")` });
+    }
+  }
+
+  const testsRel = path.relative(ROOT, CFG_PATHS.tests).split(path.sep).join('/') || 'tests';
+  const args = ['playwright', 'test', feature ? `${testsRel}/${feature}/` : `${testsRel}/`];
   if (project) args.push(`--project=${project}`);
   if (headed !== false) {
     args.push('--headed');
@@ -173,25 +279,29 @@ app.post('/api/run', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
+  // Eat EPIPE / connection errors so a client disconnect doesn't crash Node.
+  res.on('error', () => {});
 
-  const write = (obj) => res.write(JSON.stringify(obj) + '\n');
+  const write = makeSafeWrite(res);
 
   let currentProc = null;
   let finished = false;
   res.on('close', () => {
-    if (!finished && currentProc && !currentProc.killed) currentProc.kill('SIGTERM');
+    if (!finished && currentProc && !currentProc.killed) killProcessTree(currentProc);
   });
 
   try {
     clearAllureResults(write);
     write({ type: 'start', cmd: 'npx ' + args.join(' '), cwd: ROOT });
     const code = await runPlaywrightProcess(args, write, (p) => { currentProc = p; });
+    currentProc = null;
 
     // Regenerate per-feature markdown reports from this run's JSON results,
     // preserving any hand-written notes via the AUTO markers.
     try {
       const written = writeRunReports({
         root: ROOT,
+        paths: CFG_PATHS,
         onLog: (msg) => write({ type: 'log', stream: 'stdout', text: msg + '\n' }),
       });
       if (written.length > 0) write({ type: 'reports_written', files: written });
@@ -204,6 +314,7 @@ app.post('/api/run', async (req, res) => {
     try {
       const excel = await writeTestCasesExcel({
         root: ROOT,
+        paths: CFG_PATHS,
         onLog: (msg) => write({ type: 'log', stream: 'stdout', text: msg + '\n' }),
       });
       if (excel) write({ type: 'excel_written', file: excel.path, features: excel.features });
@@ -211,81 +322,111 @@ app.post('/api/run', async (req, res) => {
       write({ type: 'log', stream: 'stderr', text: `[excel] generation failed: ${err.message}\n` });
     }
 
-    await rebuildAllure(write);
+    await rebuildAllure(write, (p) => { currentProc = p; });
+    currentProc = null;
 
     finished = true;
     write({ type: 'done', exitCode: code });
-    res.end();
+    if (!res.writableEnded) res.end();
   } catch (err) {
     finished = true;
     write({ type: 'error', message: String((err && err.message) || err) });
     write({ type: 'done', exitCode: 1 });
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 });
 
 // Generate Allure HTML report on demand (needs Java).
 app.post('/api/allure-generate', (req, res) => {
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-  const write = (obj) => res.write(JSON.stringify(obj) + '\n');
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
   write({ type: 'start', cmd: 'npx allure generate allure-results --clean -o allure-report' });
 
   const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['allure', 'generate', 'allure-results', '--clean', '-o', 'allure-report'],
+    ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
+      '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
     { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
 
+  let finished = false;
+  res.on('close', () => {
+    if (!finished && !proc.killed) killProcessTree(proc);
+  });
   proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
   proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
-  proc.on('close', (code) => { write({ type: 'done', exitCode: code }); res.end(); });
+  proc.on('error', (err) => {
+    finished = true;
+    write({ type: 'log', stream: 'stderr', text: `[ui] allure spawn failed: ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+    if (!res.writableEnded) res.end();
+  });
+  proc.on('close', (code) => {
+    finished = true;
+    write({ type: 'done', exitCode: code });
+    if (!res.writableEnded) res.end();
+  });
 });
 
 // Static report passthrough so the UI can iframe/preview existing reports
-app.use('/playwright-report', express.static(path.join(ROOT, 'playwright-report')));
-app.use('/allure-report', express.static(path.join(ROOT, 'allure-report')));
-app.use('/reports', express.static(path.join(ROOT, 'reports')));
+app.use('/playwright-report', express.static(CFG_PATHS.playwrightReport));
+app.use('/allure-report', express.static(CFG_PATHS.allureReport));
+app.use('/reports', express.static(CFG_PATHS.reports));
 
 // Modern rendered view of AI reports (vs raw markdown via /reports/...).
 app.get('/reports-view/:filename', (req, res) => {
-  const result = renderReport(path.join(ROOT, 'reports'), req.params.filename);
+  const result = renderReport(CFG_PATHS.reports, req.params.filename);
   res.status(result.status).type('text/html; charset=utf-8').send(result.html);
 });
-app.use('/test-results', express.static(path.join(ROOT, 'test-results')));
+app.use('/test-results', express.static(CFG_PATHS.testResults));
 
 // List screenshots from the latest Playwright run as a flat array of
 // { test, file, url, ts } so the UI can render a gallery.
 app.get('/api/screenshots', (_req, res) => {
-  const results = path.join(ROOT, 'test-results');
-  const items = [];
-  if (!fs.existsSync(results)) return res.json([]);
-  for (const dir of fs.readdirSync(results)) {
-    const sub = path.join(results, dir);
-    if (!fs.statSync(sub).isDirectory()) continue;
-    for (const f of fs.readdirSync(sub)) {
-      if (!/\.(png|jpe?g)$/i.test(f)) continue;
-      items.push({
-        test: dir,
-        file: f,
-        url: `/test-results/${encodeURIComponent(dir)}/${encodeURIComponent(f)}`,
-        ts: fs.statSync(path.join(sub, f)).mtimeMs,
-      });
+  try {
+    const items = [];
+    if (!fs.existsSync(CFG_PATHS.testResults)) return res.json([]);
+    let dirs = [];
+    try { dirs = fs.readdirSync(CFG_PATHS.testResults); } catch (_) { return res.json([]); }
+    for (const dir of dirs) {
+      const sub = path.join(CFG_PATHS.testResults, dir);
+      const subStat = fs.statSync(sub, { throwIfNoEntry: false });
+      if (!subStat || !subStat.isDirectory()) continue;
+      let files = [];
+      try { files = fs.readdirSync(sub); } catch (_) { continue; }
+      for (const f of files) {
+        if (!/\.(png|jpe?g)$/i.test(f)) continue;
+        const stat = fs.statSync(path.join(sub, f), { throwIfNoEntry: false });
+        if (!stat) continue;
+        items.push({
+          test: dir,
+          file: f,
+          url: `/test-results/${encodeURIComponent(dir)}/${encodeURIComponent(f)}`,
+          ts: stat.mtimeMs,
+        });
+      }
     }
+    items.sort((a, b) => b.ts - a.ts);
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
   }
-  items.sort((a, b) => b.ts - a.ts);
-  res.json(items);
 });
 
 app.get('/api/report-status', (_req, res) => {
-  const reportsDir = path.join(ROOT, 'reports');
-  const allReports = fs.existsSync(reportsDir) ? fs.readdirSync(reportsDir) : [];
-  res.json({
-    playwright: fs.existsSync(path.join(ROOT, 'playwright-report', 'index.html')),
-    allure: fs.existsSync(path.join(ROOT, 'allure-report', 'index.html')),
-    aiReports: allReports.filter((f) => f.endsWith('.md')),
-    excelReports: allReports.filter((f) => f.endsWith('.xlsx')),
-  });
+  try {
+    const allReports = fs.existsSync(CFG_PATHS.reports) ? fs.readdirSync(CFG_PATHS.reports) : [];
+    res.json({
+      playwright: fs.existsSync(path.join(CFG_PATHS.playwrightReport, 'index.html')),
+      allure: fs.existsSync(path.join(CFG_PATHS.allureReport, 'index.html')),
+      aiReports: allReports.filter((f) => f.endsWith('.md')),
+      excelReports: allReports.filter((f) => f.endsWith('.xlsx')),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   // eslint-disable-next-line no-console
-  console.log(`\nAgentic QA Pipeline UI: http://localhost:${PORT}\n`);
+  console.log(`\nAgentic QA Pipeline UI: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}${HOST === '0.0.0.0' ? ' (also reachable on LAN)' : ''}\n`);
 });

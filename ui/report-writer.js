@@ -42,13 +42,28 @@ function fmtLocalDateTime() {
 function flattenSuites(suite, acc = []) {
   for (const spec of suite.specs || []) {
     for (const test of spec.tests || []) {
-      const last = (test.results || []).slice(-1)[0];
+      const results = test.results || [];
+      const last = results.slice(-1)[0];
       if (!last) continue;
+      // Surface 'flaky' from the test object (Playwright sets it when the test
+      // failed at least once but eventually passed). Without this, the final
+      // retry's status is always 'passed' and the test masquerades as a clean
+      // green — violating the framework's anti-false-green rule.
+      let status = last.status;
+      if (test.status === 'flaky') {
+        status = 'flaky';
+      } else if (results.length > 1 && last.status === 'passed') {
+        // Defensive fallback: multiple attempts with a non-passed earlier
+        // attempt indicates flakiness even if test.status isn't set.
+        if (results.slice(0, -1).some((r) => r.status !== 'passed' && r.status !== 'skipped')) {
+          status = 'flaky';
+        }
+      }
       acc.push({
         file: suite.file || spec.file || '',
         title: spec.title,
         fullTitle: [suite.title, spec.title].filter(Boolean).join(' › '),
-        status: last.status,
+        status,
         duration: last.duration,
         project: test.projectName,
         errorMessage: last.error?.message || (last.errors && last.errors[0]?.message) || null,
@@ -92,8 +107,8 @@ function extractStoryId(filename, slug) {
   return null;
 }
 
-function findStoryFile(slug, root) {
-  const dir = path.join(root, 'user-stories');
+function findStoryFile(slug, root, paths) {
+  const dir = paths?.stories || path.join(root, 'user-stories');
   if (!fs.existsSync(dir)) return null;
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.md') && f !== '_TEMPLATE.md');
   // Exact convention: <storyId>-<slug>.md
@@ -115,14 +130,29 @@ function findStoryFile(slug, root) {
 function buildAutoBlock(feature, storyId, tests) {
   const total = tests.length;
   const passed = tests.filter((t) => t.status === 'passed').length;
-  const failed = tests.filter((t) => ['failed', 'timedOut'].includes(t.status)).length;
+  // 'interrupted' = worker crash / manual cancel — bucket it as failed so an
+  // aborted run can't masquerade as a clean PASS.
+  const failed = tests.filter((t) => ['failed', 'timedOut', 'interrupted'].includes(t.status)).length;
   const flaky = tests.filter((t) => t.status === 'flaky').length;
   const skipped = tests.filter((t) => t.status === 'skipped').length;
+  const interrupted = tests.filter((t) => t.status === 'interrupted').length;
   const totalDuration = tests.reduce((sum, t) => sum + (t.duration || 0), 0);
   const project = tests[0]?.project || '—';
-  const overallStatus = failed > 0
-    ? `❌ FAIL (${passed}/${total})`
-    : (skipped === total ? `⏭️ ALL SKIPPED` : `✅ PASS (${passed}/${total})`);
+
+  // Verdict ladder: PASS requires passed+skipped+flaky === total. Anything
+  // failed/timedOut/interrupted (or unknown) breaks the green.
+  let overallStatus;
+  if (failed > 0) {
+    overallStatus = `❌ FAIL (${passed}/${total}${interrupted > 0 ? `, ${interrupted} interrupted` : ''})`;
+  } else if (passed + skipped + flaky !== total) {
+    overallStatus = `⚠️ INCOMPLETE (${passed}/${total})`;
+  } else if (skipped === total) {
+    overallStatus = `⏭️ ALL SKIPPED`;
+  } else if (flaky > 0) {
+    overallStatus = `⚠️ FLAKY (${passed} passed, ${flaky} flaky / ${total})`;
+  } else {
+    overallStatus = `✅ PASS (${passed}/${total})`;
+  }
 
   const rows = tests.map((t) => {
     const file = (t.file || '').replace(/\\/g, '/').split('/').slice(-1)[0];
@@ -141,6 +171,7 @@ function buildAutoBlock(feature, storyId, tests) {
     `**Duration:** ${fmtDuration(totalDuration)}`,
     flaky > 0 ? `**Flaky:** ${flaky}` : null,
     skipped > 0 ? `**Skipped:** ${skipped}` : null,
+    interrupted > 0 ? `**Interrupted:** ${interrupted}` : null,
     '',
     '## Results',
     '',
@@ -207,9 +238,10 @@ function mergeReport(filePath, feature, storyTitle, autoBlock) {
  * Main entry — read Playwright JSON, generate one report per feature that had
  * tests in this run. Returns a list of { feature, file, tests }.
  */
-function writeRunReports({ root, onLog } = {}) {
+function writeRunReports({ root, paths, onLog } = {}) {
   const log = (msg) => { if (onLog) onLog(msg); };
-  const jsonPath = path.join(root, 'test-results', 'results.json');
+  const testResultsDir = paths?.testResults || path.join(root, 'test-results');
+  const jsonPath = path.join(testResultsDir, 'results.json');
   if (!fs.existsSync(jsonPath)) {
     log('[reports] test-results/results.json not found — nothing to regenerate.');
     return [];
@@ -247,12 +279,13 @@ function writeRunReports({ root, onLog } = {}) {
     return [];
   }
 
-  const reportsDir = path.join(root, 'reports');
+  const reportsDir = paths?.reports || path.join(root, 'reports');
+  const storiesDir = paths?.stories || path.join(root, 'user-stories');
   fs.mkdirSync(reportsDir, { recursive: true });
 
   const written = [];
   for (const [feature, tests] of byFeature) {
-    const storyInfo = findStoryFile(feature, root);
+    const storyInfo = findStoryFile(feature, root, paths);
     const storyId = storyInfo?.storyId || null;
     const baseName = storyId ? `${storyId}-${feature}` : feature;
     const filePath = path.join(reportsDir, `${baseName}.md`);
@@ -260,7 +293,7 @@ function writeRunReports({ root, onLog } = {}) {
     let storyTitle = feature;
     if (storyInfo) {
       try {
-        const md = fs.readFileSync(path.join(root, 'user-stories', storyInfo.file), 'utf8');
+        const md = fs.readFileSync(path.join(storiesDir, storyInfo.file), 'utf8');
         const h1 = md.match(/^#\s+(?:User Story:\s+)?(.+)$/m);
         if (h1) storyTitle = h1[1].trim();
       } catch (_) { /* fall back to slug */ }

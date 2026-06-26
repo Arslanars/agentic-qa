@@ -20,10 +20,6 @@ export abstract class BasePage {
     await expect(this.page).toHaveURL(this.url);
   }
 
-  async waitForNetworkIdle(): Promise<void> {
-    await this.page.waitForLoadState('networkidle');
-  }
-
   async screenshot(name: string): Promise<void> {
     await this.page.screenshot({ path: `screenshots/${name}.png`, fullPage: true });
   }

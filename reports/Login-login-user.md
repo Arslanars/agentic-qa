@@ -2,29 +2,29 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-26 13:23:58
+**Last run:** 2026-06-26 14:02:03
 **Browser:** chromium
 **Status:** ✅ PASS (14/14)
-**Duration:** 62.3 s
+**Duration:** 52.1 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `login-navigation.spec.ts` | Login / Navigation — secondary links › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 3.5 s | — |
-| `login-navigation.spec.ts` | Login / Navigation — secondary links › NAV-02 — "Sign up" link navigates to /signup | ✅ PASS | 3.0 s | — |
-| `login-navigation.spec.ts` | Login / Navigation — secondary links › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 3.8 s | — |
-| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-01 — wrong password: URL stays on /login and auth API returns non-2xx | ✅ PASS | 4.1 s | — |
-| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-02 — non-existent email: URL stays on /login and auth API returns non-2xx | ✅ PASS | 3.8 s | — |
-| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-03 — empty email: no redirect to /select-location | ✅ PASS | 5.1 s | — |
-| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-04 — empty password: no redirect to /select-location | ✅ PASS | 8.1 s | — |
-| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-05 — both fields empty: no redirect to /select-location | ✅ PASS | 5.6 s | — |
-| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-06 — invalid email format (no @): submission rejected, no redirect | ✅ PASS | 4.2 s | — |
-| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-07 — invalid email format (missing domain): submission rejected, no redirect | ✅ PASS | 4.8 s | — |
-| `login-success.spec.ts` | Login / AC1: visit site and try to login › AC1 — valid credentials authenticate the user and route them to /select-location | ✅ PASS | 4.5 s | — |
-| `login-ui.spec.ts` | Login / UI — form behavior › UI-01 — password field has type="password" by default (input is masked) | ✅ PASS | 3.2 s | — |
-| `login-ui.spec.ts` | Login / UI — form behavior › UI-02 — "Show password" button toggles input type between password and text | ✅ PASS | 4.7 s | — |
-| `login-ui.spec.ts` | Login / UI — form behavior › UI-03 — pressing Enter inside the password field submits the form | ✅ PASS | 4.0 s | — |
+| `login-navigation.spec.ts` | Login / Navigation — secondary links › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 2.8 s | — |
+| `login-navigation.spec.ts` | Login / Navigation — secondary links › NAV-02 — "Sign up" link navigates to /signup | ✅ PASS | 2.6 s | — |
+| `login-navigation.spec.ts` | Login / Navigation — secondary links › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 2.7 s | — |
+| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-01 — wrong password: URL stays on /login and auth API returns non-2xx | ✅ PASS | 3.9 s | — |
+| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-02 — non-existent email: URL stays on /login and auth API returns non-2xx | ✅ PASS | 4.8 s | — |
+| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-03 — empty email: no redirect to /select-location | ✅ PASS | 3.7 s | — |
+| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-04 — empty password: no redirect to /select-location | ✅ PASS | 3.1 s | — |
+| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-05 — both fields empty: no redirect to /select-location | ✅ PASS | 3.0 s | — |
+| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-06 — invalid email format (no @): submission rejected, no redirect | ✅ PASS | 2.9 s | — |
+| `login-negative.spec.ts` | Login / AC1: NEGATIVE — rejected credential cases › AC1-NEG-07 — invalid email format (missing domain): submission rejected, no redirect | ✅ PASS | 3.5 s | — |
+| `login-success.spec.ts` | Login / AC1: visit site and try to login › AC1 — valid credentials authenticate the user and route them to /select-location | ✅ PASS | 6.0 s | — |
+| `login-ui.spec.ts` | Login / UI — form behavior › UI-01 — password field has type="password" by default (input is masked) | ✅ PASS | 2.9 s | — |
+| `login-ui.spec.ts` | Login / UI — form behavior › UI-02 — "Show password" button toggles input type between password and text | ✅ PASS | 4.8 s | — |
+| `login-ui.spec.ts` | Login / UI — form behavior › UI-03 — pressing Enter inside the password field submits the form | ✅ PASS | 5.4 s | — |
 
 ## Artifacts
 

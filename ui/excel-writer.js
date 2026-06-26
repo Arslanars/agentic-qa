@@ -32,6 +32,7 @@ const SUMMARY_COLUMNS = [
   { header: 'MANUAL',        key: 'manual',      width: 12 },
   { header: 'PASSED',        key: 'passed',      width: 12 },
   { header: 'FAILED',        key: 'failed',      width: 12 },
+  { header: 'SKIPPED',       key: 'skipped',     width: 12 },
   { header: 'LAST RUN',      key: 'lastRun',     width: 22 },
   { header: 'STATUS',        key: 'status',      width: 14 },
 ];
@@ -65,8 +66,8 @@ function fmtLocalDateTime() {
 /**
  * Discover every tests/<feature>/testcases.json the repo contains.
  */
-function discoverTestcaseFiles(root) {
-  const testsDir = path.join(root, 'tests');
+function discoverTestcaseFiles(root, paths) {
+  const testsDir = paths?.tests || path.join(root, 'tests');
   if (!fs.existsSync(testsDir)) return [];
   const files = [];
   for (const entry of fs.readdirSync(testsDir, { withFileTypes: true })) {
@@ -81,8 +82,9 @@ function discoverTestcaseFiles(root) {
  * Walk Playwright's nested suite tree, returning a flat list of test results
  * keyed by `<file>::<test title>` so we can join to test cases.
  */
-function buildResultMap(root) {
-  const jsonPath = path.join(root, 'test-results', 'results.json');
+function buildResultMap(root, paths) {
+  const testResultsDir = paths?.testResults || path.join(root, 'test-results');
+  const jsonPath = path.join(testResultsDir, 'results.json');
   const map = new Map();
   if (!fs.existsSync(jsonPath)) return map;
   let data;
@@ -111,16 +113,30 @@ function buildResultMap(root) {
 }
 
 function lookupResult(resultMap, linkedSpec, linkedTestTitle) {
-  // Test the exact key first, then walk all keys for a fuzzy file-suffix match
-  // since Playwright reports paths relative to testDir.
+  // Test the exact key first, then walk all keys for a path-suffix match (so
+  // a testcases.json `linkedSpec: "login-user/login.spec.ts"` matches whatever
+  // path Playwright records — could be `tests/login-user/...` or relative).
   const norm = (linkedSpec || '').replace(/\\/g, '/');
+  if (!norm || !linkedTestTitle) return null;
   const exact = resultMap.get(`${norm}::${linkedTestTitle}`);
   if (exact) return exact;
+  // Strict-ish suffix match: require a directory separator in the linkedSpec
+  // and anchor at '/' to avoid false positives where one feature name is a
+  // suffix of another (e.g., 'login.spec.ts' matching 'other-login.spec.ts').
+  if (!norm.includes('/')) return null;
+  const matches = [];
+  const suffix = '/' + norm;
   for (const [key, val] of resultMap) {
-    const [file, title] = key.split('::');
-    if (file.endsWith(norm) && title === linkedTestTitle) return val;
+    const sepIdx = key.indexOf('::');
+    if (sepIdx < 0) continue;
+    const file = key.slice(0, sepIdx);
+    const title = key.slice(sepIdx + 2);
+    if (title === linkedTestTitle && (file === norm || file.endsWith(suffix))) {
+      matches.push(val);
+    }
   }
-  return null;
+  if (matches.length === 1) return matches[0];
+  return null; // 0 matches or >1 (ambiguous) → caller treats as missing.
 }
 
 function fmtSteps(steps) {
@@ -218,7 +234,14 @@ function buildFeatureSheet(workbook, feature, testCases, resultMap) {
       actualResult,
       status: badge.label,
     });
-    row.height = Math.max(48, (tc.testSteps?.length || 0) * 14);
+    // Normalize step count: testSteps may be an array (preferred) or a
+    // multi-line string. Using .length on a string measures CHARACTERS, which
+    // could produce row heights in the thousands and exceed Excel's ~409pt
+    // ceiling, rendering as a giant blank band.
+    const stepCount = Array.isArray(tc.testSteps)
+      ? tc.testSteps.length
+      : (String(tc.testSteps || '').split(/\r?\n/).filter(Boolean).length || 1);
+    row.height = Math.min(240, Math.max(48, stepCount * 16));
     row.eachCell((cell) => styleBodyCell(cell));
     const statusCell = row.getCell('status');
     statusCell.fill = badge.fill;
@@ -237,24 +260,24 @@ function buildSummarySheet(workbook, perFeatureStats) {
   sheet.columns = SUMMARY_COLUMNS.map((c) => ({ ...c }));
   styleHeaderRow(sheet);
 
-  // Move summary to be the first sheet in the workbook for convenience.
-  workbook.eachSheet((s, idx) => { /* no-op */ });
-
-  let totalPassed = 0, totalFailed = 0, totalManual = 0, totalCases = 0, totalAutomated = 0;
+  let totalPassed = 0, totalFailed = 0, totalSkipped = 0, totalManual = 0, totalCases = 0, totalAutomated = 0;
   for (const stat of perFeatureStats) {
     totalPassed += stat.passed;
     totalFailed += stat.failed;
+    totalSkipped += stat.skipped || 0;
     totalManual += stat.manual || 0;
     totalCases += stat.total;
     const automated = stat.total - (stat.manual || 0);
     totalAutomated += automated;
     const badge = stat.failed > 0
       ? { label: 'FAIL', fill: FAIL_FILL, font: FAIL_FONT }
-      : (stat.passed === 0 && automated > 0
-          ? { label: 'NOT RUN', fill: NOT_RUN_FILL, font: NOT_RUN_FONT }
-          : (automated === 0 && stat.manual > 0
-              ? { label: 'MANUAL', fill: MANUAL_FILL, font: MANUAL_FONT }
-              : { label: 'PASS', fill: PASS_FILL, font: PASS_FONT }));
+      : (stat.passed === 0 && (stat.skipped || 0) > 0 && (stat.skipped || 0) === automated
+          ? { label: 'SKIPPED', fill: SKIP_FILL, font: SKIP_FONT }
+          : (stat.passed === 0 && automated > 0
+              ? { label: 'NOT RUN', fill: NOT_RUN_FILL, font: NOT_RUN_FONT }
+              : (automated === 0 && stat.manual > 0
+                  ? { label: 'MANUAL', fill: MANUAL_FILL, font: MANUAL_FONT }
+                  : { label: 'PASS', fill: PASS_FILL, font: PASS_FONT })));
     const row = sheet.addRow({
       feature: stat.feature,
       storyId: stat.storyId || '—',
@@ -263,6 +286,7 @@ function buildSummarySheet(workbook, perFeatureStats) {
       manual: stat.manual || 0,
       passed: stat.passed,
       failed: stat.failed,
+      skipped: stat.skipped || 0,
       lastRun: stat.lastRun,
       status: badge.label,
     });
@@ -282,6 +306,7 @@ function buildSummarySheet(workbook, perFeatureStats) {
     manual: totalManual,
     passed: totalPassed,
     failed: totalFailed,
+    skipped: totalSkipped,
     lastRun: '',
     status: '',
   });
@@ -298,25 +323,25 @@ function buildSummarySheet(workbook, perFeatureStats) {
  * results, writes reports/Test-Cases.xlsx. Returns metadata about what was
  * written so callers can log it.
  */
-async function writeTestCasesExcel({ root, onLog } = {}) {
+async function writeTestCasesExcel({ root, paths, onLog } = {}) {
   const log = (msg) => { if (onLog) onLog(msg); };
-  const files = discoverTestcaseFiles(root);
+  const files = discoverTestcaseFiles(root, paths);
   if (files.length === 0) {
     log('[excel] no tests/<feature>/testcases.json files found — skipping Excel export.');
     return null;
   }
 
-  const resultMap = buildResultMap(root);
+  const resultMap = buildResultMap(root, paths);
   const lastRun = fmtLocalDateTime();
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'agentic-qa';
   workbook.created = new Date();
 
-  // Defer summary sheet until we know the per-feature stats. ExcelJS lets us
-  // add sheets in any order, but the sheet TAB order matches creation order —
-  // so we'll add Summary first as a placeholder, then move stats in after.
-  // Workaround: build feature sheets first (collecting stats), then create the
-  // Summary sheet, then re-arrange via workbook.removeWorksheet + re-create.
+  // We need Summary as sheet #1, but Summary depends on the totals we collect
+  // while building per-feature sheets. ExcelJS doesn't expose a clean reorder
+  // API, so the pattern is: build per-feature sheets in a scratch workbook,
+  // build Summary at the end, then clone everything into a final workbook
+  // in the desired tab order (Summary first, then features).
   const featureStats = [];
   for (const file of files) {
     let meta;
@@ -345,38 +370,28 @@ async function writeTestCasesExcel({ root, onLog } = {}) {
     return null;
   }
 
-  // Build summary AT THE END so we have totals, but make it sheet #1 by
-  // creating it last then reordering via orderNo.
+  // Build Summary with the collected stats, then rebuild the workbook with
+  // Summary as sheet #1 (sheets land in tabs in creation order).
   buildSummarySheet(workbook, featureStats);
-  // Reorder: Summary first
-  const summary = workbook.getWorksheet('Summary');
-  if (summary) {
-    summary.orderNo = -1;
-    // ExcelJS doesn't have first-class reorder; we serialize+rebuild order via
-    // worksheets array. Easier: write a NEW workbook in the right order.
-  }
-  // Simpler: rebuild the workbook in the desired order.
+
   const finalWb = new ExcelJS.Workbook();
   finalWb.creator = workbook.creator;
   finalWb.created = workbook.created;
-  // Summary first
-  const summaryName = 'Summary';
-  if (workbook.getWorksheet(summaryName)) {
-    cloneSheet(workbook.getWorksheet(summaryName), finalWb);
-  }
-  // Then per-feature sheets in discovered order
+  cloneSheet(workbook.getWorksheet('Summary'), finalWb);
   for (const stat of featureStats) {
     const name = (stat.storyId || stat.feature).slice(0, 31);
     const src = workbook.getWorksheet(name);
     if (src) cloneSheet(src, finalWb);
   }
 
-  const outPath = path.join(root, 'reports', 'Test-Cases.xlsx');
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  const reportsDir = paths?.reports || path.join(root, 'reports');
+  const outPath = path.join(reportsDir, 'Test-Cases.xlsx');
+  fs.mkdirSync(reportsDir, { recursive: true });
   await finalWb.xlsx.writeFile(outPath);
   const bytes = fs.statSync(outPath).size;
-  log(`[excel] wrote reports/Test-Cases.xlsx (${(bytes / 1024).toFixed(1)} KB, ${featureStats.length} sheet${featureStats.length === 1 ? '' : 's'} + summary)`);
-  return { path: 'reports/Test-Cases.xlsx', features: featureStats };
+  const relPath = path.relative(root, outPath).split(path.sep).join('/');
+  log(`[excel] wrote ${relPath} (${(bytes / 1024).toFixed(1)} KB, ${featureStats.length} sheet${featureStats.length === 1 ? '' : 's'} + summary)`);
+  return { path: relPath, features: featureStats };
 }
 
 /**

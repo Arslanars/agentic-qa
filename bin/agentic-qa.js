@@ -30,7 +30,8 @@ Commands:
 Examples:
   npx agentic-qa init
   npx agentic-qa ui
-  npx agentic-qa run --feature login --headed
+  npx agentic-qa run tests/login --headed
+  npx agentic-qa run --project=chromium
 
 Test generation: use Claude Code with the prompt in QAEnd2EndPromptFile.md,
 or hand-author POMs + specs following the conventions in pages/README.md.

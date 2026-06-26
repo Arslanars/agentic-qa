@@ -41,11 +41,11 @@ test.describe('SignUp / UI behavior', () => {
     await signup.passwordInput.fill('Secret!2025');
     await expect(signup.passwordInput).toHaveAttribute('type', 'password');
 
-    // Click the (first) show-password button — there may be two, one per field.
-    await signup.showPasswordButton.first().click();
+    // Each field has its own toggle; click the one scoped to Password.
+    await signup.passwordToggleButton.click();
     await expect(signup.passwordInput).toHaveAttribute('type', 'text');
 
-    await signup.showPasswordButton.first().click();
+    await signup.passwordToggleButton.click();
     await expect(signup.passwordInput).toHaveAttribute('type', 'password');
   });
 });

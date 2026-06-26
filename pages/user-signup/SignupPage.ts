@@ -27,7 +27,9 @@ export class SignupPage extends BasePage {
   readonly step2Heading: Locator;
   readonly passwordInput: Locator;
   readonly confirmPasswordInput: Locator;
-  readonly showPasswordButton: Locator;
+  // Each field has its own toggle — scope per-field to avoid strict-mode collisions.
+  readonly passwordToggleButton: Locator;
+  readonly confirmPasswordToggleButton: Locator;
   readonly termsCheckbox: Locator;
   readonly createAccountButton: Locator;
   readonly backButton: Locator;
@@ -48,8 +50,13 @@ export class SignupPage extends BasePage {
     this.step2Heading = page.getByText('Set Password', { exact: true });
     this.passwordInput = page.getByRole('textbox', { name: 'Password', exact: true });
     this.confirmPasswordInput = page.getByRole('textbox', { name: 'Confirm Password' });
-    // Button toggles label between "Show password" and "Hide password".
-    this.showPasswordButton = page.getByRole('button', { name: /show password|hide password/i });
+    // Step 2 has TWO show/hide-password toggles (one per field). Scope each
+    // to its sibling textbox's container so they never collide with each
+    // other under Playwright strict mode. Button text toggles between
+    // "Show password" and "Hide password" when clicked.
+    const toggleNameRe = /show password|hide password/i;
+    this.passwordToggleButton = this.passwordInput.locator('..').getByRole('button', { name: toggleNameRe });
+    this.confirmPasswordToggleButton = this.confirmPasswordInput.locator('..').getByRole('button', { name: toggleNameRe });
     this.termsCheckbox = page.getByRole('checkbox', { name: /I agree to the Terms/i });
     this.createAccountButton = page.getByRole('button', { name: 'Create Account' });
     this.backButton = page.getByRole('button', { name: 'Back' });

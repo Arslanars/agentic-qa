@@ -14,6 +14,12 @@ function uniqueEmail(tag: string): string {
 }
 
 test.describe('SignUp-001 / AC2: verify the user is registered', () => {
+  // Same destructive-gate as AC1 — see fill-and-submit.spec.ts.
+  test.skip(
+    !process.env.RUN_DESTRUCTIVE_SIGNUP,
+    'Destructive — creates a real tenant on the live host. Set RUN_DESTRUCTIVE_SIGNUP=1 to run.'
+  );
+
   test('AC2 — after Create Account, the app surfaces the post-registration screen referencing the new restaurant', async ({ page }) => {
     const signup = new SignupPage(page);
     await signup.goto();

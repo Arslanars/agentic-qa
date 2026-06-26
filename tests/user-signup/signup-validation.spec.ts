@@ -24,7 +24,9 @@ test.describe('SignUp / Step 1 validation', () => {
     await signup.phoneNumberInput.fill('5555550199');
     await signup.nextButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-Next/Create) rather than the moment between click and response.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(signup.step1Heading).toBeVisible();
     await expect(signup.step2Heading).toBeHidden();
   });
@@ -39,7 +41,9 @@ test.describe('SignUp / Step 1 validation', () => {
     await signup.phoneNumberInput.fill('5555550199');
     await signup.nextButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-Next/Create) rather than the moment between click and response.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(signup.step1Heading).toBeVisible();
     await expect(signup.step2Heading).toBeHidden();
   });
@@ -55,7 +59,9 @@ test.describe('SignUp / Step 1 validation', () => {
     await signup.phoneNumberInput.fill('5555550199');
     await signup.nextButton.click();
 
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-Next/Create) rather than the moment between click and response.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     await expect(signup.step1Heading).toBeVisible();
     await expect(signup.step2Heading).toBeHidden();
     // input[type=email] should report typeMismatch for "arslan-yopmail.com"
@@ -72,11 +78,13 @@ test.describe('SignUp / Step 1 validation', () => {
 
     await expect(signup.subdomainInput).toHaveAttribute('readonly', '');
     await signup.restaurantNameInput.fill('My Eatery 42');
-    const derived = (await signup.readSubdomain()).toLowerCase();
-    // Subdomain is kebab-cased (lowercase alphanumeric + hyphens only)
-    expect(derived).toMatch(/^[a-z0-9-]+$/);
-    expect(derived).toContain('my');
-    expect(derived).toContain('eatery');
+    // Subdomain may be debounced or derived onBlur — blur and use auto-retrying
+    // toHaveValue assertions so the test doesn't race against the handler.
+    await signup.restaurantNameInput.blur();
+    // Kebab-cased lowercase: alphanumeric + hyphens only.
+    await expect(signup.subdomainInput).toHaveValue(/^[a-z0-9-]+$/, { timeout: 5000 });
+    await expect(signup.subdomainInput).toHaveValue(/my/i, { timeout: 5000 });
+    await expect(signup.subdomainInput).toHaveValue(/eatery/i, { timeout: 5000 });
   });
 });
 
@@ -118,7 +126,9 @@ test.describe('SignUp / Step 2 validation', () => {
     // click is a no-op, the URL must remain on /signup.
     const enabled = await signup.createAccountButton.isEnabled();
     if (enabled) await signup.createAccountButton.click();
-    await page.waitForTimeout(1500);
+    // Wait for any in-flight network to settle so the assertion below sees the
+    // final state (post-Next/Create) rather than the moment between click and response.
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
 
     await expect(page).toHaveURL(/\/signup$/, { timeout: 5_000 });
     await expect(signup.step2Heading).toBeVisible();

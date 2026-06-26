@@ -21,11 +21,6 @@ module.exports = {
   // Port for the local web UI (`npx agentic-qa ui`).
   uiPort: 3001,
 
-  // Claude model used by the in-UI Generate button.
-  // Options: 'claude-opus-4-8' (default, most capable), 'claude-sonnet-4-6' (cheaper),
-  // 'claude-haiku-4-5' (cheapest, simple forms only).
-  model: 'claude-opus-4-8',
-
   // Path to your Playwright config (used to detect/patch reporters).
   playwrightConfig: 'playwright.config.js',
 };
