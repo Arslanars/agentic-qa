@@ -22,6 +22,7 @@ A QA engineer pastes a URL + story into the UI and ends up with:
 - A live-browser run with screenshots
 - A markdown execution report
 - An Allure HTML dashboard
+- A consolidated **Excel test-case document** (10-column standard format) refreshed on every run
 
 ---
 
@@ -43,7 +44,7 @@ A QA engineer pastes a URL + story into the UI and ends up with:
 | 3 | Exploratory test | Browser snapshot of the form / flow | List of locators, validation rules, success state |
 | 4 | Generation | Plan + exploration findings | `pages/<slug>/<Page>.ts` (POM) + `tests/<slug>/*.spec.ts` |
 | 5 | Execution | Playwright runs the specs (headed by default) | Pass/fail + screenshots + Allure JSON |
-| 6 | Reporting | Run output + assertions | `reports/<ID>-<slug>.md` + Allure HTML + Playwright HTML |
+| 6 | Reporting | Run output + assertions | `reports/<ID>-<slug>.md` + `reports/Test-Cases.xlsx` + Allure HTML + Playwright HTML |
 
 **Key design principles enforced by the pipeline:**
 
@@ -61,6 +62,7 @@ A QA engineer pastes a URL + story into the UI and ends up with:
 
 | Category | Tool | Role |
 |----------|------|------|
+| **Excel reporting** | [ExcelJS](https://github.com/exceljs/exceljs) | Generates the styled 10-column test-case workbook on every run |
 | **Browser automation** | [Playwright](https://playwright.dev) | Drives Chromium / Firefox / WebKit; runs the generated specs |
 | **Browser MCP server** | [Playwright MCP](https://github.com/microsoft/playwright-mcp) | Exposes browser actions (snapshot, click, fill, evaluate) as tools so an LLM can explore the app live |
 | **Test framework** | [`@playwright/test`](https://playwright.dev/docs/test-intro) | `test()`, `expect()`, fixtures, projects |
@@ -128,6 +130,11 @@ Acceptance Criteria:
 | `tests/user-signup` (SignUp-001) | 2/2 | ✅ PASS | 5.0 s |
 | `tests/login-user` (Login) | 1/1 | ✅ PASS | 5.1 s |
 | **Total** | **3/3** | **✅ PASS** | **10.1 s** |
+
+### Deliverables produced by the run
+
+- **Markdown reports**: `reports/Login-login-user.md`, `reports/SignUp-001-user-signup.md` — dynamically refreshed on every run (hand-written context preserved outside `<!-- agentic-qa:auto-start --> ... <!-- :auto-end -->` markers).
+- **Excel workbook**: `reports/Test-Cases.xlsx` — 3 sheets (Summary + one per feature), 10 columns per row matching the standard QA template (TEST CASE ID / TEST SCENARIO / TEST CASE / PRE-CONDITION / TEST STEPS / TEST DATA / EXPECTED RESULT / POST CONDITION / ACTUAL RESULT / STATUS), styled headers, color-coded status cells.
 
 ### Non-obvious findings the pipeline surfaced
 

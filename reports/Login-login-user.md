@@ -2,16 +2,16 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-26 12:41:26
+**Last run:** 2026-06-26 13:00:29
 **Browser:** chromium
-**Status:** ❌ FAIL (0/1)
-**Duration:** 33.4 s
+**Status:** ✅ PASS (1/1)
+**Duration:** 4.1 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `login-success.spec.ts` | Login / AC1: visit site and try to login › AC1 — valid credentials authenticate the user and route them to /select-location | ⏱️ TIMEOUT | 33.4 s | `[31mTest timeout of 30000ms exceeded.[39m` |
+| `login-success.spec.ts` | Login / AC1: visit site and try to login › AC1 — valid credentials authenticate the user and route them to /select-location | ✅ PASS | 4.1 s | — |
 
 ## Artifacts
 

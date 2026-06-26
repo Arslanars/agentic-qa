@@ -1,0 +1,25 @@
+{
+  "feature": "login-user",
+  "storyId": "Login",
+  "storyTitle": "Login User",
+  "applicationUrl": "https://moontower.aiimone.com/Login",
+  "testCases": [
+    {
+      "id": "Login-AC1-01",
+      "scenario": "AC1: Visit site and try to login",
+      "testCase": "Sign in with valid credentials and land on /select-location",
+      "preCondition": "Browser open at https://moontower.aiimone.com/Login; Email field and Sign In button visible",
+      "testSteps": [
+        "Navigate to the login page",
+        "Enter Email in the Email field",
+        "Enter Password in the Password field",
+        "Click the 'Sign In' button"
+      ],
+      "testData": "Email: developers@moontower.com\nPassword: 12345678",
+      "expectedResult": "Page redirects to /select-location; 'Select Your Location' heading is visible; 'Restaurant: <name>' paragraph confirms an account context was loaded",
+      "postCondition": "User is authenticated and on the location-picker screen",
+      "linkedSpec": "login-user/login-success.spec.ts",
+      "linkedTestTitle": "AC1 — valid credentials authenticate the user and route them to /select-location"
+    }
+  ]
+}

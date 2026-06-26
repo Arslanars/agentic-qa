@@ -640,6 +640,10 @@
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
     }
 
+    function excelIcon() {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="14" x2="15" y2="20"/><line x1="15" y1="14" x2="9" y2="20"/></svg>';
+    }
+
     function prettifyTestName(dir) {
       // e.g. "login-successful-authenticates-user-chromium" -> "login successful authenticates user"
       return dir
@@ -705,6 +709,11 @@
         for (const f of status.aiReports || []) {
           reportsEl.insertAdjacentHTML('beforeend',
             `<a class="report-link" href="/reports-view/${encodeURIComponent(f)}" target="_blank">${reportIcon()}${f}</a>`);
+          any = true;
+        }
+        for (const f of status.excelReports || []) {
+          reportsEl.insertAdjacentHTML('beforeend',
+            `<a class="report-link" href="/reports/${encodeURIComponent(f)}" download>${excelIcon()}${f}</a>`);
           any = true;
         }
         if (!any) reportsEl.insertAdjacentHTML('beforeend', '<span class="empty">none yet</span>');

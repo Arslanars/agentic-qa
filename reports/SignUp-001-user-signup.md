@@ -2,17 +2,17 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-26 12:29:45
+**Last run:** 2026-06-26 13:00:29
 **Browser:** chromium
 **Status:** ✅ PASS (2/2)
-**Duration:** 14.3 s
+**Duration:** 8.9 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `fill-and-submit.spec.ts` | SignUp-001 / AC1: fill the signup form and register a new user › AC1 — fills both steps and the app accepts the registration (URL leaves /signup) | ✅ PASS | 7.2 s | — |
-| `verify-registered.spec.ts` | SignUp-001 / AC2: verify the user is registered › AC2 — after Create Account, the app surfaces the post-registration screen referencing the new restaurant | ✅ PASS | 7.1 s | — |
+| `fill-and-submit.spec.ts` | SignUp-001 / AC1: fill the signup form and register a new user › AC1 — fills both steps and the app accepts the registration (URL leaves /signup) | ✅ PASS | 4.5 s | — |
+| `verify-registered.spec.ts` | SignUp-001 / AC2: verify the user is registered › AC2 — after Create Account, the app surfaces the post-registration screen referencing the new restaurant | ✅ PASS | 4.4 s | — |
 
 ## Artifacts
 

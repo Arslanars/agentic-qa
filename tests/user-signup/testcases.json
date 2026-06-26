@@ -1,0 +1,48 @@
+{
+  "feature": "user-signup",
+  "storyId": "SignUp-001",
+  "storyTitle": "User Signup",
+  "applicationUrl": "https://moontower.aiimone.com/signup",
+  "testCases": [
+    {
+      "id": "SignUp-001-AC1-01",
+      "scenario": "AC1: Fill the signup form and register as a new user",
+      "testCase": "Submit step-1 + step-2 form data and confirm the server accepts the registration",
+      "preCondition": "Browser open at https://moontower.aiimone.com/signup; step-1 form 'Register Your Restaurant' is visible; Next button is enabled",
+      "testSteps": [
+        "Fill Restaurant Name with a unique timestamp-suffixed value",
+        "Verify Subdomain auto-populates (read-only)",
+        "Fill Full Name, Business Email, Phone Number",
+        "Click 'Next' to advance to step 2",
+        "Fill Password and Confirm Password",
+        "Check 'I agree to the Terms and Conditions'",
+        "Click 'Create Account'"
+      ],
+      "testData": "Restaurant Name: MoonTest<timestamp>\nFull Name: Arslan Tester\nEmail: arslan.moon+ac1<timestamp>@yopmail.com\nPhone: 5555550199\nPassword: TestPass!2025",
+      "expectedResult": "Form is accepted; URL leaves /signup (no validation errors); the app navigates the user away from the signup screen",
+      "postCondition": "A new restaurant tenant exists on the server with the unique restaurant name; the user is on the post-signup flow",
+      "linkedSpec": "user-signup/fill-and-submit.spec.ts",
+      "linkedTestTitle": "AC1 — fills both steps and the app accepts the registration (URL leaves /signup)"
+    },
+    {
+      "id": "SignUp-001-AC2-01",
+      "scenario": "AC2: Verify the user is registered",
+      "testCase": "After Create Account, confirm three independent post-registration signals all hold",
+      "preCondition": "Browser open at https://moontower.aiimone.com/signup; step-1 form visible",
+      "testSteps": [
+        "Fill all step-1 required fields with valid data",
+        "Click 'Next' to reach step 2",
+        "Fill passwords and accept Terms",
+        "Click 'Create Account'",
+        "Verify the URL is /select-location",
+        "Verify 'Select Your Location' heading is visible",
+        "Verify the 'Restaurant: <run-specific name>' paragraph is visible"
+      ],
+      "testData": "Restaurant Name: MoonVerify<timestamp>\nFull Name: Arslan Verify\nEmail: arslan.moon+ac2<timestamp>@yopmail.com\nPhone: 5555550199\nPassword: TestPass!2025",
+      "expectedResult": "All three signals hold simultaneously: URL = /select-location; 'Select Your Location' heading visible; 'Restaurant: <run-specific name>' paragraph confirms the exact account just created",
+      "postCondition": "Registration is confirmed end-to-end; user can now choose a location to manage",
+      "linkedSpec": "user-signup/verify-registered.spec.ts",
+      "linkedTestTitle": "AC2 — after Create Account, the app surfaces the post-registration screen referencing the new restaurant"
+    }
+  ]
+}

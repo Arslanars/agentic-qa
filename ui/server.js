@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const { renderReport } = require('./report-renderer');
 const { writeRunReports } = require('./report-writer');
+const { writeTestCasesExcel } = require('./excel-writer');
 
 const app = express();
 const PORT = process.env.UI_PORT ? Number(process.env.UI_PORT) : 3001;
@@ -198,6 +199,18 @@ app.post('/api/run', async (req, res) => {
       write({ type: 'log', stream: 'stderr', text: `[reports] regeneration failed: ${err.message}\n` });
     }
 
+    // Regenerate consolidated test-case Excel (reports/Test-Cases.xlsx)
+    // joining tests/<feature>/testcases.json with the latest run results.
+    try {
+      const excel = await writeTestCasesExcel({
+        root: ROOT,
+        onLog: (msg) => write({ type: 'log', stream: 'stdout', text: msg + '\n' }),
+      });
+      if (excel) write({ type: 'excel_written', file: excel.path, features: excel.features });
+    } catch (err) {
+      write({ type: 'log', stream: 'stderr', text: `[excel] generation failed: ${err.message}\n` });
+    }
+
     await rebuildAllure(write);
 
     finished = true;
@@ -262,12 +275,13 @@ app.get('/api/screenshots', (_req, res) => {
 });
 
 app.get('/api/report-status', (_req, res) => {
+  const reportsDir = path.join(ROOT, 'reports');
+  const allReports = fs.existsSync(reportsDir) ? fs.readdirSync(reportsDir) : [];
   res.json({
     playwright: fs.existsSync(path.join(ROOT, 'playwright-report', 'index.html')),
     allure: fs.existsSync(path.join(ROOT, 'allure-report', 'index.html')),
-    aiReports: fs.existsSync(path.join(ROOT, 'reports'))
-      ? fs.readdirSync(path.join(ROOT, 'reports')).filter((f) => f.endsWith('.md'))
-      : [],
+    aiReports: allReports.filter((f) => f.endsWith('.md')),
+    excelReports: allReports.filter((f) => f.endsWith('.xlsx')),
   });
 });
 

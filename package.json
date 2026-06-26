@@ -49,6 +49,7 @@
   "dependencies": {
     "@playwright/test": "^1.60.0",
     "allure-playwright": "^3.9.0",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "marked": "^18.0.5"
   },
