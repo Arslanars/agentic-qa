@@ -2,10 +2,10 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-26 14:35:03
+**Last run:** 2026-06-26 22:00:46
 **Browser:** chromium
 **Status:** ✅ PASS (10/12)
-**Duration:** 28.3 s
+**Duration:** 40.0 s
 **Skipped:** 2
 
 ## Results
@@ -13,16 +13,16 @@
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
 | `fill-and-submit.spec.ts` | SignUp-001 / AC1: fill the signup form and register a new user › AC1 — fills both steps and the app accepts the registration (URL leaves /signup) | ⏭️ SKIPPED | 0 ms | — |
-| `signup-navigation.spec.ts` | SignUp / Navigation › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 2.4 s | — |
-| `signup-navigation.spec.ts` | SignUp / Navigation › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 3.6 s | — |
-| `signup-ui.spec.ts` | SignUp / UI behavior › UI-01 — Subdomain, Location Name, and Address fields are all read-only | ✅ PASS | 2.1 s | — |
-| `signup-ui.spec.ts` | SignUp / UI behavior › UI-03 — Show/Hide password button toggles input type on step 2 | ✅ PASS | 3.1 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 2.8 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 2.6 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-04 — invalid email format (no @): Next does not advance | ✅ PASS | 2.8 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-07 — Subdomain auto-derives from Restaurant Name (read-only, lowercased) | ✅ PASS | 2.4 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 2 validation › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 3.1 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 2 validation › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 3.4 s | — |
+| `signup-navigation.spec.ts` | SignUp / Navigation › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 2.8 s | — |
+| `signup-navigation.spec.ts` | SignUp / Navigation › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 4.1 s | — |
+| `signup-ui.spec.ts` | SignUp / UI behavior › UI-01 — Subdomain, Location Name, and Address fields are all read-only | ✅ PASS | 3.6 s | — |
+| `signup-ui.spec.ts` | SignUp / UI behavior › UI-03 — Show/Hide password button toggles input type on step 2 | ✅ PASS | 4.1 s | — |
+| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 3.7 s | — |
+| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 3.4 s | — |
+| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-04 — invalid email format (no @): Next does not advance | ✅ PASS | 5.9 s | — |
+| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-07 — Subdomain auto-derives from Restaurant Name (read-only, lowercased) | ✅ PASS | 4.3 s | — |
+| `signup-validation.spec.ts` | SignUp / Step 2 validation › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 4.4 s | — |
+| `signup-validation.spec.ts` | SignUp / Step 2 validation › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 3.7 s | — |
 | `verify-registered.spec.ts` | SignUp-001 / AC2: verify the user is registered › AC2 — after Create Account, the app surfaces the post-registration screen referencing the new restaurant | ⏭️ SKIPPED | 0 ms | — |
 
 ## Artifacts

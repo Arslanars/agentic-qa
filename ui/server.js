@@ -71,25 +71,36 @@ function safeSlug(input) {
     .slice(0, 60) || 'untitled';
 }
 
-// List feature folders under tests/
+// List feature folders. A feature has either .spec.ts files under tests/<name>/
+// or .feature files under features/<name>/ (Gherkin/BDD). Both counts are
+// surfaced in the response so the UI can show a single row per feature.
 app.get('/api/features', (_req, res) => {
   try {
-    if (!fs.existsSync(CFG_PATHS.tests)) return res.json([]);
-    const features = fs
-      .readdirSync(CFG_PATHS.tests)
-      .filter((name) => {
+    const featureMap = new Map();
+    // 1) Classic POM tests
+    if (fs.existsSync(CFG_PATHS.tests)) {
+      for (const name of fs.readdirSync(CFG_PATHS.tests)) {
         const stat = fs.statSync(path.join(CFG_PATHS.tests, name), { throwIfNoEntry: false });
-        return stat && stat.isDirectory();
-      })
-      .map((name) => {
-        const dir = path.join(CFG_PATHS.tests, name);
+        if (!stat || !stat.isDirectory()) continue;
         let specs = 0;
-        try {
-          specs = fs.readdirSync(dir).filter((f) => f.endsWith('.spec.ts')).length;
-        } catch (_) { /* dir vanished between readdir + readdir; treat as empty */ }
-        return { name, specs };
-      });
-    res.json(features);
+        try { specs = fs.readdirSync(path.join(CFG_PATHS.tests, name)).filter((f) => f.endsWith('.spec.ts')).length; } catch (_) {}
+        featureMap.set(name, { name, specs, features: 0 });
+      }
+    }
+    // 2) Gherkin .feature files
+    const featuresDir = path.join(ROOT, 'features');
+    if (fs.existsSync(featuresDir)) {
+      for (const name of fs.readdirSync(featuresDir)) {
+        const stat = fs.statSync(path.join(featuresDir, name), { throwIfNoEntry: false });
+        if (!stat || !stat.isDirectory()) continue;
+        let count = 0;
+        try { count = fs.readdirSync(path.join(featuresDir, name)).filter((f) => f.endsWith('.feature')).length; } catch (_) {}
+        const existing = featureMap.get(name);
+        if (existing) existing.features = count;
+        else featureMap.set(name, { name, specs: 0, features: count });
+      }
+    }
+    res.json(Array.from(featureMap.values()));
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
@@ -183,6 +194,28 @@ function makeSafeWrite(res) {
       return false;
     }
   };
+}
+
+// Compile .feature → .spec.js via playwright-bdd. Best-effort: resolves
+// even on failure (the actual test run will surface any real issue).
+function runBddgen(write) {
+  return new Promise((resolve) => {
+    if (!fs.existsSync(path.join(ROOT, 'features'))) return resolve(); // nothing to compile
+    write({ type: 'log', stream: 'stdout', text: '[ui] compiling .feature files (bddgen)…\n' });
+    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
+      ['bddgen', '--config', 'playwright.config.js'],
+      { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+    proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
+    proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
+    proc.on('close', (code) => {
+      if (code !== 0) write({ type: 'log', stream: 'stderr', text: `[ui] bddgen exited ${code} — feature files may not run\n` });
+      resolve();
+    });
+    proc.on('error', (err) => {
+      write({ type: 'log', stream: 'stderr', text: `[ui] bddgen spawn failed: ${err.message}\n` });
+      resolve();
+    });
+  });
 }
 
 // Spawn Playwright, stream its output via the NDJSON `write` callback,
@@ -340,15 +373,27 @@ app.post('/api/run', async (req, res) => {
 
   const testsRel = path.relative(ROOT, CFG_PATHS.tests).split(path.sep).join('/') || 'tests';
   const args = ['playwright', 'test'];
+  const hasBdd = fs.existsSync(path.join(ROOT, 'features'));
+  const runBdd = project === 'chromium' && hasBdd;
   // --last-failed runs only the tests that failed in the previous run.
   // Playwright doesn't combine it with a path filter, so when lastFailed=true
   // we skip the feature/tests filter entirely.
   if (lastFailed) {
     args.push('--last-failed');
-  } else {
-    args.push(feature ? `${testsRel}/${feature}/` : `${testsRel}/`);
+  } else if (feature) {
+    // Specific feature picked → push the classic test path + (if BDD runs)
+    // the matching compiled-feature path. Both projects respect path filters.
+    args.push(`${testsRel}/${feature}/`);
+    if (runBdd) args.push(`.features-gen/features/${feature}/`);
   }
-  if (project) args.push(`--project=${project}`);
+  // (no path filter when no feature is selected — Playwright runs everything
+  // under each project's testDir, including .features-gen/ for chromium-bdd)
+  if (project) {
+    args.push(`--project=${project}`);
+    // When chromium is picked, also run the BDD project so .feature scenarios
+    // execute in the same browser. The BDD project is chromium-only by design.
+    if (runBdd) args.push('--project=chromium-bdd');
+  }
   if (headed !== false) {
     args.push('--headed');
     // In headed mode, force a single worker so the user can actually watch
@@ -373,6 +418,9 @@ app.post('/api/run', async (req, res) => {
 
   try {
     clearAllureResults(write);
+    // Compile .feature files first so BDD scenarios are present in the
+    // generated dir before Playwright walks the testDir.
+    await runBddgen(write);
     write({ type: 'start', cmd: 'npx ' + args.join(' '), cwd: ROOT });
     const code = await runPlaywrightProcess(args, write, (p) => {
       currentProc = p;

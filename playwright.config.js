@@ -1,11 +1,26 @@
 // @ts-check
 import { defineConfig, devices } from '@playwright/test';
+import { defineBddConfig } from 'playwright-bdd';
+
+/**
+ * playwright-bdd compiles every .feature file into a Playwright spec at
+ * runtime under `.features-gen/` (gitignored). `defineBddConfig` returns
+ * the dir where the generated specs land; we point a dedicated project
+ * at it so playwright-bdd's runtime fixture can resolve the BDD config.
+ *
+ * The `chromium-bdd` project runs alongside `chromium` — npm scripts
+ * and /api/run pass both --project=chromium --project=chromium-bdd so
+ * the user sees one combined run.
+ */
+const bddTestDir = defineBddConfig({
+  features: 'features/**/*.feature',
+  steps: ['features/**/*.steps.ts'],
+});
 
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  testDir: './tests',
   // tests/seed.spec.ts is a scratch file written by the Playwright MCP
   // planner_setup_page tool; it's not a real test and pollutes the count.
   testIgnore: ['**/seed.spec.ts'],
@@ -30,9 +45,6 @@ export default defineConfig({
   ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    /* Base URL to use in actions like `await page.goto('')`. */
-    // baseURL: 'http://localhost:3000',
-
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
 
@@ -44,49 +56,13 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
 
-  /* Configure projects for major browsers */
+  /* Classic .spec.ts projects + the BDD project. Test runners pass
+     `--project=chromium --project=chromium-bdd` to execute both styles
+     together; running just `chromium` (etc.) skips BDD entirely. */
   projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
+    { name: 'chromium',     testDir: './tests', use: { ...devices['Desktop Chrome']  } },
+    { name: 'firefox',      testDir: './tests', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit',       testDir: './tests', use: { ...devices['Desktop Safari']  } },
+    { name: 'chromium-bdd', testDir: bddTestDir, use: { ...devices['Desktop Chrome'] } },
   ],
-
-  /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run start',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
 });
-

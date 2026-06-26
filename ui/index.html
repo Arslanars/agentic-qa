@@ -1087,7 +1087,11 @@
         for (const f of features) {
           const opt = document.createElement('option');
           opt.value = f.name;
-          opt.textContent = `${f.name} (${f.specs} spec${f.specs === 1 ? '' : 's'})`;
+          const parts = [];
+          if (f.specs) parts.push(`${f.specs} spec${f.specs === 1 ? '' : 's'}`);
+          if (f.features) parts.push(`${f.features} .feature`);
+          const suffix = parts.length ? ` (${parts.join(', ')})` : '';
+          opt.textContent = `${f.name}${suffix}`;
           select.appendChild(opt);
         }
       } catch {

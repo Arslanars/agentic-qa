@@ -17,13 +17,15 @@
     "README.md"
   ],
   "scripts": {
-    "test": "playwright test",
-    "test:chromium": "playwright test --project=chromium",
-    "test:firefox": "playwright test --project=firefox",
-    "test:webkit": "playwright test --project=webkit",
-    "test:ui": "playwright test --ui",
-    "test:headed": "playwright test --headed",
-    "test:debug": "playwright test --debug",
+    "bddgen": "bddgen",
+    "test": "bddgen && playwright test",
+    "test:chromium": "bddgen && playwright test --project=chromium --project=chromium-bdd",
+    "test:firefox": "bddgen && playwright test --project=firefox",
+    "test:webkit": "bddgen && playwright test --project=webkit",
+    "test:bdd": "bddgen && playwright test --project=chromium-bdd",
+    "test:ui": "bddgen && playwright test --ui",
+    "test:headed": "bddgen && playwright test --headed",
+    "test:debug": "bddgen && playwright test --debug",
     "test:report": "playwright show-report",
     "setup": "node bin/setup.js",
     "ui": "node bin/agentic-qa.js ui",
@@ -55,6 +57,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "allure-commandline": "^2.41.0"
+    "allure-commandline": "^2.41.0",
+    "playwright-bdd": "^9.2.0"
   }
 }

@@ -75,16 +75,20 @@ function flattenSuites(suite, acc = []) {
 }
 
 /**
- * Extract the feature slug from a test file path. The convention is
- * `tests/<feature>/<spec>.spec.ts`. Playwright's JSON reporter strips the
- * `testDir` prefix, so we may see either `tests/<feature>/...` (absolute) or
- * just `<feature>/...` (testDir-relative). Handle both.
+ * Extract the feature slug from a test file path. Supports two conventions:
+ *   - Classic POM:  tests/<feature>/<spec>.spec.ts
+ *   - BDD compiled: .features-gen/features/<feature>/<spec>.feature.spec.js
+ * Playwright's JSON reporter strips the testDir prefix, so we may see
+ * either the full path, a tests/-relative path, or a features-gen-relative
+ * path. Handle all three.
  */
 function featureFromPath(file) {
   const norm = (file || '').replace(/\\/g, '/');
-  // First, strip any leading "tests/" (handles both "tests/x/..." and
-  // ".../tests/x/...") so we're always working from <feature>/...
-  const stripped = norm.replace(/^(?:.*\/)?tests\//, '');
+  // Strip a leading ".features-gen/features/" or "features-gen/features/"
+  // (BDD compiled paths) first, then any leading "tests/" (classic).
+  const stripped = norm
+    .replace(/^(?:.*\/)?\.?features-gen\/features\//, '')
+    .replace(/^(?:.*\/)?tests\//, '');
   const m = stripped.match(/^([^/]+)\//);
   return m ? m[1] : null;
 }

@@ -15,3 +15,6 @@ node_modules/
 # Playwright MCP scratch (browser snapshots, console logs, seed test)
 /.playwright-mcp/
 /tests/seed.spec.ts
+
+# playwright-bdd compiles .feature → .spec.js here at runtime
+/.features-gen/
