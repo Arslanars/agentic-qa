@@ -448,6 +448,149 @@
       }
     }
 
+    /* ---------- Global focus-visible ring ---------- */
+    /* Single source of truth for keyboard focus so users never lose
+       their place when tabbing. Skipped on mouse focus (uses :focus-visible). */
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    button:focus-visible,
+    a:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    input:focus-visible,
+    [tabindex]:focus-visible {
+      outline-offset: 2px;
+    }
+
+    /* ---------- Status waterfall: live N-of-M progress ticks ---------- */
+    /* Renders along the bottom edge of the status bar. Each test gets a
+       narrow tick coloured by its outcome — green for pass, red for fail,
+       yellow for skipped/flaky, gray for in-flight. Glanceable during long runs. */
+    .status-bar { position: relative; }
+    .waterfall {
+      position: absolute;
+      left: 0; right: 0; bottom: -1px;
+      height: 3px;
+      display: flex;
+      gap: 2px;
+      padding: 0 12px;
+      pointer-events: none;
+    }
+    .waterfall:empty { display: none; }
+    .waterfall .tick {
+      flex: 1 1 0; min-width: 4px; max-width: 24px;
+      background: var(--text-faint); opacity: 0.4;
+      border-radius: 2px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .waterfall .tick.pass { background: var(--success); opacity: 1; }
+    .waterfall .tick.fail { background: var(--danger); opacity: 1; }
+    .waterfall .tick.skip { background: var(--warn); opacity: 1; }
+    .waterfall .tick.running { background: var(--info); opacity: 1; animation: tick-pulse 1.1s ease-in-out infinite; }
+    @keyframes tick-pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    /* ---------- Gallery pass/fail ribbons + lightbox arrows ---------- */
+    .shot { position: relative; }
+    .shot .ribbon {
+      position: absolute; top: 6px; right: 6px;
+      padding: 2px 7px; border-radius: 3px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+    .shot .ribbon.fail { background: var(--danger); color: #1a0a0a; }
+    .shot .ribbon.pass { background: var(--success); color: #062012; }
+
+    .lightbox-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border-strong);
+      color: var(--text); font-size: 24px; line-height: 1;
+      width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+      display: grid; place-items: center;
+    }
+    .lightbox-nav.prev { left: 18px; }
+    .lightbox-nav.next { right: 18px; }
+    .lightbox-nav:hover { background: rgba(255,255,255,0.14); }
+    .lightbox-nav:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ---------- Field validation ---------- */
+    .field input[aria-invalid="true"],
+    .field textarea[aria-invalid="true"],
+    .field select[aria-invalid="true"] {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 3px rgba(248,113,113,0.18);
+    }
+    .field-error {
+      display: none;
+      font-size: 11.5px; color: var(--danger); margin-top: 4px;
+    }
+    .field input[aria-invalid="true"] ~ .field-error,
+    .field textarea[aria-invalid="true"] ~ .field-error,
+    .field select[aria-invalid="true"] ~ .field-error {
+      display: block;
+    }
+
+    /* ---------- Report drawer (in-context iframe preview) ---------- */
+    .report-drawer {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: min(900px, 95vw);
+      background: var(--bg-1);
+      border-left: 1px solid var(--border-strong);
+      box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+      transform: translateX(100%);
+      transition: transform 0.25s ease;
+      z-index: 180;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .report-drawer.show { transform: translateX(0); }
+    .report-drawer-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 18px;
+      background: rgba(13,18,38,0.85);
+      border-bottom: 1px solid var(--border);
+    }
+    .report-drawer-head .title {
+      font-weight: 700; font-size: 13.5px;
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .report-drawer-head .open-tab {
+      background: transparent; color: var(--text-dim);
+      border: 1px solid var(--border); border-radius: 5px;
+      padding: 5px 10px; font-size: 11.5px; cursor: pointer;
+    }
+    .report-drawer-head .open-tab:hover { color: var(--text); border-color: var(--border-strong); }
+    .report-drawer-head .close-drawer {
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border-strong);
+      color: var(--text); font-size: 18px; line-height: 1;
+      width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+      display: grid; place-items: center;
+    }
+    .report-drawer iframe {
+      width: 100%; height: 100%; border: 0; background: #fff;
+    }
+    .report-drawer-backdrop {
+      position: fixed; inset: 0; background: rgba(2, 5, 25, 0.6);
+      display: none; z-index: 170;
+    }
+    .report-drawer-backdrop.show { display: block; }
+
+    /* ---------- Log linkification ---------- */
+    .log a.spec-link, .log a.shot-link {
+      color: var(--accent-2);
+      text-decoration: underline dotted;
+      text-underline-offset: 2px;
+    }
+    .log a.spec-link:hover, .log a.shot-link:hover {
+      color: var(--accent); text-decoration: underline;
+    }
+
     /* ---------- Scrollbar polish ---------- */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -487,7 +630,8 @@
             <h2 class="section-label">Story input</h2>
             <div class="field">
               <label for="url">Application URL</label>
-              <input id="url" type="url" placeholder="https://example.com/login" aria-required="true" />
+              <input id="url" type="url" placeholder="https://example.com/login" aria-required="true" aria-describedby="url-err" />
+              <div id="url-err" class="field-error">Application URL is required.</div>
             </div>
             <div class="row r-13">
               <div class="field">
@@ -496,12 +640,14 @@
               </div>
               <div class="field">
                 <label for="title">Story Title</label>
-                <input id="title" type="text" placeholder="User authentication" aria-required="true" />
+                <input id="title" type="text" placeholder="User authentication" aria-required="true" aria-describedby="title-err" />
+                <div id="title-err" class="field-error">Story title is required.</div>
               </div>
             </div>
             <div class="field">
               <label for="ac">Acceptance Criteria</label>
-              <textarea id="ac" placeholder="AC1: GIVEN ... WHEN ... THEN ...&#10;AC2: ...&#10;AC3: ..." aria-required="true"></textarea>
+              <textarea id="ac" placeholder="AC1: GIVEN ... WHEN ... THEN ...&#10;AC2: ...&#10;AC3: ..." aria-required="true" aria-describedby="ac-err"></textarea>
+              <div id="ac-err" class="field-error">At least one acceptance criterion is required.</div>
             </div>
             <div class="field">
               <label for="creds">Test Credentials (optional)</label>
@@ -585,6 +731,7 @@
             <span id="pill-fail" class="pill fail" hidden>0 failed</span>
             <span id="pill-time" class="pill">—</span>
           </div>
+          <div id="waterfall" class="waterfall" aria-hidden="true"></div>
         </div>
 
         <div class="log-wrap">
@@ -620,9 +767,21 @@
   </div>
 
   <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-labelledby="lightbox-cap">
+    <button id="lightbox-prev" type="button" class="lightbox-nav prev" aria-label="Previous screenshot">‹</button>
+    <button id="lightbox-next" type="button" class="lightbox-nav next" aria-label="Next screenshot">›</button>
     <button id="lightbox-close" type="button" class="lightbox-close" aria-label="Close screenshot preview">×</button>
     <img id="lightbox-img" alt="screenshot" />
     <div id="lightbox-cap" class="caption"></div>
+  </div>
+
+  <div id="report-drawer-backdrop" class="report-drawer-backdrop"></div>
+  <div id="report-drawer" class="report-drawer" role="dialog" aria-modal="true" aria-labelledby="report-drawer-title">
+    <div class="report-drawer-head">
+      <span id="report-drawer-title" class="title">Report</span>
+      <a id="report-drawer-tab" class="open-tab" target="_blank" rel="noopener" href="#">Open in tab ↗</a>
+      <button id="report-drawer-close" type="button" class="close-drawer" aria-label="Close report drawer">×</button>
+    </div>
+    <iframe id="report-drawer-iframe" title="Report preview" src="about:blank"></iframe>
   </div>
 
   <div id="toast" class="toast">
@@ -654,6 +813,15 @@
     // ring-buffer at MAX_LINES, surface the count, expose a Clear button.
     const MAX_LOG_LINES = 5000;
     let pendingScroll = false;
+    // Auto-scroll politely pauses when the user scrolls up — resumes
+    // when they scroll back to (or near) the bottom.
+    let autoScrollLocked = false;
+    if (logEl) {
+      logEl.addEventListener('scroll', () => {
+        const nearBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 24;
+        autoScrollLocked = !nearBottom;
+      });
+    }
 
     function setStatus(state, text) {
       badge.className = `badge ${state}`;
@@ -697,7 +865,7 @@
     }
 
     function scheduleScroll() {
-      if (pendingScroll) return;
+      if (pendingScroll || autoScrollLocked) return;
       pendingScroll = true;
       requestAnimationFrame(() => {
         pendingScroll = false;
@@ -705,11 +873,61 @@
       });
     }
 
+    // Linkify common Playwright path patterns inside a log fragment:
+    //   tests/<feature>/<spec>.spec.ts[:line[:col]] → vscode://file/<abs>:L:C
+    //   test-results/<dir>/<file>.png              → /test-results/... (opens lightbox)
+    // Returns an array of nodes (strings + <a> elements) ready to append.
+    function linkifyLog(text) {
+      const SPEC_RE = /(tests[\\/][\w.\-]+[\\/][\w.\-]+\.spec\.ts)(?::(\d+))?(?::(\d+))?/g;
+      const SHOT_RE = /(test-results[\\/][\w.\-+]+[\\/][\w.\-+]+\.png)/g;
+      const parts = [];
+      let lastIndex = 0;
+      // First pass: find all matches with their position; merge SPEC + SHOT.
+      const matches = [];
+      let m;
+      while ((m = SPEC_RE.exec(text)) !== null) {
+        matches.push({ kind: 'spec', start: m.index, end: m.index + m[0].length, full: m[0], file: m[1], line: m[2], col: m[3] });
+      }
+      while ((m = SHOT_RE.exec(text)) !== null) {
+        matches.push({ kind: 'shot', start: m.index, end: m.index + m[0].length, full: m[0], file: m[1] });
+      }
+      matches.sort((a, b) => a.start - b.start);
+      for (const mm of matches) {
+        if (mm.start < lastIndex) continue;  // overlap; skip
+        if (mm.start > lastIndex) parts.push(text.slice(lastIndex, mm.start));
+        const a = document.createElement('a');
+        if (mm.kind === 'spec') {
+          a.className = 'spec-link';
+          // Best-effort: a vscode:// link with the *project-relative* path is
+          // usable when the user opened this repo at the typical project root.
+          a.href = `vscode://file/${window.location.host ? '' : ''}${mm.file.replace(/\\/g, '/')}${mm.line ? `:${mm.line}` : ''}${mm.col ? `:${mm.col}` : ''}`;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.title = 'Open in VS Code';
+        } else {
+          a.className = 'shot-link';
+          a.href = '/' + mm.file.replace(/\\/g, '/');
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.title = 'Open screenshot';
+        }
+        a.textContent = mm.full;
+        parts.push(a);
+        lastIndex = mm.end;
+      }
+      if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+      return parts.length ? parts : [text];
+    }
+
     function appendLog(text, stream) {
       ensureLogStarted();
       const span = document.createElement('span');
       span.className = `log-entry ${stream === 'stderr' ? 'stderr' : ''}`;
-      span.textContent = text;
+      const pieces = linkifyLog(text);
+      for (const piece of pieces) {
+        if (typeof piece === 'string') span.appendChild(document.createTextNode(piece));
+        else span.appendChild(piece);
+      }
       logEl.appendChild(span);
       trimLogIfOverflowed();
       updateLineCount();
@@ -785,18 +1003,40 @@
     }
 
     let lastFocusBeforeLightbox = null;
-    function openLightbox(shot) {
+    // Track gallery shots so lightbox prev/next can navigate.
+    let galleryShots = [];
+    let lightboxIndex = -1;
+
+    function isFailureShot(shot) {
+      // Playwright writes test-failed-1.png on failure; the directory name
+      // also typically embeds the failing test title.
+      return /test-failed/i.test(shot.file || '') || /test-failed/i.test(shot.test || '');
+    }
+
+    function updateLightboxNav() {
+      const prev = $('lightbox-prev'), next = $('lightbox-next');
+      if (prev) prev.disabled = lightboxIndex <= 0;
+      if (next) next.disabled = lightboxIndex < 0 || lightboxIndex >= galleryShots.length - 1;
+    }
+    function openLightbox(shot, idx) {
       lastFocusBeforeLightbox = document.activeElement;
+      lightboxIndex = typeof idx === 'number' ? idx : galleryShots.findIndex((s) => s.url === shot.url);
       $('lightbox-img').src = shot.url;
       $('lightbox-img').alt = `${shot.test} / ${shot.file}`;
       $('lightbox-cap').textContent = `${shot.test} / ${shot.file}`;
       const lb = $('lightbox');
       lb.classList.add('show');
-      // Move focus into the lightbox for keyboard users
+      updateLightboxNav();
       $('lightbox-close')?.focus();
+    }
+    function navLightbox(step) {
+      const i = lightboxIndex + step;
+      if (i < 0 || i >= galleryShots.length) return;
+      openLightbox(galleryShots[i], i);
     }
     function closeLightbox() {
       $('lightbox').classList.remove('show');
+      lightboxIndex = -1;
       if (lastFocusBeforeLightbox && typeof lastFocusBeforeLightbox.focus === 'function') {
         lastFocusBeforeLightbox.focus();
       }
@@ -809,14 +1049,18 @@
       try {
         const resp = await fetch('/api/screenshots');
         const shots = await resp.json();
+        galleryShots = shots;
         if (!shots.length) {
           gallery.classList.add('hidden');
           return;
         }
         gallery.classList.remove('hidden');
-        count.textContent = `${shots.length} captured`;
+        const failCount = shots.filter(isFailureShot).length;
+        count.textContent = failCount > 0
+          ? `${shots.length} captured · ${failCount} from failed tests`
+          : `${shots.length} captured`;
         grid.innerHTML = '';
-        for (const shot of shots) {
+        shots.forEach((shot, idx) => {
           // Server-supplied strings (test dir names, file names) could contain
           // characters that break out of attribute context — build via DOM
           // APIs so values are properly escaped.
@@ -831,23 +1075,67 @@
           cap.title = `${shot.test} / ${shot.file}`;
           cap.textContent = prettifyTestName(shot.test);
           fig.appendChild(img);
+          if (isFailureShot(shot)) {
+            const ribbon = document.createElement('span');
+            ribbon.className = 'ribbon fail';
+            ribbon.textContent = 'Fail';
+            fig.appendChild(ribbon);
+          }
           fig.appendChild(cap);
-          fig.addEventListener('click', () => openLightbox(shot));
+          fig.addEventListener('click', () => openLightbox(shot, idx));
           grid.appendChild(fig);
-        }
+        });
       } catch {
         gallery.classList.add('hidden');
       }
     }
 
     $('lightbox').addEventListener('click', (e) => {
-      // Only close on backdrop click, not on the image / caption / close button
+      // Only close on backdrop click, not on the image / caption / nav buttons
       if (e.target.id === 'lightbox') closeLightbox();
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && $('lightbox').classList.contains('show')) closeLightbox();
+      if (!$('lightbox').classList.contains('show')) return;
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') navLightbox(-1);
+      else if (e.key === 'ArrowRight') navLightbox(1);
+      else if (e.key === 'Tab') {
+        // Focus trap inside the lightbox — cycle prev → next → close → prev …
+        const focusables = [$('lightbox-prev'), $('lightbox-next'), $('lightbox-close')].filter(b => b && !b.disabled);
+        const cur = document.activeElement;
+        const i = focusables.indexOf(cur);
+        if (i === -1) { focusables[0]?.focus(); e.preventDefault(); return; }
+        const next = e.shiftKey ? focusables[(i - 1 + focusables.length) % focusables.length] : focusables[(i + 1) % focusables.length];
+        next?.focus();
+        e.preventDefault();
+      }
     });
     $('lightbox-close').addEventListener('click', closeLightbox);
+    $('lightbox-prev').addEventListener('click', () => navLightbox(-1));
+    $('lightbox-next').addEventListener('click', () => navLightbox(1));
+
+    // In-context report drawer — keeps engineers cross-referencing
+    // screenshots + report without alt-tabbing.
+    function openReportDrawer(url, title) {
+      $('report-drawer-iframe').src = url;
+      $('report-drawer-title').textContent = title;
+      $('report-drawer-tab').href = url;
+      $('report-drawer').classList.add('show');
+      $('report-drawer-backdrop').classList.add('show');
+      // Move focus into the drawer for keyboard users
+      $('report-drawer-close')?.focus();
+    }
+    function closeReportDrawer() {
+      $('report-drawer').classList.remove('show');
+      $('report-drawer-backdrop').classList.remove('show');
+      // Defer src clear so the slide-out animation doesn't go blank mid-flight.
+      setTimeout(() => { $('report-drawer-iframe').src = 'about:blank'; }, 300);
+    }
+    $('report-drawer-close').addEventListener('click', closeReportDrawer);
+    $('report-drawer-backdrop').addEventListener('click', closeReportDrawer);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && $('report-drawer').classList.contains('show')) closeReportDrawer();
+    });
 
     async function refreshReports() {
       try {
@@ -855,25 +1143,34 @@
         const status = await resp.json();
         reportsEl.innerHTML = '<span class="label">Reports</span>';
         let any = false;
-        if (status.playwright) {
-          reportsEl.insertAdjacentHTML('beforeend',
-            `<a class="report-link" href="/playwright-report/index.html" target="_blank">${reportIcon()}Playwright HTML</a>`);
+        const addLink = (url, label, iconHtml, opts = {}) => {
+          const a = document.createElement('a');
+          a.className = 'report-link';
+          a.href = url;
+          if (opts.download) a.download = '';
+          // Clicking opens the drawer in-context; ctrl/cmd-click still opens
+          // a new tab (browser handles it before our preventDefault).
+          if (!opts.download) {
+            a.addEventListener('click', (e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+              e.preventDefault();
+              openReportDrawer(url, label);
+            });
+            a.target = '_blank';
+            a.rel = 'noopener';
+          }
+          a.innerHTML = iconHtml;
+          a.appendChild(document.createTextNode(label));
+          reportsEl.appendChild(a);
           any = true;
-        }
-        if (status.allure) {
-          reportsEl.insertAdjacentHTML('beforeend',
-            `<a class="report-link" href="/allure-report/index.html" target="_blank">${reportIcon()}Allure</a>`);
-          any = true;
-        }
+        };
+        if (status.playwright) addLink('/playwright-report/index.html', 'Playwright HTML', reportIcon());
+        if (status.allure) addLink('/allure-report/index.html', 'Allure', reportIcon());
         for (const f of status.aiReports || []) {
-          reportsEl.insertAdjacentHTML('beforeend',
-            `<a class="report-link" href="/reports-view/${encodeURIComponent(f)}" target="_blank">${reportIcon()}${escapeHtml(f)}</a>`);
-          any = true;
+          addLink(`/reports-view/${encodeURIComponent(f)}`, f, reportIcon());
         }
         for (const f of status.excelReports || []) {
-          reportsEl.insertAdjacentHTML('beforeend',
-            `<a class="report-link" href="/reports/${encodeURIComponent(f)}" download>${excelIcon()}${escapeHtml(f)}</a>`);
-          any = true;
+          addLink(`/reports/${encodeURIComponent(f)}`, f, excelIcon(), { download: true });
         }
         if (!any) reportsEl.insertAdjacentHTML('beforeend', '<span class="empty">none yet</span>');
       } catch {}
@@ -922,6 +1219,24 @@ INSTRUCTIONS FOR CLAUDE:
       }
     });
 
+    // Per-field validation: replace the silent toast with real aria-invalid
+    // states + visible inline messages + focus-first-invalid.
+    function setFieldError(id, isError) {
+      const el = $(id);
+      if (!el) return;
+      if (isError) el.setAttribute('aria-invalid', 'true');
+      else el.removeAttribute('aria-invalid');
+    }
+    function clearAllFieldErrors() {
+      ['url', 'title', 'ac'].forEach((id) => setFieldError(id, false));
+    }
+    // Clear the error state as the user starts typing the missing value.
+    ['url', 'title', 'ac'].forEach((id) => {
+      $(id)?.addEventListener('input', () => {
+        if ($(id).value.trim()) setFieldError(id, false);
+      });
+    });
+
     $('save').addEventListener('click', async () => {
       const body = {
         url: $('url').value.trim(),
@@ -930,8 +1245,15 @@ INSTRUCTIONS FOR CLAUDE:
         creds: $('creds').value.trim(),
         storyId: $('storyId').value.trim(),
       };
-      if (!body.url || !body.title || !body.ac) {
-        showToast('URL, title, and AC are required', 'error');
+      clearAllFieldErrors();
+      const missing = [];
+      if (!body.url) missing.push('url');
+      if (!body.title) missing.push('title');
+      if (!body.ac) missing.push('ac');
+      if (missing.length > 0) {
+        missing.forEach((id) => setFieldError(id, true));
+        $(missing[0]).focus();
+        showToast(missing.length === 1 ? 'Missing required field' : `${missing.length} required fields missing`, 'error');
         return;
       }
       const resp = await fetch('/api/save-story', {
@@ -944,6 +1266,37 @@ INSTRUCTIONS FOR CLAUDE:
       showToast(`Saved ${data.file}`);
       appendMeta(`[save] wrote ${data.file}`);
     });
+
+    // Status-bar waterfall: paint a tick per discovered test, color it
+    // when its result comes in. Parsed from Playwright's `list` reporter
+    // output (the `ok N` and `x N` lines).
+    function rebuildWaterfall(state) {
+      const wf = $('waterfall');
+      if (!wf) return;
+      wf.innerHTML = '';
+      const total = state.total || 0;
+      if (total === 0) return;
+      for (let i = 0; i < total; i++) {
+        const tick = document.createElement('span');
+        tick.className = 'tick';
+        const result = state.results[i];
+        if (result) tick.classList.add(result);
+        else if (i === state.cursor) tick.classList.add('running');
+        wf.appendChild(tick);
+      }
+    }
+
+    // Aria announcer — throttled so screen readers don't get overwhelmed
+    // by streaming log chunks. Polite by default.
+    const announcerLast = { text: '', at: 0 };
+    function announce(text) {
+      const now = performance.now();
+      if (now - announcerLast.at < 800 && text === announcerLast.text) return;
+      announcerLast.text = text;
+      announcerLast.at = now;
+      // The status-bar already has role=status aria-live=polite, so
+      // updating statusText.textContent (via setStatus) announces.
+    }
 
     // Parse "N passed", "N failed", "(X.Ys)" from Playwright output
     function parseSummary(text) {
@@ -965,6 +1318,38 @@ INSTRUCTIONS FOR CLAUDE:
       pillFail.hidden = true;
       setStatus('running', `running ${feature || 'all features'} on ${project}${headed ? ' (headed)' : ''}…`);
       $('run').disabled = true;
+
+      // Reset the live waterfall for this run.
+      const wfState = { total: 0, cursor: 0, results: [] };
+      rebuildWaterfall(wfState);
+
+      // Parse Playwright `list` reporter lines as they stream in:
+      //   "Running N tests using …"   → set total
+      //   "  ok  N [chromium] › …"    → results[N-1] = 'pass'
+      //   "  x   N [chromium] › …"    → results[N-1] = 'fail'
+      //   "  -   N [chromium] › …"    → results[N-1] = 'skip'
+      function parseWaterfall(text) {
+        let dirty = false;
+        const totalMatch = text.match(/Running\s+(\d+)\s+tests?/i);
+        if (totalMatch) {
+          const n = Number(totalMatch[1]);
+          if (n > 0 && n !== wfState.total) { wfState.total = n; wfState.results = []; dirty = true; }
+        }
+        const lineRe = /^\s*(ok|x|-)\s+(\d+)\b/gm;
+        let m;
+        while ((m = lineRe.exec(text)) !== null) {
+          const idx = Number(m[2]) - 1;
+          if (idx < 0) continue;
+          const status = m[1] === 'ok' ? 'pass' : (m[1] === 'x' ? 'fail' : 'skip');
+          if (wfState.results[idx] !== status) {
+            wfState.results[idx] = status;
+            wfState.cursor = Math.max(wfState.cursor, idx + 1);
+            if (wfState.total === 0) wfState.total = idx + 1;
+            dirty = true;
+          }
+        }
+        if (dirty) rebuildWaterfall(wfState);
+      }
 
       let allOutput = '';
       try {
@@ -988,7 +1373,11 @@ INSTRUCTIONS FOR CLAUDE:
             try {
               const msg = JSON.parse(line);
               if (msg.type === 'start') appendMeta(`$ ${msg.cmd}`);
-              else if (msg.type === 'log') { appendLog(msg.text, msg.stream); allOutput += msg.text; }
+              else if (msg.type === 'log') {
+                appendLog(msg.text, msg.stream);
+                allOutput += msg.text;
+                parseWaterfall(msg.text);
+              }
               else if (msg.type === 'error') appendMeta(`[error] ${msg.message}`);
               else if (msg.type === 'done') exitCode = msg.exitCode;
             } catch {
