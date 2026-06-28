@@ -11,7 +11,7 @@ import { LoginPage } from '../../pages/login-user/LoginPage';
 // Scope these step definitions to the @login feature tag so the same
 // step phrases (e.g. `I click the {string} link`) can be redefined for
 // other features without colliding with Cucumber's global step pool.
-const { Given, When, Then } = createBdd(null, { tags: '@login' });
+const { Given, When, Then } = createBdd(undefined, { tags: '@login' });
 
 const AUTH_API_RE = /security-api\.moontower\.aiimone\.com\/api\/Auth\/Login/i;
 
@@ -108,10 +108,15 @@ Then('the password field input type is {string}', async ({ page }, expected: str
 
 Then('the email field should report a typeMismatch validity error', async ({ page }) => {
   const login = new LoginPage(page);
-  const isInvalid = await login.emailInput.evaluate(
-    (el) => (el as HTMLInputElement).validity?.typeMismatch === true,
-  );
-  expect(isInvalid, 'Email input should flag typeMismatch on bad-format inputs').toBe(true);
+  // Poll instead of single evaluate() so a transient navigation/teardown
+  // race (Firefox sometimes tears down the page while we sample) doesn't
+  // immediately fail the step.
+  await expect
+    .poll(
+      async () => login.emailInput.evaluate((el) => (el as HTMLInputElement).validity?.typeMismatch === true),
+      { timeout: 5_000, message: 'Email input should flag typeMismatch on bad-format inputs' },
+    )
+    .toBe(true);
 });
 
 Then('the URL should match {string}', async ({ page }, pattern: string) => {

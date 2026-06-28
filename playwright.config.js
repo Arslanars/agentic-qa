@@ -61,11 +61,11 @@ export default defineConfig({
   /* One BDD project per browser — all share the generated test dir
      so any feature runs identically across chromium / firefox / webkit. */
   projects: [
-    { name: 'chromium',     testDir: bddTestDir, use: { ...devices['Desktop Chrome']  } },
-    { name: 'firefox',      testDir: bddTestDir, use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit',       testDir: bddTestDir, use: { ...devices['Desktop Safari']  } },
-    // Alias retained so `--project=chromium-bdd` (used by older scripts /
-    // older /api/run callers) still resolves to the same chromium config.
-    { name: 'chromium-bdd', testDir: bddTestDir, use: { ...devices['Desktop Chrome'] } },
+    { name: 'chromium', testDir: bddTestDir, use: { ...devices['Desktop Chrome']  } },
+    // Firefox cold-start under parallel workers is consistently slower than
+    // chromium/webkit on the moontower app — raise the per-test timeout
+    // here only so the wider expectLoaded budget can absorb hydration cost.
+    { name: 'firefox',  testDir: bddTestDir, timeout: 60_000, use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit',   testDir: bddTestDir, use: { ...devices['Desktop Safari']  } },
   ],
 });

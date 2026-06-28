@@ -109,27 +109,28 @@ Acceptance Criteria:
 
 ### What the pipeline produced (committed to the repo)
 
-| File | Lines | Purpose |
-|------|------:|---------|
-| `user-stories/SignUp-001-user-signup.md` | 39 | Formalized story |
-| `user-stories/Login-login-user.md` | 32 | Formalized story |
-| `specs/SignUp-001-user-signup-plan.md` | 38 | Test plan with field map + success criteria |
-| `specs/Login-login-user-plan.md` | 26 | Test plan |
-| `pages/user-signup/SignupPage.ts` | 78 | POM with step-1 + step-2 actions |
-| `pages/login-user/LoginPage.ts` | 34 | POM with `login()` action |
-| `tests/user-signup/fill-and-submit.spec.ts` | 47 | AC1 spec |
-| `tests/user-signup/verify-registered.spec.ts` | 45 | AC2 spec |
-| `tests/login-user/login-success.spec.ts` | 24 | AC1 spec |
-| `reports/SignUp-001-user-signup.md` | 67 | Execution report |
-| `reports/Login-login-user.md` | 56 | Execution report |
+| File | Purpose |
+|------|---------|
+| `user-stories/SignUp-001-user-signup.md` | Formalized story |
+| `user-stories/Login-login-user.md` | Formalized story |
+| `specs/SignUp-001-user-signup-plan.md` | Test plan with field map + success criteria |
+| `specs/Login-login-user-plan.md` | Test plan |
+| `pages/user-signup/SignupPage.ts` | POM with step-1 + step-2 actions |
+| `pages/login-user/LoginPage.ts` | POM with `login()` action |
+| `features/user-signup/signup.feature` + `.steps.ts` | 12 Gherkin scenarios (10 default + 2 `@destructive`) |
+| `features/login-user/login.feature` + `.steps.ts` | 14 Gherkin scenarios (POS, NEG×7, UI×3, NAV×3) |
+| `features/<feature>/testcases.json` | 10-column QA test-case design (Excel source) |
+| `reports/SignUp-001-user-signup.md` | Execution report (dynamic) |
+| `reports/Login-login-user.md` | Execution report (dynamic) |
+| `reports/Test-Cases.xlsx` | Excel deliverable refreshed every run |
 
 ### Execution results (Chromium)
 
-| Suite | ACs | Result | Duration |
+| Suite | Scenarios | Result | Duration |
 |-------|----:|--------|---------:|
-| `tests/user-signup` (SignUp-001) | 2/2 | ✅ PASS | 5.0 s |
-| `tests/login-user` (Login) | 1/1 | ✅ PASS | 5.1 s |
-| **Total** | **3/3** | **✅ PASS** | **10.1 s** |
+| `features/user-signup` (SignUp-001) | 10/10 (+2 `@destructive` gated) | ✅ PASS | ~12 s |
+| `features/login-user` (Login) | 14/14 | ✅ PASS | ~18 s |
+| **Total** | **24/24** (+2 gated) | **✅ PASS** | **~30 s** |
 
 ### Deliverables produced by the run
 
@@ -169,22 +170,22 @@ export class LoginPage extends BasePage {
 }
 ```
 
-```typescript
-// tests/login-user/login-success.spec.ts (excerpt)
-test('AC1 — valid credentials authenticate the user and route them to /select-location', async ({ page }) => {
-  const login = new LoginPage(page);
-  await login.goto();
-  await login.expectLoaded();
-  await login.login(EMAIL, PASSWORD);
+```gherkin
+# features/login-user/login.feature (excerpt)
+@login
+Feature: Login User
 
-  // Three independent post-login signals — all must hold:
-  await expect(page).toHaveURL(/\/select-location$/, { timeout: 15_000 });
-  await expect(page.getByRole('heading', { name: 'Select Your Location' })).toBeVisible();
-  await expect(page.getByText(/^Restaurant:\s+/)).toBeVisible();
-});
+  Background:
+    Given I am on the Moontower login page
+
+  Scenario: AC1-POS-01 — successful login with valid credentials
+    When I sign in with email "developers@moontower.com" and password "12345678"
+    Then I should be redirected to the location-picker screen
+    And I should see the heading "Select Your Location"
+    And I should see a paragraph beginning with "Restaurant:"
 ```
 
-The test passes only if **all three** post-auth signals hold — URL match, heading visible, and a `Restaurant:` paragraph confirming an account context loaded.
+The scenario passes only if **all three** post-auth signals hold — URL match, heading visible, and a `Restaurant:` paragraph confirming an account context loaded. The step definitions wrap the existing `LoginPage` POM so selectors stay in one file.
 
 ---
 
@@ -204,8 +205,9 @@ npm run ui               # → http://localhost:3001
 Or run from the command line:
 
 ```bash
-npx playwright test tests/user-signup --project=chromium
-npx playwright test tests/login-user --project=chromium
+npm run test:chromium                            # all default scenarios
+npm run test:bdd                                 # BDD scenarios only
+RUN_DESTRUCTIVE_SIGNUP=1 npm run test:destructive # opt into the @destructive ACs
 ```
 
 Reports are written to:

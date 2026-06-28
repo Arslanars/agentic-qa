@@ -7,12 +7,12 @@
 // the non-destructive validation / UI / nav cases.
 
 import { expect } from '@playwright/test';
-import { createBdd } from 'playwright-bdd';
+import { createBdd, test } from 'playwright-bdd';
 import { SignupPage } from '../../pages/user-signup/SignupPage';
 
 // Scope these step definitions to the @signup feature tag so phrases
 // can overlap with other features without colliding.
-const { Given, When, Then, test } = createBdd(null, { tags: '@signup' });
+const { Given, When, Then } = createBdd(undefined, { tags: '@signup' });
 
 // Track per-scenario state we need to assert on later (e.g. the
 // uniquely-generated restaurant name used in the post-signup screen).

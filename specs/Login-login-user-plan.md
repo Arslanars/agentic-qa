@@ -10,7 +10,7 @@
 
 | AC | Spec file | What it asserts |
 |----|-----------|-----------------|
-| AC1: Visit site and try to login | `tests/login-user/login-success.spec.ts` | After submitting valid credentials, the app routes to `/select-location`, the "Select Your Location" heading is visible, and a "Restaurant: …" paragraph confirms an account context loaded. |
+| AC1: Visit site and try to login | `features/login-user/login.feature` (AC1-POS-01) | After submitting valid credentials, the app routes to `/select-location`, the "Select Your Location" heading is visible, and a "Restaurant: …" paragraph confirms an account context loaded. |
 
 ## Test data
 - `MOONTOWER_LOGIN_EMAIL` env var → defaults to `developers@moontower.com`

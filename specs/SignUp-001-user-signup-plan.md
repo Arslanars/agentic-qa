@@ -17,8 +17,8 @@
 
 | AC | Spec file | What it asserts |
 |----|-----------|-----------------|
-| AC1: Visit + fill + register | `tests/user-signup/fill-and-submit.spec.ts` | Drives the full 2-step flow with valid data and asserts the app navigates **away** from `/signup` after Create Account — i.e. the server accepted the registration. Also asserts Subdomain auto-populates from Restaurant Name. |
-| AC2: Verify user is registered | `tests/user-signup/verify-registered.spec.ts` | Drives the full flow and asserts **all three** post-registration signals: URL `/select-location`, heading "Select Your Location" visible, and the literal `Restaurant: <run-specific name>` text — the third proves the exact account just created is what the server registered. |
+| AC1: Visit + fill + register | `features/user-signup/signup.feature` (`@destructive` AC1-POS-01) | Drives the full 2-step flow with valid data and asserts the app navigates **away** from `/signup` after Create Account — i.e. the server accepted the registration. Gated behind `RUN_DESTRUCTIVE_SIGNUP=1`. |
+| AC2: Verify user is registered | `features/user-signup/signup.feature` (`@destructive` AC2-POS-01) | Drives the full flow and asserts **all three** post-registration signals: URL `/select-location`, heading "Select Your Location" visible, and the literal `Restaurant: <run-specific name>` text. Gated behind `RUN_DESTRUCTIVE_SIGNUP=1`. |
 
 ## Test data
 - `MOONTOWER_SIGNUP_EMAIL` env var, defaulting to `arslan.moon@yopmail.com`

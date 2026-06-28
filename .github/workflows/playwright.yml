@@ -25,7 +25,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          # Node 20+ required by playwright-bdd@9 (matches engines.node in package.json).
+          node-version: '20'
           cache: npm
 
       - name: Install dependencies
@@ -35,7 +36,10 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run Playwright tests
-        run: npx playwright test
+        # Use `npm test` so `bddgen && playwright test --grep-invert=@destructive`
+        # is invoked verbatim. Calling `npx playwright test` directly would skip
+        # `bddgen`, meaning ZERO BDD scenarios would compile/run in CI.
+        run: npm test
 
       - name: Upload Playwright HTML report
         uses: actions/upload-artifact@v4

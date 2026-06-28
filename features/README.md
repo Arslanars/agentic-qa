@@ -29,7 +29,7 @@ Same reporter, screenshots, traces, Excel pipeline as classic .spec.ts
 ```
 
 - `bddgen` runs automatically before every `npm test*` script and every `/api/run` invocation. No separate compile step to remember.
-- The dedicated Playwright project is **`chromium-bdd`**. The UI's "▶ Run Tests" button passes `--project=chromium --project=chromium-bdd` when chromium is selected, so a single click executes both styles.
+- Every browser project (`chromium`, `firefox`, `webkit`) has `testDir` pointing at the BDD-generated dir, so `npm run test:chromium` (or picking `chromium` in the UI dropdown) executes every `.feature` scenario in chromium — no extra `--project` flags needed.
 
 ## Adding a new BDD feature in 5 steps
 

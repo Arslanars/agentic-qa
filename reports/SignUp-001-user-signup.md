@@ -2,38 +2,25 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-28 11:10:54
+**Last run:** 2026-06-28 11:26:46
 **Browser:** chromium
-**Status:** ✅ PASS (20/22)
-**Duration:** 79.2 s
-**Skipped:** 2
+**Status:** ✅ PASS (10/10)
+**Duration:** 33.7 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `fill-and-submit.spec.ts` | SignUp-001 / AC1: fill the signup form and register a new user › AC1 — fills both steps and the app accepts the registration (URL leaves /signup) | ⏭️ SKIPPED | 0 ms | — |
-| `signup-navigation.spec.ts` | SignUp / Navigation › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 4.2 s | — |
-| `signup-navigation.spec.ts` | SignUp / Navigation › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 3.0 s | — |
-| `signup-ui.spec.ts` | SignUp / UI behavior › UI-01 — Subdomain, Location Name, and Address fields are all read-only | ✅ PASS | 3.2 s | — |
-| `signup-ui.spec.ts` | SignUp / UI behavior › UI-03 — Show/Hide password button toggles input type on step 2 | ✅ PASS | 5.7 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 3.6 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 4.1 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-04 — invalid email format (no @): Next does not advance | ✅ PASS | 3.4 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 1 validation › NEG-07 — Subdomain auto-derives from Restaurant Name (read-only, lowercased) | ✅ PASS | 3.8 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 2 validation › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 6.1 s | — |
-| `signup-validation.spec.ts` | SignUp / Step 2 validation › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 3.6 s | — |
-| `verify-registered.spec.ts` | SignUp-001 / AC2: verify the user is registered › AC2 — after Create Account, the app surfaces the post-registration screen referencing the new restaurant | ⏭️ SKIPPED | 0 ms | — |
-| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 3.4 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 3.2 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | ✅ PASS | 3.1 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | ✅ PASS | 3.2 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 4.9 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 4.4 s | — |
-| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | ✅ PASS | 5.7 s | — |
-| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | ✅ PASS | 3.9 s | — |
-| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 3.8 s | — |
-| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 2.8 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 4.8 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 3.0 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | ✅ PASS | 2.9 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | ✅ PASS | 3.0 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 3.3 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 3.7 s | — |
+| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | ✅ PASS | 2.9 s | — |
+| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | ✅ PASS | 3.7 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 3.3 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 3.0 s | — |
 
 ## Artifacts
 
@@ -54,10 +41,10 @@
 
 | Spec | AC | Status | Duration |
 |------|----|--------|----------|
-| `tests/user-signup/fill-and-submit.spec.ts` | AC1 | ✅ PASS | 3.5s |
-| `tests/user-signup/verify-registered.spec.ts` | AC2 | ✅ PASS | 3.5s |
+| `features/user-signup/signup.feature` (AC1-POS-01) | AC1 | ⏭️ SKIPPED unless `RUN_DESTRUCTIVE_SIGNUP=1` | — |
+| `features/user-signup/signup.feature` (AC2-POS-01) | AC2 | ⏭️ SKIPPED unless `RUN_DESTRUCTIVE_SIGNUP=1` | — |
 
-**Total: 2 passed, 5.0s, 0 false greens.**
+**Total: 12 Gherkin scenarios authored (10 default-runnable + 2 `@destructive`).** Migrated from `.spec.ts` to BDD.
 
 ## What the suite proves
 
@@ -93,11 +80,14 @@ The spec drives the same flow, then asserts **three independent post-registratio
 ## How to re-run
 
 ```bash
-# All AC specs for this feature
-npx playwright test tests/user-signup --project=chromium
+# All non-destructive scenarios for this feature
+npm run test:chromium                      # default; skips @destructive
+
+# Opt into the destructive AC1/AC2 happy-path
+RUN_DESTRUCTIVE_SIGNUP=1 npm run test:destructive
 
 # Or via the UI
-npm run ui   # → http://localhost:3001 → pick "User signup" → ▶ Run Tests
+npm run ui   # → http://localhost:3001 → pick "user-signup" → ▶ Run Tests
 ```
 
 ## Hygiene checks (framework rules)
@@ -112,7 +102,7 @@ npm run ui   # → http://localhost:3001 → pick "User signup" → ▶ Run Test
 ## Artifacts
 
 - POM: [pages/user-signup/SignupPage.ts](../pages/user-signup/SignupPage.ts)
-- AC1 spec: [tests/user-signup/fill-and-submit.spec.ts](../tests/user-signup/fill-and-submit.spec.ts)
-- AC2 spec: [tests/user-signup/verify-registered.spec.ts](../tests/user-signup/verify-registered.spec.ts)
+- Feature: [features/user-signup/signup.feature](../features/user-signup/signup.feature)
+- Step definitions: [features/user-signup/signup.steps.ts](../features/user-signup/signup.steps.ts)
 - Playwright HTML report: `playwright-report/` (run `npx playwright show-report`)
 - Per-test screenshots: `test-results/user-signup-*/`

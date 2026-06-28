@@ -2,7 +2,6 @@
   "name": "agentic-qa",
   "version": "0.2.0",
   "description": "QA pipeline for Playwright — POM convention, visual test runner with live streaming, screenshots gallery, and Allure reporting. Test authoring via Claude Code or by hand; no paid API required.",
-  "main": "lib/index.js",
   "bin": {
     "agentic-qa": "bin/agentic-qa.js"
   },
@@ -47,7 +46,7 @@
   "license": "ISC",
   "type": "commonjs",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",
@@ -59,6 +58,7 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "allure-commandline": "^2.41.0",
-    "playwright-bdd": "^9.2.0"
+    "playwright-bdd": "^9.2.0",
+    "typescript": "^6.0.3"
   }
 }

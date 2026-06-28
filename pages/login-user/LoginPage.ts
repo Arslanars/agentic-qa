@@ -31,7 +31,12 @@ export class LoginPage extends BasePage {
   }
 
   async expectLoaded(): Promise<void> {
-    await expect(this.emailInput).toBeVisible();
-    await expect(this.signInButton).toBeVisible();
+    // Firefox cold-start under parallel workers can take >5s to hydrate
+    // the React app; wait for DOM, then use a per-locator 15s budget so
+    // first-paint cost is absorbed up-front instead of bleeding into
+    // later steps and tripping their tighter timeouts.
+    await this.page.waitForLoadState('domcontentloaded');
+    await expect(this.emailInput).toBeVisible({ timeout: 15_000 });
+    await expect(this.signInButton).toBeVisible({ timeout: 15_000 });
   }
 }
