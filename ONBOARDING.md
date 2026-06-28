@@ -73,13 +73,18 @@ That's the whole framework.
 ├── pages/                    ← Page Object Model classes (one per page)
 │   ├── BasePage.ts
 │   └── <feature>/<PageName>Page.ts
-├── tests/                    ← Playwright specs (one per AC)
+├── tests/                    ← Classic POM Playwright specs (one per AC)
 │   └── <feature>/*.spec.ts
+├── features/                 ← Cucumber/Gherkin scenarios (optional, runs alongside .spec.ts)
+│   ├── _TEMPLATE.feature
+│   ├── README.md             ← BDD authoring guide
+│   └── <feature>/<name>.feature + <name>.steps.ts
 ├── specs/                    ← Test plans (markdown)
 ├── reports/                  ← Execution reports (markdown, committed)
 ├── test-results/             ← Playwright per-run artifacts (gitignored)
 ├── allure-results/           ← Raw Allure JSON (gitignored)
 ├── allure-report/            ← Allure HTML dashboard (gitignored, regenerated each run)
+├── .features-gen/            ← BDD-compiled specs (gitignored, regenerated each run)
 ├── playwright.config.js
 └── QAEnd2EndPromptFile.md    ← Reusable Claude Code prompts
 ```
@@ -111,7 +116,7 @@ Quick links to:
 
 ---
 
-## Adding a new feature to test — three paths
+## Adding a new feature to test — four paths
 
 ### Path A: Use Claude Code (recommended)
 
@@ -123,7 +128,7 @@ Quick links to:
 
 This uses your Claude Code subscription — no separate API key needed.
 
-### Path B: Save Story → hand-author
+### Path B: Save Story → hand-author classic POM specs
 
 1. In the UI, fill in URL + title + AC.
 2. Click **Save Story** — writes the `.md` file.
@@ -131,10 +136,19 @@ This uses your Claude Code subscription — no separate API key needed.
 4. Hand-author `tests/<slug>/*.spec.ts` that import the POM.
 5. Reload UI, ▶ Run.
 
-### Path C: Full hand-author
+### Path C: Cucumber / Gherkin (BDD)
+
+1. Copy `features/_TEMPLATE.feature` to `features/<slug>/<name>.feature`.
+2. Write Scenarios in plain English (`Given / When / Then`).
+3. Create `features/<slug>/<name>.steps.ts` — wire each step phrase to code; reuse the same POM as classic specs.
+4. Reload UI; the dropdown shows `<slug> (… .feature)`. ▶ Run.
+
+Full BDD authoring guide: [features/README.md](features/README.md). When chromium is picked in the UI, both classic and Gherkin scenarios run together.
+
+### Path D: Full hand-author from template
 
 1. Copy `user-stories/_TEMPLATE.md` to `user-stories/<STORY-ID>-<slug>.md`.
-2. Write the POM + specs.
+2. Write the POM + specs (or `.feature` files).
 3. Run via UI or `npm run test:chromium`.
 
 POM conventions: [pages/README.md](pages/README.md).

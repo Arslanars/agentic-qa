@@ -1,3 +1,4 @@
+@login
 Feature: Login User
   As a registered Moontower user, I want to sign in with my email and password
   so that I can access my restaurant's dashboard.

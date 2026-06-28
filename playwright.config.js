@@ -13,7 +13,10 @@ import { defineBddConfig } from 'playwright-bdd';
  * the user sees one combined run.
  */
 const bddTestDir = defineBddConfig({
-  features: 'features/**/*.feature',
+  // Author features under features/<feature>/<name>.feature.
+  // Anything starting with `_` (e.g. `_TEMPLATE.feature`) is treated as a
+  // scaffolding source and excluded.
+  features: ['features/**/*.feature', '!features/**/_*.feature'],
   steps: ['features/**/*.steps.ts'],
 });
 

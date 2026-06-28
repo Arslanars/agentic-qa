@@ -8,7 +8,10 @@ import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { LoginPage } from '../../pages/login-user/LoginPage';
 
-const { Given, When, Then } = createBdd();
+// Scope these step definitions to the @login feature tag so the same
+// step phrases (e.g. `I click the {string} link`) can be redefined for
+// other features without colliding with Cucumber's global step pool.
+const { Given, When, Then } = createBdd(null, { tags: '@login' });
 
 const AUTH_API_RE = /security-api\.moontower\.aiimone\.com\/api\/Auth\/Login/i;
 

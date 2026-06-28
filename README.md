@@ -15,6 +15,7 @@ A structured Playwright framework with a **visual test runner**, **Page Object M
 | Auto-rebuilt Allure HTML after every run | Built-in when Java is installed |
 | Screenshots gallery from the latest run | Click thumbnails for full-size lightbox |
 | POM convention with shared `BasePage` | `pages/<feature>/<Name>Page.ts` |
+| **Cucumber / Gherkin authoring** | `features/<feature>/<name>.feature` + `<name>.steps.ts` (runs alongside `.spec.ts`) |
 | AI-driven test authoring (via Claude Code) | Reusable prompts in [QAEnd2EndPromptFile.md](QAEnd2EndPromptFile.md) |
 | Self-healing for broken locators | Done manually via Claude Code's MCP browser tools |
 | CI workflow | [.github/workflows/playwright.yml](.github/workflows/playwright.yml) |
@@ -55,8 +56,12 @@ A structured Playwright framework with a **visual test runner**, **Page Object M
 ├── pages/                         # Page Object Model — one class per page
 │   ├── BasePage.ts
 │   └── <feature>/<PageName>Page.ts
-├── tests/                         # Playwright specs
+├── tests/                         # Classic POM Playwright specs
 │   └── <feature>/*.spec.ts
+├── features/                      # Cucumber/Gherkin scenarios (optional)
+│   ├── _TEMPLATE.feature
+│   ├── README.md                  # BDD authoring guide
+│   └── <feature>/<name>.feature   # +  <name>.steps.ts (step definitions)
 ├── reports/                       # Execution summaries (markdown)
 ├── test-results/                  # Playwright runtime artifacts (gitignored)
 ├── ui/                            # Visual test runner (`npm run ui`)
@@ -95,11 +100,19 @@ npm run ui
 3. Claude derives the story ID + slug, generates POMs + specs, writes them to disk.
 4. Reload the UI — the new feature appears in the dropdown.
 
-**Option B — Manual:**
+**Option B — Manual (classic POM):**
 1. Click **Save Story** in the UI to write `user-stories/<id>-<slug>.md`, or copy `user-stories/_TEMPLATE.md`.
 2. Hand-author `pages/<slug>/<Name>Page.ts` extending `BasePage`.
 3. Hand-author `tests/<slug>/*.spec.ts`.
 4. Reload the UI, pick the feature, ▶ Run.
+
+**Option C — Cucumber / Gherkin:**
+1. Copy `features/_TEMPLATE.feature` to `features/<slug>/<name>.feature` and write Scenarios in plain-English.
+2. Add the sibling `<name>.steps.ts` that wires each step phrase to code — reuse the same POM as classic specs.
+3. Reload the UI; the `(.feature)` count appears in the dropdown.
+4. ▶ Run Tests — `bddgen` compiles automatically; results appear in the same Excel / markdown / Allure reports.
+
+Full BDD authoring guide: [features/README.md](features/README.md).
 
 ---
 
