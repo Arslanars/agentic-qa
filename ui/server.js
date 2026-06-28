@@ -350,13 +350,15 @@ app.post('/api/run', async (req, res) => {
 
   // Validate input. Empty/undefined feature = run all features (no path arg);
   // any provided feature/project must match the safe-name regex AND, for
-  // feature, refer to an existing directory under testsDir.
+  // feature, refer to a real folder under features/ or tests/.
   if (feature !== undefined && feature !== null && feature !== '') {
     if (!isSafeName(feature)) {
       return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE} (got "${feature}")` });
     }
-    if (!fs.existsSync(path.join(CFG_PATHS.tests, feature))) {
-      return res.status(404).json({ error: `feature "${feature}" does not exist under tests/` });
+    const inFeatures = fs.existsSync(path.join(ROOT, 'features', feature));
+    const inTests = fs.existsSync(path.join(CFG_PATHS.tests, feature));
+    if (!inFeatures && !inTests) {
+      return res.status(404).json({ error: `feature "${feature}" does not exist under features/ or tests/` });
     }
   }
   if (project !== undefined && project !== null && project !== '') {
@@ -371,29 +373,19 @@ app.post('/api/run', async (req, res) => {
     return res.status(409).json({ error: 'a run is already in progress; abort or wait' });
   }
 
-  const testsRel = path.relative(ROOT, CFG_PATHS.tests).split(path.sep).join('/') || 'tests';
   const args = ['playwright', 'test'];
-  const hasBdd = fs.existsSync(path.join(ROOT, 'features'));
-  const runBdd = project === 'chromium' && hasBdd;
   // --last-failed runs only the tests that failed in the previous run.
-  // Playwright doesn't combine it with a path filter, so when lastFailed=true
-  // we skip the feature/tests filter entirely.
+  // Playwright doesn't combine it with a path filter.
   if (lastFailed) {
     args.push('--last-failed');
   } else if (feature) {
-    // Specific feature picked → push the classic test path + (if BDD runs)
-    // the matching compiled-feature path. Both projects respect path filters.
-    args.push(`${testsRel}/${feature}/`);
-    if (runBdd) args.push(`.features-gen/features/${feature}/`);
+    // Specific feature picked → filter the BDD compiled tests by feature dir.
+    args.push(`.features-gen/features/${feature}/`);
   }
-  // (no path filter when no feature is selected — Playwright runs everything
-  // under each project's testDir, including .features-gen/ for chromium-bdd)
-  if (project) {
-    args.push(`--project=${project}`);
-    // When chromium is picked, also run the BDD project so .feature scenarios
-    // execute in the same browser. The BDD project is chromium-only by design.
-    if (runBdd) args.push('--project=chromium-bdd');
-  }
+  if (project) args.push(`--project=${project}`);
+  // Default-skip @destructive tag (e.g. signup AC1/AC2 that creates real
+  // tenants on prod). Override with `?destructive=1` in the request.
+  if (!req.body?.destructive) args.push('--grep-invert=@destructive');
   if (headed !== false) {
     args.push('--headed');
     // In headed mode, force a single worker so the user can actually watch

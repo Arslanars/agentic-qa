@@ -33,6 +33,26 @@ When('I sign in with email {string} and password {string}', async ({ page }, ema
   (page as any).__lastAuthResponse = await responsePromise;
 });
 
+When('I sign in with a randomly-generated email and password {string}', async ({ page }, password: string) => {
+  const login = new LoginPage(page);
+  const responsePromise = page.waitForResponse((r) => AUTH_API_RE.test(r.url()), { timeout: 10_000 }).catch(() => null);
+  await login.emailInput.fill(`no-such-user-${Date.now().toString(36)}@example.com`);
+  await login.passwordInput.fill(password);
+  await login.signInButton.click();
+  (page as any).__lastAuthResponse = await responsePromise;
+});
+
+When('I fill the login form with email {string} and password {string}', async ({ page }, email: string, password: string) => {
+  const login = new LoginPage(page);
+  await login.emailInput.fill(email);
+  await login.passwordInput.fill(password);
+});
+
+When('I press Enter in the password field', async ({ page }) => {
+  const login = new LoginPage(page);
+  await login.passwordInput.press('Enter');
+});
+
 When('I type {string} into the password field', async ({ page }, value: string) => {
   const login = new LoginPage(page);
   await login.passwordInput.fill(value);
@@ -86,6 +106,18 @@ Then('the password field input type is {string}', async ({ page }, expected: str
   await expect(login.passwordInput).toHaveAttribute('type', expected);
 });
 
+Then('the email field should report a typeMismatch validity error', async ({ page }) => {
+  const login = new LoginPage(page);
+  const isInvalid = await login.emailInput.evaluate(
+    (el) => (el as HTMLInputElement).validity?.typeMismatch === true,
+  );
+  expect(isInvalid, 'Email input should flag typeMismatch on bad-format inputs').toBe(true);
+});
+
 Then('the URL should match {string}', async ({ page }, pattern: string) => {
   await expect(page).toHaveURL(new RegExp(pattern), { timeout: 10_000 });
+});
+
+Then('the URL should match the homepage', async ({ page }) => {
+  await expect(page).toHaveURL(/^https?:\/\/[^/]+\/?$/, { timeout: 10_000 });
 });

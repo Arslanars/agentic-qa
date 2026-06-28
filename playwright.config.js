@@ -5,12 +5,11 @@ import { defineBddConfig } from 'playwright-bdd';
 /**
  * playwright-bdd compiles every .feature file into a Playwright spec at
  * runtime under `.features-gen/` (gitignored). `defineBddConfig` returns
- * the dir where the generated specs land; we point a dedicated project
- * at it so playwright-bdd's runtime fixture can resolve the BDD config.
+ * the dir where the generated specs land.
  *
- * The `chromium-bdd` project runs alongside `chromium` — npm scripts
- * and /api/run pass both --project=chromium --project=chromium-bdd so
- * the user sees one combined run.
+ * Cucumber/Gherkin is now the SOLE authoring path — every browser project
+ * below points at bddTestDir, so scenarios run identically on chromium /
+ * firefox / webkit.
  */
 const bddTestDir = defineBddConfig({
   // Author features under features/<feature>/<name>.feature.
@@ -59,13 +58,14 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
 
-  /* Classic .spec.ts projects + the BDD project. Test runners pass
-     `--project=chromium --project=chromium-bdd` to execute both styles
-     together; running just `chromium` (etc.) skips BDD entirely. */
+  /* One BDD project per browser — all share the generated test dir
+     so any feature runs identically across chromium / firefox / webkit. */
   projects: [
-    { name: 'chromium',     testDir: './tests', use: { ...devices['Desktop Chrome']  } },
-    { name: 'firefox',      testDir: './tests', use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit',       testDir: './tests', use: { ...devices['Desktop Safari']  } },
+    { name: 'chromium',     testDir: bddTestDir, use: { ...devices['Desktop Chrome']  } },
+    { name: 'firefox',      testDir: bddTestDir, use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit',       testDir: bddTestDir, use: { ...devices['Desktop Safari']  } },
+    // Alias retained so `--project=chromium-bdd` (used by older scripts /
+    // older /api/run callers) still resolves to the same chromium config.
     { name: 'chromium-bdd', testDir: bddTestDir, use: { ...devices['Desktop Chrome'] } },
   ],
 });

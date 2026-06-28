@@ -7,6 +7,33 @@ Feature: User Signup
     Given I am on the Moontower signup page
 
   # ---------------------------------------------------------------------
+  # POSITIVE — happy path (DESTRUCTIVE: creates a real tenant on prod)
+  # Gated behind RUN_DESTRUCTIVE_SIGNUP=1 so default runs are safe.
+  # ---------------------------------------------------------------------
+
+  @destructive
+  Scenario: AC1-POS-01 — successful 2-step signup creates a new tenant
+    Given destructive signup runs are explicitly enabled
+    When I fill step 1 with a unique restaurant and valid contact details
+    And I click "Next"
+    And I enter Password "TestPass!2025" and Confirm Password "TestPass!2025"
+    And I check the Terms checkbox
+    And I click "Create Account"
+    Then the URL should leave /signup
+
+  @destructive
+  Scenario: AC2-POS-01 — after registration the post-signup screen confirms the new restaurant
+    Given destructive signup runs are explicitly enabled
+    When I fill step 1 with a unique restaurant and valid contact details
+    And I click "Next"
+    And I enter Password "TestPass!2025" and Confirm Password "TestPass!2025"
+    And I check the Terms checkbox
+    And I click "Create Account"
+    Then the URL should match "/select-location$"
+    And I should see the heading "Select Your Location"
+    And I should see a paragraph beginning with "Restaurant:" referencing the new restaurant
+
+  # ---------------------------------------------------------------------
   # Step 1 validation — required fields & format
   # ---------------------------------------------------------------------
 

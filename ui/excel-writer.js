@@ -64,18 +64,29 @@ function fmtLocalDateTime() {
 }
 
 /**
- * Discover every tests/<feature>/testcases.json the repo contains.
+ * Discover every testcases.json the repo contains. We look under
+ * features/<feature>/ (BDD authoring path) AND tests/<feature>/ (classic POM
+ * path) so the framework supports a mixed repo. If a feature has both,
+ * the features/ version wins — it's the canonical location now.
  */
 function discoverTestcaseFiles(root, paths) {
-  const testsDir = paths?.tests || path.join(root, 'tests');
-  if (!fs.existsSync(testsDir)) return [];
-  const files = [];
-  for (const entry of fs.readdirSync(testsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const candidate = path.join(testsDir, entry.name, 'testcases.json');
-    if (fs.existsSync(candidate)) files.push(candidate);
+  const candidates = new Map(); // feature name → file path
+
+  function pickup(dir) {
+    if (!dir || !fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const candidate = path.join(dir, entry.name, 'testcases.json');
+      if (fs.existsSync(candidate) && !candidates.has(entry.name)) {
+        candidates.set(entry.name, candidate);
+      }
+    }
   }
-  return files;
+
+  // features/ first (canonical for BDD), then tests/ as fallback.
+  pickup(path.join(root, 'features'));
+  pickup(paths?.tests || path.join(root, 'tests'));
+  return Array.from(candidates.values());
 }
 
 /**

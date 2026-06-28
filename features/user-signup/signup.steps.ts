@@ -12,7 +12,11 @@ import { SignupPage } from '../../pages/user-signup/SignupPage';
 
 // Scope these step definitions to the @signup feature tag so phrases
 // can overlap with other features without colliding.
-const { Given, When, Then } = createBdd(null, { tags: '@signup' });
+const { Given, When, Then, test } = createBdd(null, { tags: '@signup' });
+
+// Track per-scenario state we need to assert on later (e.g. the
+// uniquely-generated restaurant name used in the post-signup screen).
+let __lastRestaurantName: string | null = null;
 
 const EMAIL_BASE = process.env.MOONTOWER_SIGNUP_EMAIL || 'arslan.moon@yopmail.com';
 const PASSWORD = process.env.MOONTOWER_SIGNUP_PASSWORD || 'TestPass!2025';
@@ -30,6 +34,48 @@ Given('I am on the Moontower signup page', async ({ page }) => {
   const signup = new SignupPage(page);
   await signup.goto();
   await signup.expectStep1Rendered();
+});
+
+// Gate for @destructive signup scenarios. AC1/AC2 happy-path scenarios call
+// submitStep2() against production, minting a real tenant per run. Default
+// runs skip these; opt in via RUN_DESTRUCTIVE_SIGNUP=1.
+Given('destructive signup runs are explicitly enabled', async () => {
+  test.skip(
+    !process.env.RUN_DESTRUCTIVE_SIGNUP,
+    'Destructive — creates a real tenant on the live host. Set RUN_DESTRUCTIVE_SIGNUP=1 to run.'
+  );
+});
+
+When('I fill step 1 with a unique restaurant and valid contact details', async ({ page }) => {
+  const signup = new SignupPage(page);
+  const suffix = uniqueSuffix();
+  __lastRestaurantName = `MoonGherkinDestr${suffix}`;
+  await signup.fillStep1({
+    restaurantName: __lastRestaurantName,
+    fullName: 'Arslan Destructive',
+    businessEmail: uniqueEmail(`destr-${suffix}`),
+    phoneNumber: '5555550199',
+  });
+});
+
+Then('the URL should leave \\/signup', async ({ page }) => {
+  await expect(page).not.toHaveURL(/\/signup$/, { timeout: 15_000 });
+});
+
+Then('I should see the heading {string}', async ({ page }, name: string) => {
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+});
+
+Then('I should see a paragraph beginning with {string} referencing the new restaurant', async ({ page }, prefix: string) => {
+  // Assert the prefix appears AND, if we captured a unique restaurant name
+  // earlier in this scenario, that name is part of the visible text.
+  if (__lastRestaurantName) {
+    const re = new RegExp(prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+.*' + __lastRestaurantName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    await expect(page.getByText(re).first()).toBeVisible();
+  } else {
+    const re = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+');
+    await expect(page.getByText(re).first()).toBeVisible();
+  }
 });
 
 // Step-1 form filling -------------------------------------------------------
