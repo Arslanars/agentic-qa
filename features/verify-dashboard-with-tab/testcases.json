@@ -1,0 +1,73 @@
+{
+  "feature": "verify-dashboard-with-tab",
+  "storyId": "DashBoard-002",
+  "storyTitle": "Verify Dashboard with tab",
+  "applicationUrl": "https://moontower.aiimone.com/login",
+  "testCases": [
+    {
+      "id": "DashBoard-002-AC1-POS-01",
+      "scenario": "AC1: Visit the website and log in with the given credentials",
+      "testCase": "Sign in with the provided credentials and land on the location picker",
+      "preCondition": "Browser open at /login; account 'developers@moontower.com' exists; Email + Password fields and Sign In button visible",
+      "testSteps": [
+        "Navigate to https://moontower.aiimone.com/login",
+        "Enter 'developers@moontower.com' into the Email field",
+        "Enter '12345678' into the Password field",
+        "Click 'Sign In'"
+      ],
+      "testData": "Email: developers@moontower.com\nPassword: 12345678",
+      "expectedResult": "App leaves /login and redirects to /select-location (the location-picker screen)",
+      "postCondition": "User authenticated; session established",
+      "linkedSpec": ".features-gen/features/verify-dashboard-with-tab/verify-dashboard-with-tab.feature.spec.js",
+      "linkedTestTitle": "AC1-POS-01 — valid credentials log in and reach the location picker"
+    },
+    {
+      "id": "DashBoard-002-AC2-POS-01",
+      "scenario": "AC2: After login the 'Select Your Location' prompt is shown",
+      "testCase": "The 'Select Your Location' heading is visible after a successful login",
+      "preCondition": "Logged in with valid credentials; on /select-location",
+      "testSteps": [
+        "Log in with the provided credentials",
+        "Observe the post-login screen"
+      ],
+      "testData": "Email: developers@moontower.com\nPassword: 12345678",
+      "expectedResult": "The heading 'Select Your Location' is visible",
+      "postCondition": "User remains on /select-location awaiting a location choice",
+      "linkedSpec": ".features-gen/features/verify-dashboard-with-tab/verify-dashboard-with-tab.feature.spec.js",
+      "linkedTestTitle": "AC2-POS-01 — the \"Select Your Location\" prompt is shown after login"
+    },
+    {
+      "id": "DashBoard-002-AC3-POS-01",
+      "scenario": "AC3: Click 'Main Location' and verify the dashboard URL",
+      "testCase": "Choosing 'Main Location' routes to the inventory-vendors dashboard",
+      "preCondition": "Logged in; on /select-location with the 'Main Location' button visible",
+      "testSteps": [
+        "Log in with the provided credentials",
+        "Click the 'Main Location' button",
+        "Inspect the resulting URL"
+      ],
+      "testData": "Location: Main Location\nExpected URL: https://moontower.aiimone.com/inventory-vendors",
+      "expectedResult": "URL is exactly https://moontower.aiimone.com/inventory-vendors",
+      "postCondition": "User is on the inventory-vendors dashboard (Inventory sub-view by default)",
+      "linkedSpec": ".features-gen/features/verify-dashboard-with-tab/verify-dashboard-with-tab.feature.spec.js",
+      "linkedTestTitle": "AC3-POS-01 — choosing \"Main Location\" opens the inventory-vendors dashboard"
+    },
+    {
+      "id": "DashBoard-002-AC4-POS-01",
+      "scenario": "AC4: Click on the Inventory tab",
+      "testCase": "Clicking the Inventory sidebar tab activates the Inventory view",
+      "preCondition": "Logged in and on the /inventory-vendors dashboard; the left sidebar nav (Dashboard, Inventory, Quick Inventory, Vendors, Orders, …) is visible",
+      "testSteps": [
+        "Log in with the provided credentials",
+        "Click the 'Main Location' button",
+        "Wait for the dashboard sidebar to finish loading",
+        "Click the 'Inventory' tab in the left sidebar"
+      ],
+      "testData": "Tab: Inventory\nDashboard URL: https://moontower.aiimone.com/inventory-vendors",
+      "expectedResult": "Inventory view is active: the 'Inventory' heading is visible, the URL stays https://moontower.aiimone.com/inventory-vendors, and the Inventory tab is highlighted (active styling)",
+      "postCondition": "User is working in the Inventory section of the dashboard",
+      "linkedSpec": ".features-gen/features/verify-dashboard-with-tab/verify-dashboard-with-tab.feature.spec.js",
+      "linkedTestTitle": "AC4-POS-01 — clicking the Inventory tab activates the Inventory view"
+    }
+  ]
+}

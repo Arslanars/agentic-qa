@@ -3,122 +3,286 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Agentic QA Pipeline</title>
+  <script>
+    /* Theme bootstrap — runs before any CSS is applied so the first paint
+       matches the user's preference (no flash of wrong theme). */
+    (function () {
+      try {
+        var key = 'agentic-qa.theme';
+        var stored = localStorage.getItem(key);
+        var theme = (stored === 'dark' || stored === 'light')
+          ? stored
+          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
   <style>
+    /* =====================================================================
+       Agentic QA Pipeline — design system
+       ---------------------------------------------------------------------
+       Anchored on a single indigo accent (Linear/Vercel/Stripe pattern).
+       Warm off-white surfaces (zinc-50 family) — never cold blue-gray.
+       Semantic colors (green/red/blue/amber) used SPARINGLY on status only.
+       Log + lightbox stay dark — terminal/viewer conventions, not light-bleed.
+       ===================================================================== */
     :root {
-      /* Surfaces */
-      --bg-0: #07091a;
-      --bg-1: #0d1226;
-      --bg-2: #131934;
-      --surface: rgba(20, 26, 51, 0.72);
-      --surface-hover: rgba(28, 36, 67, 0.92);
-      --border: rgba(255, 255, 255, 0.08);
-      --border-strong: rgba(255, 255, 255, 0.14);
+      /* Surfaces — warm off-white, low contrast layering */
+      --bg-0: #fafaf9;          /* page (zinc-50, very faint warm tint) */
+      --bg-1: #ffffff;          /* primary surface */
+      --bg-2: #f4f4f5;          /* sunken / sidebar / sub-panel (zinc-100) */
+      --surface: #ffffff;
+      --surface-hover: #fafaf9;
+      --border: #e4e4e7;        /* zinc-200 — hairline (panels, dividers) */
+      --border-strong: #d4d4d8; /* zinc-300 — hover/focus border */
+      --field-border: #cbd5e1;       /* slate-300 — visible input outline */
+      --field-border-hover: #94a3b8; /* slate-400 — input hover */
 
-      /* Text — --text-faint lifted to pass WCAG AA contrast on dark backgrounds */
-      --text: #e8ecff;
-      --text-dim: #aab3d5;
-      --text-faint: #8a93c2;
+      /* Text — zinc scale, all WCAG AA on white */
+      --text: #18181b;          /* zinc-900 — body text */
+      --text-dim: #52525b;      /* zinc-600 — secondary */
+      --text-faint: #71717a;    /* zinc-500 — meta/placeholder */
 
-      /* Brand */
-      --accent: #6ee7b7;
-      --accent-2: #60a5fa;
-      --accent-3: #c084fc;
-      --grad: linear-gradient(135deg, #6ee7b7 0%, #60a5fa 50%, #c084fc 100%);
+      /* Brand — one indigo, used everywhere interactive.
+         --accent  = text/links/focus  (legibility-tuned per theme)
+         --accent-fill = button backgrounds (stays saturated in BOTH modes so
+                         CTAs read as strong CTAs; pairs with --on-fill = white).
+         This split is the canonical pattern in Linear/Vercel/Stripe dark themes:
+         text needs lighter, fills need saturated, two different needs. */
+      --accent: #4f46e5;        /* indigo-600 — also used as fill in light */
+      --accent-hover: #4338ca;  /* indigo-700 */
+      --accent-soft: #eef2ff;   /* indigo-50 (tinted bg, e.g. link hover) */
+      --accent-ring: rgba(79, 70, 229, 0.18);
+      --accent-glow: rgba(79, 70, 229, 0.22);    /* logo + primary button drop shadow */
+      --accent-fill: #4f46e5;        /* solid CTA bg */
+      --accent-fill-hover: #4338ca;  /* solid CTA hover */
+      --on-accent: #ffffff;     /* text on var(--accent) when used as fill (legacy) */
+      --on-fill: #ffffff;       /* text on var(--accent-fill) — always white */
+      --grad: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); /* logo only */
 
-      /* Status */
-      --success: #6ee7b7;
-      --info: #60a5fa;
-      --warn: #fbbf24;
-      --danger: #f87171;
+      /* Per-status ring colors (used by pulse keyframe + aria-invalid halo) */
+      --pulse-ring: rgba(29, 78, 216, 0.30);     /* matches light --info */
+      --danger-ring: rgba(185, 28, 28, 0.18);    /* matches light --danger */
 
-      --shadow-lg: 0 20px 50px rgba(2, 5, 25, 0.6);
-      --radius: 12px;
-      --radius-sm: 8px;
+      /* Status — semantic, used only on badges/pills/triage */
+      --success: #15803d;       /* green-700 */
+      --success-soft: #dcfce7;  /* green-100 */
+      --info: #1d4ed8;          /* blue-700 */
+      --info-soft: #dbeafe;     /* blue-100 */
+      --warn: #b45309;          /* amber-700 */
+      --warn-soft: #fef3c7;     /* amber-100 */
+      --danger: #b91c1c;        /* red-700 */
+      --danger-soft: #fee2e2;   /* red-100 */
+
+      /* Elevation — layered, soft */
+      --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.04);
+      --shadow-md: 0 1px 3px rgba(24, 24, 27, 0.06), 0 4px 12px rgba(24, 24, 27, 0.04);
+      --shadow-lg: 0 1px 3px rgba(24, 24, 27, 0.06), 0 12px 32px rgba(24, 24, 27, 0.06);
+
+      --radius: 10px;
+      --radius-sm: 6px;
     }
+
+    /* =====================================================================
+       Dark theme — warm zinc family, NOT cold blue-gray, NOT pure black.
+       Indigo accent shifts UP the scale (indigo-400 instead of indigo-600)
+       so it stays visually vibrant against dark surfaces while staying
+       WCAG AA. Status colors invert: solid pastels → semi-transparent tints
+       so they read as elevation rather than competing surfaces.
+       ===================================================================== */
+    :root[data-theme="dark"] {
+      /* Surfaces */
+      --bg-0: #09090b;          /* zinc-950 — page */
+      --bg-1: #18181b;          /* zinc-900 — primary surface */
+      --bg-2: #27272a;          /* zinc-800 — sunken / sub-panel */
+      --surface: #18181b;
+      --surface-hover: #27272a;
+      --border: #27272a;        /* zinc-800 — hairline (panels, dividers) */
+      --border-strong: #3f3f46; /* zinc-700 — hover/focus border */
+      --field-border: #52525b;       /* zinc-600 — visible input outline on dark */
+      --field-border-hover: #71717a; /* zinc-500 — input hover */
+
+      /* Text — zinc inverted; both dim & faint clear AA against bg-1 AND bg-2 */
+      --text: #fafafa;          /* zinc-50 */
+      --text-dim: #d4d4d8;      /* zinc-300 (~11:1 on bg-1, ~7:1 on bg-2) */
+      --text-faint: #a1a1aa;    /* zinc-400 (~7:1 on bg-1, 5.1:1 on bg-2) */
+
+      /* Brand — split: --accent (text/links) lightens to indigo-400 for
+         legibility on dark surfaces; --accent-fill (button bg) STAYS at
+         indigo-600 with white text so CTAs keep their saturated weight in
+         dark mode. White on #4f46e5 = ~7:1 AA. */
+      --accent: #818cf8;             /* indigo-400 — text/links/focus */
+      --accent-hover: #a5b4fc;       /* indigo-300 */
+      --accent-soft: rgba(129, 140, 248, 0.12);
+      --accent-ring: rgba(129, 140, 248, 0.50);
+      --accent-glow: rgba(79, 70, 229, 0.32);    /* tied to --accent-fill hue */
+      --accent-fill: #4f46e5;        /* indigo-600 — same as light; white text
+                                        clears 6.29:1 AA, bg-vs-surface 5.4:1
+                                        for clear "primary CTA" affordance */
+      --accent-fill-hover: #6366f1;  /* indigo-500 hover — lifts on interaction */
+      --on-accent: #18181b;          /* legacy — when --accent itself is a fill */
+      --on-fill: #ffffff;            /* white on saturated fill — always */
+      --grad: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+
+      /* Themed status rings */
+      --pulse-ring: rgba(96, 165, 250, 0.30);    /* matches dark --info */
+      --danger-ring: rgba(248, 113, 113, 0.25);  /* matches dark --danger */
+
+      /* Status — *-400 foreground + low-alpha tinted background */
+      --success: #4ade80;       /* green-400 */
+      --success-soft: rgba(74, 222, 128, 0.12);
+      --info: #60a5fa;          /* blue-400 */
+      --info-soft: rgba(96, 165, 250, 0.12);
+      --warn: #fbbf24;          /* amber-400 */
+      --warn-soft: rgba(251, 191, 36, 0.12);
+      --danger: #f87171;        /* red-400 */
+      --danger-soft: rgba(248, 113, 113, 0.12);
+
+      /* Elevation — pure-black shadows, lower opacity (no light to cast) */
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+      --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.30), 0 4px 12px rgba(0, 0, 0, 0.20);
+      --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.30), 0 12px 32px rgba(0, 0, 0, 0.40);
+    }
+
+    /* Dark-theme tweaks for elements that have hardcoded colors. */
+    :root[data-theme="dark"] details.express pre { background: #0a0a0a; border-color: #27272a; }
+    :root[data-theme="dark"] .shot img { background: #09090b; }
+    /* Report drawer iframe loads light-rendered markdown — keep its bg white
+       so the report content reads correctly regardless of UI theme. */
+    :root[data-theme="dark"] .report-drawer iframe { background: #ffffff; }
+    /* High-contrast variant for dark mode users with prefers-contrast */
+    @media (prefers-contrast: more) {
+      :root[data-theme="dark"] {
+        --text-dim: #f4f4f5;
+        --text-faint: #d4d4d8;
+        --border: #71717a;
+        --border-strong: #a1a1aa;
+      }
+    }
+
+    /* ---------- Theme toggle button (live in topbar) ----------
+       Slightly larger than the action verbs to give the theme switch its own
+       presence as a meta-control. Icons cross-fade rather than hard-cut. */
+    .theme-toggle {
+      position: relative;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px;
+      margin-left: 6px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-1); color: var(--text-dim);
+      cursor: pointer;
+      transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+    }
+    .theme-toggle:hover {
+      background: var(--bg-2);
+      border-color: var(--field-border-hover);
+      color: var(--text);
+    }
+    .theme-toggle svg {
+      position: absolute;
+      width: 18px; height: 18px;
+      transition: opacity 0.20s ease, transform 0.20s ease;
+    }
+    /* light theme = moon visible (click → go dark); sun hidden */
+    .theme-toggle .icon-sun  { opacity: 0; transform: rotate(-40deg) scale(0.7); }
+    .theme-toggle .icon-moon { opacity: 1; transform: rotate(0) scale(1); }
+    /* dark theme = sun visible (click → go light); moon hidden */
+    :root[data-theme="dark"] .theme-toggle .icon-sun  { opacity: 1; transform: rotate(0) scale(1); }
+    :root[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; transform: rotate(40deg) scale(0.7); }
 
     * { box-sizing: border-box; }
     html, body {
       margin: 0; padding: 0; height: 100%; color: var(--text);
-      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", sans-serif;
       font-size: 14px; line-height: 1.55;
-      background:
-        radial-gradient(1200px 600px at 10% -10%, rgba(96, 165, 250, 0.12), transparent 60%),
-        radial-gradient(900px 500px at 100% 0%, rgba(192, 132, 252, 0.10), transparent 55%),
-        radial-gradient(700px 400px at 50% 100%, rgba(110, 231, 183, 0.08), transparent 60%),
-        var(--bg-0);
-      background-attachment: fixed;
+      background: var(--bg-0);
       overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
     }
     button, input, select, textarea { font-family: inherit; }
-    a { color: var(--accent-2); text-decoration: none; }
+    a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     /* ---------- Layout ---------- */
-    .app { display: grid; grid-template-rows: 64px 1fr; height: 100vh; }
+    .app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
 
-    /* ---------- Header ---------- */
+    /* ---------- Header ----------
+       flex-wrap + row-gap so the topbar can shed lines on narrow viewports
+       instead of clipping the rightmost children (Run / Stop / theme toggle). */
     header.topbar {
-      display: flex; align-items: center; gap: 16px;
-      padding: 0 24px;
-      background: linear-gradient(180deg, rgba(13,18,38,0.85), rgba(13,18,38,0.5));
-      backdrop-filter: saturate(140%) blur(8px);
-      -webkit-backdrop-filter: saturate(140%) blur(8px);
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap; row-gap: 6px;
+      padding: 8px 20px;
+      background: var(--bg-1);
       border-bottom: 1px solid var(--border);
       position: relative;
       z-index: 10;
     }
     .brand { display: flex; align-items: center; gap: 12px; }
     .logo {
-      width: 36px; height: 36px; border-radius: 9px;
+      width: 30px; height: 30px; border-radius: 7px;
       background: var(--grad);
       display: grid; place-items: center;
-      box-shadow: 0 6px 20px rgba(96, 165, 250, 0.25);
+      box-shadow: 0 2px 6px var(--accent-glow);
     }
-    .logo svg { width: 20px; height: 20px; color: #0b1020; }
-    .brand .title { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
-    .brand .subtitle { color: var(--text-faint); font-size: 12px; margin-top: 1px; }
+    .logo svg { width: 16px; height: 16px; color: #ffffff; }
+    .brand .title { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; color: var(--text); }
+    .brand .subtitle { color: var(--text-faint); font-size: 11.5px; margin-top: 1px; }
     .spacer { flex: 1; }
-    .topbar-actions { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 13px; }
+    .topbar-actions { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 13px; }
     .topbar-actions kbd {
       background: var(--bg-2); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px;
-      font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--text-dim);
+      font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-dim);
     }
     .topbar-actions .verb {
       display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 11px; border-radius: 6px; border: 1px solid var(--border);
-      background: rgba(7,9,26,0.5); color: var(--text);
-      font-size: 12px; font-weight: 600; cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
+      padding: 6px 10px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-1); color: var(--text);
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: border-color 0.12s ease, background 0.12s ease;
     }
-    .topbar-actions .verb:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-hover); }
+    .topbar-actions .verb:hover:not(:disabled) { background: var(--bg-2); border-color: var(--border-strong); }
     .topbar-actions .verb:disabled { opacity: 0.45; cursor: not-allowed; }
     .topbar-actions .verb svg { width: 13px; height: 13px; }
     .topbar-actions .verb kbd {
-      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
-      padding: 1px 5px; border-radius: 3px; font-size: 10.5px;
+      background: var(--bg-2); border: 1px solid var(--border);
+      padding: 1px 5px; border-radius: 3px; font-size: 10.5px; color: var(--text-dim);
     }
-    .topbar-actions .verb.run { background: var(--grad); color: #06091f; border: 0; }
-    .topbar-actions .verb.run:hover:not(:disabled) { filter: brightness(1.07); }
-    .topbar-actions .verb.stop { color: var(--danger); border-color: rgba(248,113,113,0.4); }
-    .topbar-actions .verb.stop:hover:not(:disabled) { background: rgba(248,113,113,0.10); }
+    .topbar-actions .verb.run {
+      background: var(--accent-fill); color: var(--on-fill); border-color: var(--accent-fill);
+    }
+    .topbar-actions .verb.run:hover:not(:disabled) {
+      background: var(--accent-fill-hover); border-color: var(--accent-fill-hover);
+    }
+    .topbar-actions .verb.run kbd {
+      background: rgba(255,255,255,0.18);
+      border-color: rgba(255,255,255,0.32);
+      color: var(--on-fill);
+    }
+    .topbar-actions .verb.stop { color: var(--danger); }
+    .topbar-actions .verb.stop:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
 
     /* ---------- Main ---------- */
     main {
-      display: grid; grid-template-columns: 420px 1fr; gap: 18px;
-      padding: 18px; overflow: hidden;
+      display: grid; grid-template-columns: 400px 1fr; gap: 16px;
+      padding: 16px; overflow: hidden;
     }
     .panel {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow-lg);
-      backdrop-filter: saturate(140%) blur(10px);
-      -webkit-backdrop-filter: saturate(140%) blur(10px);
+      box-shadow: var(--shadow-sm);
       overflow: hidden;
     }
     .left { display: flex; flex-direction: column; overflow: hidden; }
-    .left-scroll { overflow: auto; padding: 20px; }
+    .left-scroll { overflow: auto; padding: 18px; }
     .right { display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
 
     /* ---------- Form sections ---------- */
@@ -128,28 +292,30 @@
       display: flex; align-items: center; gap: 8px;
     }
     .section-label::before {
-      content: ""; width: 4px; height: 14px; border-radius: 2px; background: var(--grad);
+      content: ""; width: 3px; height: 12px; border-radius: 2px; background: var(--accent);
     }
-    .section + .section { margin-top: 24px; }
+    .section + .section { margin-top: 22px; }
 
     .field { margin-bottom: 12px; }
-    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+    .field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-dim); margin-bottom: 5px; }
+    /* Inputs get a stronger border than hairline so they read as
+       interactive surfaces, not background. --field-border is themed. */
     .field input, .field select, .field textarea {
       width: 100%;
-      background: rgba(7, 9, 26, 0.55);
-      border: 1px solid var(--border);
+      background: var(--bg-1);
+      border: 1px solid var(--field-border);
       color: var(--text);
-      padding: 10px 12px;
+      padding: 9px 11px;
       border-radius: var(--radius-sm);
       font-size: 13px;
       outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
     }
     .field input::placeholder, .field textarea::placeholder { color: var(--text-faint); }
+    .field input:hover, .field select:hover, .field textarea:hover { border-color: var(--field-border-hover); }
     .field input:focus, .field select:focus, .field textarea:focus {
-      border-color: var(--accent-2);
-      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
-      background: rgba(7, 9, 26, 0.85);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-ring);
     }
     .field textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, monospace; font-size: 12.5px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -160,12 +326,12 @@
       display: inline-flex; align-items: center; gap: 8px;
       font-size: 12.5px; color: var(--text-dim);
       padding: 8px 10px; border-radius: var(--radius-sm);
-      background: rgba(7, 9, 26, 0.4);
+      background: var(--bg-2);
       border: 1px solid var(--border);
       cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
+      transition: border-color 0.12s ease, background 0.12s ease;
     }
-    .check:hover { border-color: var(--border-strong); }
+    .check:hover { border-color: var(--border-strong); background: var(--surface-hover); }
     .check input { accent-color: var(--accent); }
 
     /* ---------- Buttons ---------- */
@@ -178,98 +344,143 @@
       align-items: center;
     }
     .actions > .btn.primary {
-      grid-column: 1 / -1;  /* primary spans full width on first row */
-      padding: 13px 16px;
+      grid-column: 1 / -1;
+      padding: 12px 16px;
       font-size: 13.5px;
     }
     button.btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
       padding: 10px 12px; border-radius: var(--radius-sm); border: 0;
-      font-weight: 600; font-size: 12.5px; cursor: pointer;
+      font-weight: 500; font-size: 12.5px; cursor: pointer;
       white-space: nowrap;
-      transition: transform 0.05s, filter 0.15s, box-shadow 0.15s, background 0.15s;
+      transition: transform 0.05s ease, background 0.12s ease, border-color 0.12s ease;
     }
     button.btn:active:not(:disabled) { transform: translateY(1px); }
     button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
     button.btn svg { width: 14px; height: 14px; flex-shrink: 0; }
 
     button.primary {
-      background: var(--grad); color: #06091f;
-      box-shadow: 0 8px 24px rgba(96, 165, 250, 0.28), inset 0 1px 0 rgba(255,255,255,0.25);
+      background: var(--accent-fill); color: var(--on-fill);
+      box-shadow: 0 1px 2px var(--accent-glow);
+      font-weight: 600;
     }
-    button.primary:hover:not(:disabled) { filter: brightness(1.07) saturate(110%); }
+    button.primary:hover:not(:disabled) { background: var(--accent-fill-hover); }
 
     button.ghost {
-      background: rgba(7, 9, 26, 0.5); color: var(--text);
+      background: var(--bg-1); color: var(--text);
       border: 1px solid var(--border);
     }
-    button.ghost:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-strong); }
+    button.ghost:hover:not(:disabled) { background: var(--bg-2); border-color: var(--border-strong); }
 
     /* ---------- Status bar ---------- */
     .status-bar {
       display: flex; align-items: center; gap: 14px;
-      padding: 14px 20px;
+      padding: 12px 18px;
       border-bottom: 1px solid var(--border);
-      background: linear-gradient(180deg, rgba(20,26,51,0.6), rgba(20,26,51,0.3));
+      background: var(--bg-1);
+      position: relative;
     }
     .badge {
       display: inline-flex; align-items: center; gap: 6px;
-      padding: 5px 11px; border-radius: 999px;
-      font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em;
-      text-transform: uppercase; border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
+      background: var(--bg-2); color: var(--text-dim);
+      border: 0;
     }
-    .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
-    .badge.idle { color: var(--text-faint); }
-    .badge.running { color: var(--info); border-color: rgba(96,165,250,0.4); }
+    .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); }
+    .badge.idle { background: var(--bg-2); color: var(--text-faint); }
+    .badge.running { background: var(--info-soft); color: var(--info); }
     .badge.running .dot { background: var(--info); animation: pulse 1.4s ease-in-out infinite; }
-    .badge.pass { color: var(--success); border-color: rgba(110,231,183,0.4); background: rgba(110,231,183,0.06); }
+    .badge.pass { background: var(--success-soft); color: var(--success); }
     .badge.pass .dot { background: var(--success); }
-    .badge.fail { color: var(--danger); border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.06); }
+    .badge.fail { background: var(--danger-soft); color: var(--danger); }
     .badge.fail .dot { background: var(--danger); }
     @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(96,165,250,0.4); }
-      50% { box-shadow: 0 0 0 6px rgba(96,165,250,0); }
+      0%, 100% { box-shadow: 0 0 0 0 var(--pulse-ring); }
+      50%      { box-shadow: 0 0 0 5px transparent; }
     }
     .status-text { color: var(--text-dim); font-size: 13px; flex: 1; }
     .stat-pills { display: flex; gap: 8px; }
-    .pill {
-      padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
-      background: var(--bg-2); border: 1px solid var(--border); color: var(--text-dim);
+    /* 30-run trend in the status bar — one bar per past run, height encodes
+       pass-rate, color encodes verdict (green=clean, red=any failed, amber=broken). */
+    .history-spark {
+      width: 120px; height: 22px;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
     }
-    .pill.pass { color: var(--success); border-color: rgba(110,231,183,0.3); }
-    .pill.fail { color: var(--danger); border-color: rgba(248,113,113,0.3); }
+    .history-spark:hover { opacity: 0.85; }
+    .history-spark rect.bar { transition: opacity 0.15s ease; }
+    .history-spark rect.bar.pass { fill: var(--success); }
+    .history-spark rect.bar.fail { fill: var(--danger); }
+    .history-spark rect.bar.broken { fill: var(--warn); }
+    .pill {
+      padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+      background: var(--bg-2); color: var(--text-dim);
+    }
+    .pill.pass { background: var(--success-soft); color: var(--success); }
+    .pill.fail { background: var(--danger-soft); color: var(--danger); }
 
-    /* ---------- Log viewer ---------- */
+    /* ---------- Log viewer (intentionally dark — terminal convention) ---------- */
     .log-wrap { overflow: hidden; display: flex; flex-direction: column; }
     .log-head {
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 16px; border-bottom: 1px solid var(--border);
-      background: rgba(7,9,26,0.5);
-      font-size: 12px; color: var(--text-faint);
+      padding: 9px 16px;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
+      font-size: 12px; color: #a1a1aa;
     }
     .log-dots { display: flex; gap: 6px; }
-    .log-dots span { width: 11px; height: 11px; border-radius: 50%; opacity: 0.6; }
+    .log-dots span { width: 10px; height: 10px; border-radius: 50%; opacity: 0.85; }
     .log-dots span:nth-child(1) { background: #ff5f56; }
     .log-dots span:nth-child(2) { background: #ffbd2e; }
     .log-dots span:nth-child(3) { background: #27c93f; }
     .log-spacer { flex: 1; }
-    .log-line-count { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .log-line-count { color: #a1a1aa; font-size: 11px; font-variant-numeric: tabular-nums; }
     .log-clear-btn {
-      background: transparent; color: var(--text-faint);
-      border: 1px solid var(--border); border-radius: 5px;
+      background: transparent; color: #a1a1aa;
+      border: 1px solid #3f3f46; border-radius: 5px;
       padding: 3px 10px; font-size: 11px; cursor: pointer;
-      transition: color 0.15s, border-color 0.15s;
+      transition: color 0.12s ease, border-color 0.12s ease;
     }
-    .log-clear-btn:hover { color: var(--text); border-color: var(--border-strong); }
+    .log-clear-btn:hover { color: #ffffff; border-color: #52525b; }
     .log-clear-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    /* Inline log search — filter log lines by substring, with hit count
+       + prev/next nav. Styling matches the rest of the dark terminal head. */
+    .log-search { display: flex; align-items: center; gap: 4px; margin-right: 8px; }
+    .log-search input {
+      background: #18181b; color: #d4d4d8;
+      border: 1px solid #3f3f46; border-radius: 4px;
+      padding: 3px 8px; font-size: 11.5px; width: 140px;
+      outline: none;
+      transition: border-color 0.12s ease;
+    }
+    .log-search input::placeholder { color: #71717a; }
+    .log-search input:focus { border-color: var(--accent); }
+    .log-search-count {
+      color: #a1a1aa; font-size: 10.5px;
+      min-width: 32px; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .log-search-nav {
+      background: transparent; color: #a1a1aa;
+      border: 1px solid #3f3f46; border-radius: 3px;
+      padding: 1px 6px; font-size: 11px; cursor: pointer;
+      line-height: 1;
+    }
+    .log-search-nav:hover:not(:disabled) { color: #ffffff; border-color: #52525b; }
+    .log-search-nav:disabled { opacity: 0.4; cursor: not-allowed; }
+    .log-search-hit { background: rgba(251, 191, 36, 0.32); border-radius: 2px; }
+    .log-search-hit.current { background: rgba(251, 191, 36, 0.6); outline: 1px solid #fbbf24; }
+    .log .log-entry.search-dim { opacity: 0.25; }
     .log {
       flex: 1; overflow: auto; padding: 14px 20px;
       font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-size: 12.5px; line-height: 1.6;
-      white-space: pre-wrap; word-break: break-word; background: rgba(3, 5, 18, 0.85);
+      white-space: pre-wrap; word-break: break-word;
+      background: #09090b; color: #d4d4d8;
     }
-    .log .stderr { color: var(--warn); }
-    .log .meta { color: var(--text-faint); }
-    .log.empty { display: grid; place-items: center; text-align: center; color: var(--text-faint); }
+    .log .stderr { color: #fbbf24; }
+    .log .meta { color: #71717a; }
+    .log.empty { display: grid; place-items: center; text-align: center; color: #71717a; }
     .log .empty-art { font-size: 36px; opacity: 0.6; margin-bottom: 10px; }
     .log-entry { animation: slideIn 0.12s ease; }
     @keyframes slideIn {
@@ -280,7 +491,7 @@
     /* ---------- Screenshots gallery ---------- */
     .gallery {
       border-top: 1px solid var(--border);
-      background: rgba(7, 9, 26, 0.4);
+      background: var(--bg-2);
       padding: 12px 16px;
       max-height: 240px;
       overflow: auto;
@@ -298,40 +509,42 @@
       gap: 10px;
     }
     .shot {
-      background: rgba(3, 5, 18, 0.6); border: 1px solid var(--border);
+      background: var(--bg-1); border: 1px solid var(--border);
       border-radius: 8px; overflow: hidden; cursor: pointer;
-      transition: transform 0.1s, border-color 0.15s;
+      transition: transform 0.1s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+      position: relative;
     }
-    .shot:hover { transform: translateY(-2px); border-color: var(--accent-2); }
-    .shot img { width: 100%; height: 110px; object-fit: cover; display: block; background: #000; }
+    .shot:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+    .shot img { width: 100%; height: 110px; object-fit: cover; display: block; background: #18181b; }
     .shot .caption {
       padding: 6px 8px; font-size: 11px; color: var(--text-dim);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      background: var(--bg-1);
     }
-    /* lightbox */
+    /* lightbox — intentionally dark (image viewer convention) */
     .lightbox {
-      position: fixed; inset: 0; background: rgba(2, 5, 25, 0.92);
+      position: fixed; inset: 0; background: rgba(9, 9, 11, 0.92);
       display: none; align-items: center; justify-content: center; z-index: 200;
       padding: 24px; cursor: zoom-out;
     }
     .lightbox.show { display: flex; }
     .lightbox img { max-width: 95vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.7); }
-    .lightbox .caption { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; color: var(--text-dim); font-size: 13px; }
+    .lightbox .caption { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; color: #d4d4d8; font-size: 13px; }
     .lightbox .lightbox-close {
       position: absolute; top: 18px; right: 22px;
-      background: rgba(255,255,255,0.08); border: 1px solid var(--border-strong);
-      color: var(--text); font-size: 22px; line-height: 1;
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.20);
+      color: #ffffff; font-size: 22px; line-height: 1;
       width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
       display: grid; place-items: center;
     }
     .lightbox .lightbox-close:hover { background: rgba(255,255,255,0.16); }
-    .lightbox .lightbox-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .lightbox .lightbox-close:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
 
     /* ---------- Reports footer ---------- */
     .reports {
       display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      padding: 14px 20px; border-top: 1px solid var(--border);
-      background: linear-gradient(0deg, rgba(20,26,51,0.6), rgba(20,26,51,0.3));
+      padding: 12px 18px; border-top: 1px solid var(--border);
+      background: var(--bg-1);
     }
     .reports .label {
       color: var(--text-faint); font-size: 11px; font-weight: 700;
@@ -339,12 +552,12 @@
     }
     .report-link {
       display: inline-flex; align-items: center; gap: 7px;
-      padding: 7px 12px; border-radius: var(--radius-sm);
-      background: rgba(7,9,26,0.5); border: 1px solid var(--border);
+      padding: 6px 11px; border-radius: var(--radius-sm);
+      background: var(--bg-1); border: 1px solid var(--border);
       color: var(--text); font-size: 12.5px; text-decoration: none;
-      transition: border-color 0.15s, background 0.15s, transform 0.05s;
+      transition: border-color 0.12s ease, background 0.12s ease, transform 0.05s ease;
     }
-    .report-link:hover { border-color: var(--accent); text-decoration: none; transform: translateY(-1px); }
+    .report-link:hover { border-color: var(--accent); background: var(--accent-soft); text-decoration: none; transform: translateY(-1px); }
     .report-link svg { width: 13px; height: 13px; color: var(--accent); }
     .reports .empty { color: var(--text-faint); font-style: italic; font-size: 12.5px; }
 
@@ -353,30 +566,31 @@
       margin-top: 16px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      background: rgba(7,9,26,0.4);
-      transition: border-color 0.15s, background 0.15s;
+      background: var(--bg-2);
+      transition: border-color 0.12s ease;
     }
-    details.express[open] { border-color: var(--border-strong); }
+    details.express[open] { border-color: var(--border-strong); background: var(--bg-1); }
     details.express summary {
-      cursor: pointer; padding: 11px 14px;
-      font-size: 12.5px; color: var(--text-dim); font-weight: 600;
+      cursor: pointer; padding: 10px 14px;
+      font-size: 12.5px; color: var(--text-dim); font-weight: 500;
       list-style: none; display: flex; align-items: center; gap: 8px;
     }
     details.express summary::-webkit-details-marker { display: none; }
-    details.express summary svg { width: 14px; height: 14px; transition: transform 0.15s; color: var(--text-faint); }
+    details.express summary svg { width: 14px; height: 14px; transition: transform 0.15s ease; color: var(--text-faint); }
     details.express[open] summary svg { transform: rotate(90deg); color: var(--accent); }
     details.express .body { padding: 0 14px 14px; font-size: 12.5px; color: var(--text-dim); }
     details.express ol { padding-left: 20px; margin: 6px 0 10px; }
     details.express pre {
-      background: rgba(3,5,18,0.85); padding: 12px; border-radius: 6px; overflow: auto;
-      font-size: 11.5px; max-height: 220px; user-select: all; color: var(--text);
-      border: 1px solid var(--border);
+      background: #18181b; color: #d4d4d8; padding: 12px; border-radius: 6px; overflow: auto;
+      font-size: 11.5px; max-height: 220px; user-select: all;
+      border: 1px solid #27272a;
     }
     .prompt-copy {
       display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 10px; border-radius: 6px; background: var(--bg-2);
+      padding: 5px 10px; border-radius: 5px; background: var(--bg-1);
       border: 1px solid var(--border); color: var(--text-dim);
       font-size: 11.5px; cursor: pointer; margin-top: 8px;
+      transition: color 0.12s ease, border-color 0.12s ease;
     }
     .prompt-copy:hover { color: var(--accent); border-color: var(--accent); }
     .prompt-copy svg { width: 12px; height: 12px; }
@@ -384,39 +598,38 @@
     /* ---------- Toast ---------- */
     .toast {
       position: fixed; bottom: 24px; right: 24px;
-      background: var(--surface); border: 1px solid var(--border-strong);
-      border-radius: var(--radius-sm); padding: 12px 16px;
+      background: var(--bg-1); border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius-sm); padding: 11px 16px 11px 14px;
       box-shadow: var(--shadow-lg);
       font-size: 13px; color: var(--text);
       display: flex; align-items: center; gap: 10px;
       transform: translateY(20px); opacity: 0;
-      transition: transform 0.25s, opacity 0.25s;
+      transition: transform 0.25s ease, opacity 0.25s ease;
       pointer-events: none; z-index: 100;
     }
     .toast.show { transform: translateY(0); opacity: 1; }
-    .toast.success { border-color: rgba(110,231,183,0.5); }
-    .toast.error { border-color: rgba(248,113,113,0.5); }
+    .toast.success { border-left-color: var(--success); }
+    .toast.error { border-left-color: var(--danger); }
     .toast svg { width: 16px; height: 16px; flex-shrink: 0; }
 
     /* ---------- Ambient run-state wash ---------- */
-    /* The whole right pane subtly takes on the outcome hue so a failure
+    /* Whole right pane subtly takes on the outcome hue so a failure
        isn't missable. Source: setStatus() sets `data-state` on .app. */
-    .app[data-state] { --state-accent: var(--text-faint); --state-glow: transparent; }
-    .app[data-state="running"] { --state-accent: var(--info); --state-glow: rgba(96,165,250,0.18); }
-    .app[data-state="pass"]    { --state-accent: var(--success); --state-glow: rgba(110,231,183,0.18); }
-    .app[data-state="fail"]    { --state-accent: var(--danger); --state-glow: rgba(248,113,113,0.20); }
-    .app[data-state] .right { box-shadow: inset 0 0 0 1px var(--state-glow); transition: box-shadow 0.4s ease; }
+    .app[data-state] { --state-accent: var(--border); }
+    .app[data-state="running"] { --state-accent: var(--info); }
+    .app[data-state="pass"]    { --state-accent: var(--success); }
+    .app[data-state="fail"]    { --state-accent: var(--danger); }
     .app[data-state] .status-bar { border-bottom-color: var(--state-accent); transition: border-color 0.4s ease; }
-    .app[data-state] .log-head { border-top: 2px solid var(--state-accent); transition: border-color 0.4s ease; }
 
     /* ---------- Skip-to-content link ---------- */
     .skip-link {
       position: absolute; top: 8px; left: 8px;
-      background: var(--accent); color: #06091f;
-      padding: 8px 14px; border-radius: 6px;
-      font-weight: 700; font-size: 13px;
+      background: var(--accent-fill); color: var(--on-fill);
+      padding: 8px 14px; border-radius: var(--radius-sm);
+      font-weight: 600; font-size: 13px;
       transform: translateY(-200%);
-      transition: transform 0.15s;
+      transition: transform 0.15s ease;
       z-index: 1000;
     }
     .skip-link:focus { transform: translateY(0); text-decoration: none; }
@@ -431,21 +644,13 @@
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
       .left { max-height: 50vh; }
-      /* Drop the (expensive, invisible on phones) backdrop-filter blur. */
-      .panel, header.topbar {
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
-        background: rgba(13, 18, 38, 0.92);
-      }
-      body { background-image: none; }
     }
-
-    @media (prefers-reduced-transparency: reduce) {
-      .panel, header.topbar {
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
-        background: rgba(13, 18, 38, 0.96);
-      }
+    /* On phones the topbar would overflow with Brand + 3 verbs + theme toggle.
+       Drop the subtitle and the kbd hints — the toggle stays reachable. */
+    @media (max-width: 720px) {
+      .brand .subtitle { display: none; }
+      .topbar-actions .verb kbd { display: none; }
+      .topbar-actions .verb { padding: 6px 8px; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -460,9 +665,10 @@
 
     @media (prefers-contrast: more) {
       :root {
-        --text-faint: #c4cbe6;
-        --border: rgba(255, 255, 255, 0.22);
-        --border-strong: rgba(255, 255, 255, 0.40);
+        --text-dim: #18181b;
+        --text-faint: #3f3f46;
+        --border: #a1a1aa;
+        --border-strong: #52525b;
       }
     }
 
@@ -484,10 +690,6 @@
     }
 
     /* ---------- Status waterfall: live N-of-M progress ticks ---------- */
-    /* Renders along the bottom edge of the status bar. Each test gets a
-       narrow tick coloured by its outcome — green for pass, red for fail,
-       yellow for skipped/flaky, gray for in-flight. Glanceable during long runs. */
-    .status-bar { position: relative; }
     .waterfall {
       position: absolute;
       left: 0; right: 0; bottom: -1px;
@@ -500,9 +702,9 @@
     .waterfall:empty { display: none; }
     .waterfall .tick {
       flex: 1 1 0; min-width: 4px; max-width: 24px;
-      background: var(--text-faint); opacity: 0.4;
+      background: var(--border-strong); opacity: 0.6;
       border-radius: 2px;
-      transition: background 0.15s, opacity 0.15s;
+      transition: background 0.12s ease, opacity 0.12s ease;
     }
     .waterfall .tick.pass { background: var(--success); opacity: 1; }
     .waterfall .tick.fail { background: var(--danger); opacity: 1; }
@@ -513,8 +715,7 @@
       50% { opacity: 1; }
     }
 
-    /* ---------- Gallery pass/fail ribbons + lightbox arrows ---------- */
-    .shot { position: relative; }
+    /* ---------- Gallery pass/fail ribbons ---------- */
     .shot .ribbon {
       position: absolute; top: 6px; right: 6px;
       padding: 2px 7px; border-radius: 3px;
@@ -522,19 +723,19 @@
       text-transform: uppercase;
       pointer-events: none;
     }
-    .shot .ribbon.fail { background: var(--danger); color: #1a0a0a; }
-    .shot .ribbon.pass { background: var(--success); color: #062012; }
+    .shot .ribbon.fail { background: var(--danger); color: #ffffff; }
+    .shot .ribbon.pass { background: var(--success); color: #ffffff; }
 
     .lightbox-nav {
       position: absolute; top: 50%; transform: translateY(-50%);
-      background: rgba(255,255,255,0.06); border: 1px solid var(--border-strong);
-      color: var(--text); font-size: 24px; line-height: 1;
+      background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.25);
+      color: #ffffff; font-size: 24px; line-height: 1;
       width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
       display: grid; place-items: center;
     }
     .lightbox-nav.prev { left: 18px; }
     .lightbox-nav.next { right: 18px; }
-    .lightbox-nav:hover { background: rgba(255,255,255,0.14); }
+    .lightbox-nav:hover { background: rgba(255,255,255,0.18); }
     .lightbox-nav:disabled { opacity: 0.3; cursor: not-allowed; }
 
     /* ---------- Field validation ---------- */
@@ -542,7 +743,7 @@
     .field textarea[aria-invalid="true"],
     .field select[aria-invalid="true"] {
       border-color: var(--danger);
-      box-shadow: 0 0 0 3px rgba(248,113,113,0.18);
+      box-shadow: 0 0 0 3px var(--danger-ring);
     }
     .field-error {
       display: none;
@@ -559,8 +760,8 @@
       position: fixed; top: 0; right: 0; bottom: 0;
       width: min(900px, 95vw);
       background: var(--bg-1);
-      border-left: 1px solid var(--border-strong);
-      box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+      border-left: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
       transform: translateX(100%);
       transition: transform 0.25s ease;
       z-index: 180;
@@ -571,40 +772,43 @@
     .report-drawer-head {
       display: flex; align-items: center; gap: 10px;
       padding: 12px 18px;
-      background: rgba(13,18,38,0.85);
+      background: var(--bg-1);
       border-bottom: 1px solid var(--border);
     }
     .report-drawer-head .title {
-      font-weight: 700; font-size: 13.5px;
+      font-weight: 600; font-size: 13.5px;
       flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--text);
     }
     .report-drawer-head .open-tab {
-      background: transparent; color: var(--text-dim);
-      border: 1px solid var(--border); border-radius: 5px;
+      background: var(--bg-1); color: var(--text-dim);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
       padding: 5px 10px; font-size: 11.5px; cursor: pointer;
+      transition: color 0.12s ease, border-color 0.12s ease;
     }
     .report-drawer-head .open-tab:hover { color: var(--text); border-color: var(--border-strong); }
     .report-drawer-head .close-drawer {
-      background: rgba(255,255,255,0.06); border: 1px solid var(--border-strong);
+      background: var(--bg-2); border: 1px solid var(--border);
       color: var(--text); font-size: 18px; line-height: 1;
-      width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+      width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
       display: grid; place-items: center;
+      transition: background 0.12s ease;
     }
+    .report-drawer-head .close-drawer:hover { background: var(--border); }
     .report-drawer iframe {
-      width: 100%; height: 100%; border: 0; background: #fff;
+      width: 100%; height: 100%; border: 0; background: #ffffff;
     }
     .report-drawer-backdrop {
-      position: fixed; inset: 0; background: rgba(2, 5, 25, 0.6);
+      position: fixed; inset: 0; background: rgba(24, 24, 27, 0.30);
       display: none; z-index: 170;
     }
     .report-drawer-backdrop.show { display: block; }
 
     /* ---------- Failure triage panel ---------- */
-    /* The post-run job-to-be-done: see every failure with its error +
-       screenshot + trace in one glance, click to drill in. */
+    /* Post-run: every failure with its error + screenshot in one glance. */
     .triage {
       border-top: 1px solid var(--border);
-      background: rgba(248, 113, 113, 0.04);
+      background: var(--danger-soft);
       padding: 14px 18px;
       max-height: 360px;
       overflow: auto;
@@ -619,7 +823,6 @@
     .triage-head::before {
       content: "";
       width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
-      box-shadow: 0 0 12px rgba(248,113,113,0.6);
     }
     .triage-card {
       display: grid;
@@ -627,14 +830,104 @@
       gap: 12px;
       padding: 10px;
       margin-bottom: 8px;
-      background: rgba(7, 9, 26, 0.55);
-      border: 1px solid rgba(248,113,113,0.20);
+      background: var(--bg-1);
+      border: 1px solid var(--border);
       border-radius: 8px;
-      transition: border-color 0.15s;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
     }
-    .triage-card:hover { border-color: rgba(248,113,113,0.50); }
+    .triage-card:hover { border-color: var(--danger); box-shadow: var(--shadow-sm); }
+    /* Broken cards (timeout / interrupted) get an amber border instead of red
+       so triage sees infra/flake separately from real assertion failures. */
+    .triage-card.broken { border-color: var(--warn-soft); }
+    .triage-card.broken:hover { border-color: var(--warn); }
+    .triage-card .title-row {
+      display: flex; align-items: center; gap: 8px;
+      min-width: 0; margin-bottom: 2px;
+    }
+    .triage-card .title-row .title { margin-bottom: 0; flex: 1; min-width: 0; }
+    .cat-chip {
+      flex-shrink: 0;
+      padding: 2px 7px; border-radius: 999px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase;
+      line-height: 1.4;
+    }
+    .cat-chip.failed { background: var(--danger-soft); color: var(--danger); }
+    .cat-chip.broken { background: var(--warn-soft); color: var(--warn); }
+    /* Flaky chip — different visual key from failed/broken because flake is
+       a meta-property (the test's RELIABILITY, not this run's outcome). */
+    .cat-chip.flaky { background: var(--info-soft); color: var(--info); }
+    .pill.flaky { background: var(--info-soft); color: var(--info); cursor: pointer; }
+
+    /* Coverage panel — sits below the feature/browser row, summarizes
+       AC-vs-scenario coverage for the selected feature with an inline
+       expandable list of per-AC status. */
+    .coverage-panel {
+      margin: 8px 0 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-1);
+      overflow: hidden;
+    }
+    .coverage-summary {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%;
+      padding: 8px 11px;
+      background: transparent; border: 0; cursor: pointer;
+      font-size: 12px; font-weight: 500; color: var(--text-dim);
+      text-align: left;
+      transition: background 0.12s ease;
+    }
+    .coverage-summary:hover { background: var(--bg-2); }
+    .coverage-summary[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }
+    .coverage-chevron {
+      width: 12px; height: 12px; margin-left: auto;
+      color: var(--text-faint);
+      transition: transform 0.15s ease;
+      flex-shrink: 0;
+    }
+    .coverage-summary-text { flex: 1; }
+    .coverage-summary-text.full { color: var(--success); }
+    .coverage-summary-text.partial { color: var(--warn); }
+    .coverage-summary-text.empty { color: var(--text-faint); }
+    .coverage-details {
+      border-top: 1px solid var(--border);
+      padding: 10px 12px;
+      background: var(--bg-2);
+      font-size: 12px; color: var(--text-dim);
+    }
+    .coverage-details ul { margin: 0; padding-left: 18px; list-style: none; }
+    .coverage-details li { margin-bottom: 4px; line-height: 1.5; }
+    .coverage-details li.covered::before { content: '✓ '; color: var(--success); font-weight: 700; }
+    .coverage-details li.uncovered::before { content: '✗ '; color: var(--danger); font-weight: 700; }
+    .coverage-details .ac-text { color: var(--text); }
+    .coverage-details .scenario-count { color: var(--text-faint); font-size: 11px; margin-left: 4px; }
+    .coverage-details .orphan-header {
+      margin-top: 10px; padding-top: 8px;
+      border-top: 1px dashed var(--border);
+      font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--text-faint);
+    }
+    .coverage-details .orphan-list {
+      margin-top: 4px; font-size: 11.5px; color: var(--text-dim);
+      max-height: 100px; overflow-y: auto;
+    }
+
+    /* Save-mode chip next to "Story Title" label — flips between
+       "New story" (default) and "Updating <slug>" (when slug matches
+       an existing feature). Tells the user before clicking what claude
+       will do: scaffold vs amend. */
+    .save-mode-chip {
+      display: inline-block; margin-left: 8px;
+      padding: 1px 7px; border-radius: 999px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; line-height: 1.5;
+      vertical-align: middle;
+    }
+    .save-mode-chip.new { background: var(--info-soft); color: var(--info); }
+    .save-mode-chip.update { background: var(--warn-soft); color: var(--warn); }
     .triage-card .thumb {
-      width: 96px; height: 64px; border-radius: 5px; background: #000;
+      width: 96px; height: 64px; border-radius: 5px; background: var(--bg-2);
       object-fit: cover; cursor: pointer;
       border: 1px solid var(--border);
     }
@@ -657,7 +950,7 @@
     .triage-card .error {
       font-family: ui-monospace, monospace; font-size: 11.5px;
       color: var(--danger);
-      background: rgba(248,113,113,0.06);
+      background: var(--danger-soft);
       padding: 4px 8px; border-radius: 4px;
       max-height: 64px; overflow: auto;
       white-space: pre-wrap; word-break: break-word;
@@ -667,28 +960,42 @@
     }
     .triage-card .actions-row a, .triage-card .actions-row button {
       font-size: 11px; padding: 3px 8px; border-radius: 4px;
-      background: transparent; color: var(--text-dim);
+      background: var(--bg-1); color: var(--text-dim);
       border: 1px solid var(--border); cursor: pointer; text-decoration: none;
+      transition: color 0.12s ease, border-color 0.12s ease;
     }
     .triage-card .actions-row a:hover, .triage-card .actions-row button:hover {
       color: var(--text); border-color: var(--border-strong);
     }
+    /* Heal-with-Claude is the action-row's primary CTA; pop with the accent
+       border so a triager sees the AI affordance instantly. */
+    .triage-card .actions-row button.heal-btn {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      font-weight: 600;
+    }
+    .triage-card .actions-row button.heal-btn:hover {
+      color: var(--on-fill);
+      background: var(--accent-fill);
+      border-color: var(--accent-fill);
+    }
 
     /* ---------- Log linkification ---------- */
     .log a.spec-link, .log a.shot-link {
-      color: var(--accent-2);
+      color: #a5b4fc;
       text-decoration: underline dotted;
       text-underline-offset: 2px;
     }
     .log a.spec-link:hover, .log a.shot-link:hover {
-      color: var(--accent); text-decoration: underline;
+      color: #c7d2fe; text-decoration: underline;
     }
 
     /* ---------- Scrollbar polish ---------- */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); background-clip: padding-box; border: 2px solid transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: padding-box; border: 2px solid transparent; }
   </style>
 </head>
 <body>
@@ -724,6 +1031,21 @@
           </svg>
           Re-run failed
         </button>
+        <button id="topbar-matrix" type="button" class="verb" aria-label="Run the selected feature across chromium, firefox and webkit" title="Run the selected feature across all three browsers in one go">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          All browsers
+        </button>
+        <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -744,7 +1066,7 @@
                 <input id="storyId" type="text" placeholder="LOGIN-001" />
               </div>
               <div class="field">
-                <label for="title">Story Title</label>
+                <label for="title">Story Title <span id="save-mode-chip" class="save-mode-chip" hidden></span></label>
                 <input id="title" type="text" placeholder="User authentication" aria-required="true" aria-describedby="title-err" />
                 <div id="title-err" class="field-error">Story title is required.</div>
               </div>
@@ -776,6 +1098,14 @@
                 </select>
               </div>
             </div>
+            <div id="coverage-panel" class="coverage-panel" hidden>
+              <button type="button" class="coverage-summary" id="coverage-summary" aria-expanded="false"
+                      title="Click to see per-AC coverage details for this feature">
+                <span id="coverage-summary-text">Coverage: —</span>
+                <svg class="coverage-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <div id="coverage-details" class="coverage-details" hidden></div>
+            </div>
             <label class="check">
               <input id="headed" type="checkbox" checked />
               <span>Headed (visible browser window)</span>
@@ -788,13 +1118,13 @@
                 </svg>
                 Run Tests
               </button>
-              <button id="save" class="btn ghost">
+              <button id="save" class="btn ghost" title="Save the story and auto-generate tests via Claude Code (falls back to copy-prompt if Claude Code CLI isn't installed)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                   <polyline points="17 21 17 13 7 13 7 21"/>
                   <polyline points="7 3 7 8 15 8"/>
                 </svg>
-                Save Story
+                <span id="save-label">Save &amp; Generate Tests</span>
               </button>
             </div>
           </div>
@@ -804,15 +1134,14 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6"/>
               </svg>
-              Generate tests for a new story (Claude Code)
+              <span id="generate-disclosure-title">Generation prompt (auto-sent to Claude Code)</span>
             </summary>
             <div class="body">
-              This UI runs <em>existing</em> tests. To scaffold tests for a brand-new story:
-              <ol>
-                <li>Click <b>Save Story</b> above</li>
-                <li>Copy the prompt below into Claude Code in this folder</li>
-                <li>Reload — the new feature will appear in the dropdown</li>
-              </ol>
+              <div id="generate-disclosure-copy">
+                When you click <b>Save &amp; Generate Tests</b>, this prompt is piped to the local
+                <code>claude</code> CLI with <code>--print --verbose</code>. Output streams into the log on the right;
+                when generation finishes, the new feature appears in the dropdown above.
+              </div>
               <pre id="prompt-out">Fill in the form first to see the prompt.</pre>
               <button class="prompt-copy" id="prompt-copy">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -836,6 +1165,8 @@
             <span id="pill-fail" class="pill fail" hidden>0 failed</span>
             <span id="pill-time" class="pill">—</span>
           </div>
+          <span id="pill-flaky" class="pill flaky" hidden title="Click to see which tests are unstable across recent runs"></span>
+          <svg id="history-spark" class="history-spark" viewBox="0 0 120 22" preserveAspectRatio="none" aria-label="Run history (last 30 runs)" role="img" hidden></svg>
           <div id="waterfall" class="waterfall" aria-hidden="true"></div>
         </div>
 
@@ -845,6 +1176,12 @@
             <span>output stream</span>
             <span id="log-line-count" class="log-line-count" aria-live="polite"></span>
             <span class="log-spacer"></span>
+            <div class="log-search">
+              <input id="log-search" type="search" placeholder="Search…" aria-label="Filter log lines (Ctrl+F when focused inside the log)" />
+              <span id="log-search-count" class="log-search-count" aria-live="polite"></span>
+              <button id="log-search-prev" class="log-search-nav" type="button" aria-label="Previous match" title="Previous match (Shift+Enter)">↑</button>
+              <button id="log-search-next" class="log-search-nav" type="button" aria-label="Next match" title="Next match (Enter)">↓</button>
+            </div>
             <button id="log-clear" class="log-clear-btn" type="button" aria-label="Clear log">Clear</button>
           </div>
           <div id="log" class="log empty" tabindex="0" aria-label="Live Playwright test output">
@@ -1044,6 +1381,20 @@
       trimLogIfOverflowed();
       updateLineCount();
       scheduleScroll();
+      // If a search is active, classify the new line so highlighting stays
+      // consistent without re-walking the whole log on every append.
+      const searchInput = document.getElementById('log-search');
+      if (searchInput && (searchInput.value || '').trim()) {
+        const q = searchInput.value.trim().toLowerCase();
+        if ((span.textContent || '').toLowerCase().includes(q)) {
+          span.classList.add('log-search-hit');
+          logSearchHits.push(span);
+          const countEl = document.getElementById('log-search-count');
+          if (countEl) countEl.textContent = `${logSearchCursor + 1}/${logSearchHits.length}`;
+        } else {
+          span.classList.add('search-dim');
+        }
+      }
     }
 
     function appendMeta(text) {
@@ -1063,9 +1414,219 @@
       logEl.classList.add('empty');
       logEl.innerHTML = '<div><div class="empty-art" aria-hidden="true">⚡</div><div>Live test output will appear here</div></div>';
       updateLineCount();
+      runLogSearch(); // re-evaluate against the now-empty log
     }
 
+    /* ---- Inline log search (Ctrl+F within the log) -------------------------
+       Filter strategy: substring match (case-insensitive) over each .log-entry
+       span's text. Matching entries get .log-search-hit (yellow tint); the
+       currently-focused match gets .current; non-matching entries get
+       .search-dim. Up/Down arrow buttons (or Enter/Shift+Enter while focused
+       in the search input) cycle through matches. */
+    let logSearchHits = [];
+    let logSearchCursor = -1;
+    function runLogSearch() {
+      const input = document.getElementById('log-search');
+      const countEl = document.getElementById('log-search-count');
+      const prevBtn = document.getElementById('log-search-prev');
+      const nextBtn = document.getElementById('log-search-next');
+      if (!input) return;
+      const query = (input.value || '').trim();
+      // Clear all previous styling first so re-running search is idempotent.
+      logEl.querySelectorAll('.log-entry').forEach((el) => {
+        el.classList.remove('log-search-hit', 'current', 'search-dim');
+      });
+      logSearchHits = [];
+      if (!query) {
+        logSearchCursor = -1;
+        if (countEl) countEl.textContent = '';
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        return;
+      }
+      const q = query.toLowerCase();
+      const entries = logEl.querySelectorAll('.log-entry');
+      for (const el of entries) {
+        if ((el.textContent || '').toLowerCase().includes(q)) {
+          el.classList.add('log-search-hit');
+          logSearchHits.push(el);
+        } else {
+          el.classList.add('search-dim');
+        }
+      }
+      if (logSearchHits.length === 0) {
+        logSearchCursor = -1;
+        if (countEl) countEl.textContent = '0/0';
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        return;
+      }
+      // Keep cursor in range; default to the FIRST hit on a fresh query.
+      if (logSearchCursor < 0 || logSearchCursor >= logSearchHits.length) logSearchCursor = 0;
+      logSearchHits[logSearchCursor].classList.add('current');
+      logSearchHits[logSearchCursor].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (countEl) countEl.textContent = `${logSearchCursor + 1}/${logSearchHits.length}`;
+      if (prevBtn) prevBtn.disabled = false;
+      if (nextBtn) nextBtn.disabled = false;
+    }
+    function logSearchStep(delta) {
+      if (logSearchHits.length === 0) return;
+      logSearchHits[logSearchCursor]?.classList.remove('current');
+      logSearchCursor = (logSearchCursor + delta + logSearchHits.length) % logSearchHits.length;
+      const target = logSearchHits[logSearchCursor];
+      target.classList.add('current');
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const countEl = document.getElementById('log-search-count');
+      if (countEl) countEl.textContent = `${logSearchCursor + 1}/${logSearchHits.length}`;
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      const input = document.getElementById('log-search');
+      if (!input) return;
+      // Debounce input — re-running the filter on every keystroke is fine for
+      // small logs but starts to lag past a few thousand lines.
+      let t = null;
+      input.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => { logSearchCursor = -1; runLogSearch(); }, 80);
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          logSearchStep(e.shiftKey ? -1 : 1);
+        } else if (e.key === 'Escape') {
+          input.value = '';
+          runLogSearch();
+          input.blur();
+        }
+      });
+      document.getElementById('log-search-prev')?.addEventListener('click', () => logSearchStep(-1));
+      document.getElementById('log-search-next')?.addEventListener('click', () => logSearchStep(1));
+      // Ctrl+F (Cmd+F on macOS) anywhere in the right pane focuses the search
+      // input. Letting the browser take over with its own find would search
+      // the whole page, not the log specifically.
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+          const tag = (e.target?.tagName || '').toLowerCase();
+          if (tag === 'input' || tag === 'textarea') return; // let real fields keep their behavior
+          e.preventDefault();
+          input.focus();
+          input.select();
+        }
+      });
+    });
+
     if (logClearBtn) logClearBtn.addEventListener('click', clearLog);
+
+    // Cached list of existing features so we can detect when Save & Generate
+    // should be in "update" mode (existing slug) vs "create" mode (new slug).
+    let loadedFeatures = [];
+    function safeSlugClient(input) {
+      // Must match server.js safeSlug() exactly — server validates against the
+      // same slug on Save, so any drift breaks the update-detection.
+      return String(input || '').toLowerCase().trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'untitled';
+    }
+    function findExistingFeature(slugOrTitle) {
+      const slug = safeSlugClient(slugOrTitle);
+      return loadedFeatures.find((f) => f.name && f.name.toLowerCase() === slug);
+    }
+
+    // Coverage panel — render the analysis for whichever feature is selected.
+    // Hidden when "all features" is picked (panel only makes sense per-feature).
+    async function refreshCoverage() {
+      const panel = $('coverage-panel');
+      const summaryBtn = $('coverage-summary');
+      const summaryText = $('coverage-summary-text');
+      const details = $('coverage-details');
+      const feature = $('feature').value;
+      if (!feature) { panel.hidden = true; return; }
+      try {
+        const resp = await fetch(`/api/coverage-gaps?feature=${encodeURIComponent(feature)}`);
+        if (!resp.ok) { panel.hidden = true; return; }
+        const data = await resp.json();
+        panel.hidden = false;
+        const sum = data.summary || {};
+        // Compose summary text. Three buckets:
+        // - "no ACs detected" → empty / unmappable story
+        // - "1/3 ACs covered" → partial (uncovered ACs present)
+        // - "3/3 ACs covered" → full
+        let cls = 'empty';
+        let text = '';
+        if (sum.totalAcs === 0) {
+          text = `No ACs parsed from story · ${sum.totalScenarios} scenarios`;
+          cls = 'empty';
+        } else if (sum.uncoveredAcs > 0) {
+          text = `Coverage: ${sum.coveredAcs}/${sum.totalAcs} ACs covered · ${sum.uncoveredAcs} gap${sum.uncoveredAcs === 1 ? '' : 's'}`;
+          cls = 'partial';
+        } else {
+          text = `Coverage: ${sum.coveredAcs}/${sum.totalAcs} ACs covered · all green`;
+          cls = 'full';
+        }
+        if (sum.orphanCount > 0) text += ` · ${sum.orphanCount} extra scenario${sum.orphanCount === 1 ? '' : 's'}`;
+        summaryText.textContent = text;
+        summaryText.className = `coverage-summary-text ${cls}`;
+        // Build the details body (per-AC rows + orphan list)
+        details.innerHTML = '';
+        const ul = document.createElement('ul');
+        for (const ac of data.coverage || []) {
+          const li = document.createElement('li');
+          li.className = ac.covered ? 'covered' : 'uncovered';
+          const id = document.createElement('b');
+          id.textContent = `AC${ac.id}: `;
+          li.appendChild(id);
+          const txt = document.createElement('span');
+          txt.className = 'ac-text';
+          txt.textContent = ac.text;
+          li.appendChild(txt);
+          if (ac.scenarios && ac.scenarios.length > 0) {
+            const cnt = document.createElement('span');
+            cnt.className = 'scenario-count';
+            cnt.textContent = `(${ac.scenarios.length} scenario${ac.scenarios.length === 1 ? '' : 's'})`;
+            cnt.title = ac.scenarios.join('\n');
+            li.appendChild(cnt);
+          }
+          ul.appendChild(li);
+        }
+        if ((data.coverage || []).length === 0) {
+          const empty = document.createElement('div');
+          empty.style.fontStyle = 'italic';
+          empty.style.color = 'var(--text-faint)';
+          empty.textContent = 'No ACs detected in the user-story file. Tag scenarios "ACn-…" to enable coverage tracking.';
+          details.appendChild(empty);
+        } else {
+          details.appendChild(ul);
+        }
+        if ((data.orphanScenarios || []).length > 0) {
+          const h = document.createElement('div');
+          h.className = 'orphan-header';
+          h.textContent = `Extra scenarios beyond ACs (${data.orphanScenarios.length})`;
+          details.appendChild(h);
+          const list = document.createElement('div');
+          list.className = 'orphan-list';
+          list.textContent = data.orphanScenarios.join(' · ');
+          details.appendChild(list);
+        }
+      } catch {
+        panel.hidden = true;
+      }
+    }
+
+    // Wire the summary button to toggle the details. Single source of truth
+    // is aria-expanded so the chevron rotation and the details visibility
+    // stay in sync.
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('coverage-summary');
+      const details = document.getElementById('coverage-details');
+      if (btn && details) {
+        btn.addEventListener('click', () => {
+          const open = btn.getAttribute('aria-expanded') === 'true';
+          btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+          details.hidden = open;
+        });
+      }
+    });
 
     async function loadFeatures() {
       const select = $('feature');
@@ -1073,6 +1634,7 @@
       try {
         const resp = await fetch('/api/features');
         const features = await resp.json();
+        loadedFeatures = features || [];
         if (!features.length) {
           const opt = document.createElement('option');
           opt.value = '';
@@ -1094,6 +1656,11 @@
           opt.textContent = `${f.name}${suffix}`;
           select.appendChild(opt);
         }
+        // Refresh the save-mode chip + prompt now that features are loaded.
+        updateSaveMode();
+        updatePrompt();
+        // Initial coverage render for whatever feature is initially selected.
+        refreshCoverage();
       } catch {
         const opt = document.createElement('option');
         opt.value = '';
@@ -1292,6 +1859,26 @@
       } catch {}
     }
 
+    // Flip the save-mode chip + the prompt template based on whether the
+    // slug derived from the story title matches an existing feature folder.
+    function updateSaveMode() {
+      const chip = $('save-mode-chip');
+      if (!chip) return;
+      const title = $('title')?.value.trim();
+      if (!title) { chip.hidden = true; return; }
+      const existing = findExistingFeature(title);
+      chip.hidden = false;
+      if (existing) {
+        chip.className = 'save-mode-chip update';
+        chip.textContent = `UPDATING ${existing.name}`;
+        chip.title = `An existing feature "${existing.name}" was detected. Save & Generate will update the existing files in place instead of creating new ones.`;
+      } else {
+        chip.className = 'save-mode-chip new';
+        chip.textContent = 'NEW STORY';
+        chip.title = 'No existing feature matches this title. Save & Generate will scaffold a new feature folder, POM, and step defs.';
+      }
+    }
+
     function expressPrompt() {
       const url = $('url').value.trim();
       const title = $('title').value.trim();
@@ -1299,6 +1886,43 @@
       const creds = $('creds').value.trim();
       const storyId = $('storyId').value.trim();
       if (!url && !title && !ac) return 'Fill in the form first to see the prompt.';
+
+      const existing = title ? findExistingFeature(title) : null;
+
+      if (existing) {
+        // UPDATE mode — point claude at the existing files and tell it to
+        // amend in place rather than scaffold from scratch.
+        return `Update the existing test suite for the following user story. An existing feature was detected — do NOT delete and recreate; amend in place.
+
+APPLICATION URL:
+${url || '<URL>'}
+
+STORY TITLE (one line):
+${title}
+
+${storyId ? `STORY ID:\n${storyId}\n\n` : ''}EXISTING ARTIFACTS:
+- Feature file:      features/${existing.name}/${existing.name}.feature
+- Step definitions:  features/${existing.name}/${existing.name}.steps.ts
+- Page Object:       pages/${existing.name}/*.ts
+- User story:        user-stories/<storyId>-${existing.name}.md (already overwritten with the updated ACs)
+
+CREDENTIALS (optional):
+${creds || ''}
+
+UPDATED ACCEPTANCE CRITERIA:
+${ac || '<ACs>'}
+
+INSTRUCTIONS FOR CLAUDE:
+1. READ the existing .feature, .steps.ts, and POM files first so you understand current coverage.
+2. Compare the UPDATED ACs above against existing scenarios. Identify: new scenarios, changed scenarios, removed scenarios, unchanged scenarios.
+3. UPDATE the existing files IN PLACE — preserve scenarios that still apply; add scenarios for new ACs; modify scenarios for changed ACs; remove scenarios for removed ACs.
+4. Extend the POM only if new selectors are required. Do NOT rewrite existing methods unless the AC actually changed the underlying flow.
+5. Do NOT delete the existing feature folder or POM.
+6. Re-run \`npx bddgen\` so the compiled specs reflect the changes.
+7. Stream short status updates between steps so the UI shows progress.`;
+      }
+
+      // CREATE mode — original scaffolding prompt.
       return `Run the full QA automation pipeline on the following input:
 
 APPLICATION URL:
@@ -1323,7 +1947,7 @@ INSTRUCTIONS FOR CLAUDE:
 
     function updatePrompt() { $('prompt-out').textContent = expressPrompt(); }
     ['url', 'title', 'ac', 'creds', 'storyId'].forEach((id) =>
-      $(id).addEventListener('input', updatePrompt)
+      $(id).addEventListener('input', () => { updateSaveMode(); updatePrompt(); })
     );
 
     $('prompt-copy').addEventListener('click', async () => {
@@ -1353,6 +1977,170 @@ INSTRUCTIONS FOR CLAUDE:
       });
     });
 
+    // ---- Test generation via local Claude Code CLI ----
+    // On page load we ping the server to find out if `claude` is on PATH;
+    // that flips the Save button's secondary label so users see what's
+    // about to happen ("Save Story" vs "Save & Generate Tests").
+    let claudeCliAvailable = null;
+    (async function detectClaudeCli() {
+      try {
+        const resp = await fetch('/api/generate-status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        claudeCliAvailable = !!data.available;
+        const lbl = $('save-label');
+        if (lbl) lbl.textContent = claudeCliAvailable ? 'Save & Generate Tests' : 'Save Story';
+        const copy = $('generate-disclosure-copy');
+        if (copy && !claudeCliAvailable) {
+          copy.innerHTML = `<b>Claude Code CLI not detected.</b> Install <code>claude</code> on PATH for one-click generation, or paste the prompt below into a separate Claude Code session manually after saving.`;
+        }
+      } catch { /* server down — leave defaults */ }
+    })();
+
+    // POST the prompt to /api/generate-tests and stream the NDJSON reply
+    // into the existing log viewer (same shape as runTests). Returns when
+    // claude exits OR fetch errors out. Refreshes the features dropdown on
+    // exit code 0 so the new feature is selectable right away.
+    async function generateTests(prompt) {
+      clearDashboard({ logArt: '✨', logMsg: 'Calling Claude Code…' });
+      setStatus('running', 'Generating tests via Claude Code…');
+      setRunInFlight(true);
+
+      try {
+        const resp = await fetch('/api/generate-tests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+        if (resp.status === 501) {
+          const data = await resp.json().catch(() => ({}));
+          setStatus('idle', 'Claude Code CLI not available.');
+          showToast(data.error || 'Claude Code CLI not on PATH', 'error');
+          return;
+        }
+        if (resp.status === 409) {
+          const data = await resp.json().catch(() => ({}));
+          setStatus('idle', 'Already running.');
+          showToast(data.error || 'Another job is in progress', 'error');
+          return;
+        }
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          setStatus('fail', data.error || `HTTP ${resp.status}`);
+          showToast(data.error || 'Generation request failed', 'error');
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let exitCode = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line) continue;
+            try {
+              const msg = JSON.parse(line);
+              if (msg.type === 'start') appendMeta(`$ ${msg.cmd}`);
+              else if (msg.type === 'log') appendLog(msg.text, msg.stream);
+              else if (msg.type === 'error') appendMeta(`[error] ${msg.message}`);
+              else if (msg.type === 'done') exitCode = msg.exitCode;
+            } catch {
+              appendLog(line + '\n');
+            }
+          }
+        }
+        if (exitCode === 0) {
+          setStatus('pass', 'Generation complete. New feature added.');
+          showToast('Tests generated');
+          await loadFeatures();
+          refreshReports();
+        } else if (exitCode != null) {
+          setStatus('fail', `Generation exited ${exitCode}.`);
+          showToast(`Generation failed (exit ${exitCode})`, 'error');
+        } else {
+          setStatus('idle', 'Generation ended.');
+        }
+      } catch (err) {
+        setStatus('fail', String(err && err.message));
+        showToast('Generation failed', 'error');
+      } finally {
+        setRunInFlight(false);
+      }
+    }
+
+    // Send one failure to /api/heal — same streaming protocol as generate,
+    // same log viewer rendering. After exit 0, refresh triage so a healed
+    // failure either disappears (passed on retry) or shows the new state.
+    async function healFailure(ctx) {
+      clearDashboard({ logArt: '✨', logMsg: `Asking Claude to heal: ${ctx.fullTitle.slice(0, 80)}…` });
+      setStatus('running', 'Healing failing test via Claude Code…');
+      setRunInFlight(true);
+      try {
+        const resp = await fetch('/api/heal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ctx),
+        });
+        if (resp.status === 501) {
+          const data = await resp.json().catch(() => ({}));
+          setStatus('idle', 'Claude Code CLI not available.');
+          showToast(data.error || 'Claude Code CLI not on PATH', 'error');
+          return;
+        }
+        if (resp.status === 409) {
+          const data = await resp.json().catch(() => ({}));
+          setStatus('idle', 'Another job is in progress.');
+          showToast(data.error || 'Already running', 'error');
+          return;
+        }
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          setStatus('fail', data.error || `HTTP ${resp.status}`);
+          showToast(data.error || 'Heal failed', 'error');
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let exitCode = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line) continue;
+            try {
+              const msg = JSON.parse(line);
+              if (msg.type === 'start') appendMeta(`$ ${msg.cmd}`);
+              else if (msg.type === 'log') appendLog(msg.text, msg.stream);
+              else if (msg.type === 'done') exitCode = msg.exitCode;
+            } catch { appendLog(line + '\n'); }
+          }
+        }
+        if (exitCode === 0) {
+          setStatus('pass', 'Heal complete. Re-run the suite to verify.');
+          showToast('Heal complete — re-run to verify');
+          refreshTriage();
+        } else if (exitCode != null) {
+          setStatus('fail', `Heal exited ${exitCode}.`);
+          showToast(`Heal failed (exit ${exitCode})`, 'error');
+        } else {
+          setStatus('idle', 'Heal ended.');
+        }
+      } catch (err) {
+        setStatus('fail', String(err && err.message));
+        showToast('Heal failed', 'error');
+      } finally {
+        setRunInFlight(false);
+      }
+    }
+
     $('save').addEventListener('click', async () => {
       const body = {
         url: $('url').value.trim(),
@@ -1381,6 +2169,20 @@ INSTRUCTIONS FOR CLAUDE:
       if (!resp.ok) { showToast(data.error || 'Save failed', 'error'); return; }
       showToast(`Saved ${data.file}`);
       appendMeta(`[save] wrote ${data.file}`);
+
+      // Chain into generation if the local claude CLI is reachable. When
+      // it's not we leave the user with the saved story + copy-prompt path
+      // (the disclosure already messages this).
+      if (claudeCliAvailable === false) {
+        showToast('Saved. Claude Code CLI not detected — use the copy-prompt path.', 'error');
+        return;
+      }
+      const prompt = expressPrompt();
+      if (!prompt || prompt.length < 50) {
+        showToast('Could not build a prompt from the form', 'error');
+        return;
+      }
+      await generateTests(prompt);
     });
 
     // Status-bar waterfall: paint a tick per discovered test, color it
@@ -1422,6 +2224,40 @@ INSTRUCTIONS FOR CLAUDE:
       return { passed, failed, time };
     }
 
+    // ---- Flakiness detector --------------------------------------------------
+    // Cross-run analysis: a test that flips between pass/fail over recent runs
+    // is FLAKY (not a real failure — a reliability problem). We pull the
+    // ranked list once per page load + after every run, then expose it via
+    // (a) a status-bar pill when there's anything flaky, and (b) chips on
+    // triage cards so a flaky-test failure is visibly de-prioritized.
+    let flakyTestsByKey = new Map();
+    async function refreshFlaky() {
+      try {
+        const resp = await fetch('/api/flaky-tests?window=20');
+        if (!resp.ok) { flakyTestsByKey.clear(); $('pill-flaky').hidden = true; return; }
+        const data = await resp.json();
+        const tests = data.tests || [];
+        flakyTestsByKey = new Map();
+        for (const t of tests) {
+          // Same key the backend builds — feature|project|fullTitle.
+          flakyTestsByKey.set(`${t.feature}|${t.project}|${t.fullTitle}`, t);
+        }
+        const pill = $('pill-flaky');
+        if (tests.length === 0) {
+          pill.hidden = true;
+        } else {
+          pill.textContent = `🌊 ${tests.length} flaky`;
+          pill.hidden = false;
+          const top = tests.slice(0, 3).map((t) =>
+            `${t.spec || t.fullTitle.split(' › ').slice(-1)[0]} (${Math.round(t.passRate * 100)}% over ${t.totalRuns})`
+          ).join(' · ');
+          pill.title = `Flaky tests in last 20 runs:\n${top}${tests.length > 3 ? `\n…and ${tests.length - 3} more` : ''}`;
+        }
+      } catch {
+        $('pill-flaky').hidden = true;
+      }
+    }
+
     // ---- Failure triage panel ------------------------------------------------
     // After every run we pull /api/last-failures and surface a card per failure
     // with thumbnail + error excerpt + jump-to-source / trace links.
@@ -1436,11 +2272,19 @@ INSTRUCTIONS FOR CLAUDE:
         const failures = data.failures || [];
         if (failures.length === 0) { panel.classList.add('hidden'); return; }
         panel.classList.remove('hidden');
-        title.textContent = `Failures — ${failures.length}`;
+        // Split failures by category so the header surfaces failed vs broken
+        // counts independently — broken (timeout/interrupted) usually points
+        // at infra/flake; failed (assertion) usually points at product bugs.
+        const failedCount = failures.filter((f) => f.category === 'failed').length;
+        const brokenCount = failures.filter((f) => f.category === 'broken').length;
+        const bits = [];
+        if (failedCount > 0) bits.push(`${failedCount} failed`);
+        if (brokenCount > 0) bits.push(`${brokenCount} broken`);
+        title.textContent = `Failures — ${failures.length}${bits.length > 0 ? ` (${bits.join(', ')})` : ''}`;
         list.innerHTML = '';
         failures.forEach((f, idx) => {
           const card = document.createElement('div');
-          card.className = 'triage-card';
+          card.className = 'triage-card' + (f.category === 'broken' ? ' broken' : '');
 
           // Thumbnail (clickable → lightbox)
           if (f.screenshot) {
@@ -1454,15 +2298,44 @@ INSTRUCTIONS FOR CLAUDE:
           } else {
             const ph = document.createElement('div');
             ph.className = 'thumb empty';
-            ph.textContent = '⚠';
+            ph.textContent = f.category === 'broken' ? '⏱' : '⚠';
             card.appendChild(ph);
           }
 
           const meta = document.createElement('div');
           meta.className = 'meta';
+          // Title row gets a category chip next to the test name so the
+          // distinction is glanceable even before reading the error.
+          const titleRow = document.createElement('div');
+          titleRow.className = 'title-row';
           const t = document.createElement('div');
           t.className = 'title';
           t.textContent = f.fullTitle || f.title;
+          const chip = document.createElement('span');
+          if (f.category === 'broken') {
+            chip.className = 'cat-chip broken';
+            chip.textContent = f.status === 'timedOut' ? 'TIMEOUT' : (f.status === 'interrupted' ? 'INTERRUPTED' : 'BROKEN');
+          } else {
+            chip.className = 'cat-chip failed';
+            chip.textContent = 'FAILED';
+          }
+          titleRow.appendChild(t);
+          titleRow.appendChild(chip);
+          // Cross-run flake chip — derive the lookup key the same way the
+          // backend grouped: feature slug from spec path + project + fullTitle.
+          const featureSlugFromFile = (f.file || '').replace(/\\/g, '/')
+            .replace(/^(?:.*\/)?\.?features-gen\/features\//, '')
+            .replace(/^(?:.*\/)?tests\//, '')
+            .split('/')[0] || '';
+          const flakeKey = `${featureSlugFromFile}|${f.project || 'chromium'}|${f.fullTitle || f.title}`;
+          const flakyInfo = flakyTestsByKey.get(flakeKey);
+          if (flakyInfo) {
+            const flake = document.createElement('span');
+            flake.className = 'cat-chip flaky';
+            flake.textContent = `🌊 FLAKY ${Math.round(flakyInfo.passRate * 100)}%`;
+            flake.title = `This test passed ${flakyInfo.passes}/${flakyInfo.totalRuns} times in the last ${flakyInfo.totalRuns} runs with ${flakyInfo.flipCount} flips. Likely an infra/timing issue, not a real regression.`;
+            titleRow.appendChild(flake);
+          }
           const file = document.createElement('div');
           file.className = 'file';
           file.textContent = f.file + (f.line ? `:${f.line}` : '');
@@ -1487,7 +2360,31 @@ INSTRUCTIONS FOR CLAUDE:
             trace.textContent = 'Trace ↗';
             actions.appendChild(trace);
           }
-          meta.appendChild(t);
+          // "Heal with Claude" button — only shown when the local CLI is
+          // detected; otherwise this would just fail with a 501.
+          if (claudeCliAvailable === true && f.file) {
+            const featureMatch = (f.file || '').match(/(?:^|\/)features(?:-gen)?\/(?:features\/)?([^/]+)\//);
+            const featureSlug = featureMatch ? featureMatch[1] : null;
+            if (featureSlug) {
+              const heal = document.createElement('button');
+              heal.type = 'button';
+              heal.className = 'heal-btn';
+              heal.textContent = '✨ Heal with Claude';
+              heal.title = 'Send this failure context to your local Claude Code CLI for diagnosis + fix';
+              heal.addEventListener('click', () => healFailure({
+                feature: featureSlug,
+                fullTitle: f.fullTitle || f.title,
+                file: f.file,
+                line: f.line,
+                errorMessage: f.errorMessage,
+                errorStack: f.errorStack,
+                screenshot: f.screenshot,
+                category: f.category,
+              }));
+              actions.appendChild(heal);
+            }
+          }
+          meta.appendChild(titleRow);
           meta.appendChild(file);
           meta.appendChild(err);
           meta.appendChild(actions);
@@ -1514,18 +2411,24 @@ INSTRUCTIONS FOR CLAUDE:
       if (inFlight) topbarRerunFailedBtn.disabled = true;
     }
 
+    // Stop button routes to whichever process is in flight. Try the test
+    // run first (most common case), fall back to generate if there isn't
+    // one. Both endpoints return 204 on a successful kill, 404 if nothing
+    // was running — so we can chain them safely.
     async function abortRun() {
       try {
-        const resp = await fetch('/api/abort', { method: 'POST' });
-        if (resp.status === 204) showToast('Aborting run…');
-        else if (resp.status === 404) showToast('Nothing to abort', 'error');
-        else showToast('Abort failed', 'error');
+        let resp = await fetch('/api/abort', { method: 'POST' });
+        if (resp.status === 204) { showToast('Aborting run…'); return; }
+        resp = await fetch('/api/abort-generate', { method: 'POST' });
+        if (resp.status === 204) { showToast('Aborting generation…'); return; }
+        showToast('Nothing to abort', 'error');
       } catch { showToast('Abort failed', 'error'); }
     }
 
     topbarRunBtn.addEventListener('click', () => $('run').click());
     topbarStopBtn.addEventListener('click', abortRun);
     topbarRerunFailedBtn.addEventListener('click', () => runTests({ lastFailed: true }));
+    $('topbar-matrix').addEventListener('click', () => runTests({ matrix: true }));
 
     document.addEventListener('keydown', (e) => {
       // Don't hijack typing in inputs.
@@ -1541,21 +2444,152 @@ INSTRUCTIONS FOR CLAUDE:
       }
     });
 
+    // ---- Run-time ETA -------------------------------------------------------
+    // Look up similar past runs from history.jsonl, compute the median
+    // duration, display + tick down the remaining time during a run.
+    let etaTicker = null;
+    function fmtMsHuman(ms) {
+      if (ms < 0) ms = 0;
+      const total = Math.round(ms / 1000);
+      const mins = Math.floor(total / 60);
+      const secs = total % 60;
+      return mins > 0 ? `${mins}m ${String(secs).padStart(2, '0')}s` : `${secs}s`;
+    }
+    function median(nums) {
+      if (!nums.length) return null;
+      const sorted = [...nums].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+    }
+    async function startEtaTicker({ feature, project, matrix }) {
+      stopEtaTicker();
+      try {
+        const resp = await fetch('/api/history?limit=60');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const runs = data.runs || [];
+        const wantFeature = feature || 'all';
+
+        // Matrix runs are recorded with project='all'. Look those up first;
+        // if no matrix history exists yet, fall back to the *max* per-browser
+        // median — Playwright runs projects in parallel, so total duration
+        // ≈ the slowest project's duration, not the sum.
+        let matching = [];
+        let label;
+        if (matrix) {
+          matching = runs
+            .filter((r) => (r.feature || 'all') === wantFeature && r.project === 'all' && !r.lastFailed)
+            .map((r) => r.duration)
+            .filter((d) => typeof d === 'number' && d > 0);
+          if (matching.length === 0) {
+            // No matrix history — synthesize ETA from per-browser medians.
+            const perProject = {};
+            for (const r of runs) {
+              if ((r.feature || 'all') !== wantFeature || r.lastFailed) continue;
+              if (r.project === 'all' || !r.project) continue;
+              if (typeof r.duration !== 'number' || r.duration <= 0) continue;
+              (perProject[r.project] = perProject[r.project] || []).push(r.duration);
+            }
+            const perProjectMedians = Object.values(perProject).map(median).filter((m) => m != null);
+            if (perProjectMedians.length > 0) {
+              const synth = Math.max(...perProjectMedians);
+              matching = [synth];
+              label = `estimated from per-browser history (${perProjectMedians.length} browser${perProjectMedians.length === 1 ? '' : 's'})`;
+            }
+          } else {
+            label = `median of ${matching.length} matrix run${matching.length === 1 ? '' : 's'}`;
+          }
+        } else {
+          const wantProject = project || 'chromium';
+          matching = runs
+            .filter((r) => (r.feature || 'all') === wantFeature && r.project === wantProject && !r.lastFailed)
+            .map((r) => r.duration)
+            .filter((d) => typeof d === 'number' && d > 0);
+          label = `median of ${matching.length} run${matching.length === 1 ? '' : 's'}`;
+        }
+
+        const medianMs = median(matching);
+        if (!medianMs || medianMs < 1000) return; // need at least one comparable sub-second run
+
+        const startedAt = performance.now();
+        const baseMsg = $('status-text').textContent;
+        function tick() {
+          const elapsed = performance.now() - startedAt;
+          const remaining = medianMs - elapsed;
+          const tag = remaining > 0
+            ? `ETA ${fmtMsHuman(remaining)} (${label})`
+            : `running ${fmtMsHuman(elapsed)} over median (${label})`;
+          $('status-text').textContent = `${baseMsg.replace(/\s*·\s*ETA[^·]*$/, '').replace(/\s*·\s*running\s+\d.*$/, '')} · ${tag}`;
+        }
+        tick();
+        etaTicker = setInterval(tick, 1000);
+      } catch { /* best-effort */ }
+    }
+    function stopEtaTicker() {
+      if (etaTicker) { clearInterval(etaTicker); etaTicker = null; }
+    }
+
+    // Wipe last-run artifacts off the dashboard so a new run/generation
+    // doesn't show stale screenshots, triage cards, or report links. The
+    // panels repopulate from the server in the `finally` block once the
+    // job finishes. Log gets a caller-supplied opener message + art glyph.
+    function clearDashboard(opts = {}) {
+      const { logArt = '⏳', logMsg = 'Starting…' } = opts;
+      // Log → opener placeholder
+      logEl.classList.add('empty');
+      logEl.innerHTML = `<div><div class="empty-art" aria-hidden="true">${logArt}</div><div>${escapeHtml(logMsg)}</div></div>`;
+      logStartedFlag = false;
+      // Stat pills + waterfall → reset
+      statPills.hidden = true;
+      pillPass.hidden = true;
+      pillFail.hidden = true;
+      pillTime.textContent = '';
+      const wf = $('waterfall');
+      if (wf) wf.innerHTML = '';
+      // Gallery → hide + empty
+      const gallery = $('gallery');
+      const galleryGrid = $('gallery-grid');
+      const galleryCount = $('gallery-count');
+      if (gallery) gallery.classList.add('hidden');
+      if (galleryGrid) galleryGrid.innerHTML = '';
+      if (galleryCount) galleryCount.textContent = '';
+      // Triage → hide + empty
+      const triagePanel = $('triage');
+      const triageList = $('triage-list');
+      const triageTitle = $('triage-title');
+      if (triagePanel) triagePanel.classList.add('hidden');
+      if (triageList) triageList.innerHTML = '';
+      if (triageTitle) triageTitle.textContent = 'Failures — 0';
+      // Reports footer → temporary "updating" placeholder
+      const reportsEl2 = $('reports');
+      if (reportsEl2) reportsEl2.innerHTML = '<span class="label">Reports</span><span class="empty">updating after this run…</span>';
+      // Re-run failed button only enables after we know there are failures
+      if (topbarRerunFailedBtn) topbarRerunFailedBtn.disabled = true;
+    }
+
     // Extract the run logic into a callable so the Re-run Failed button can
     // reuse it without going through the form's click handler.
     async function runTests(opts = {}) {
-      const feature = opts.lastFailed ? null : $('feature').value;
-      const project = $('project').value;
+      const feature = (opts.lastFailed) ? null : $('feature').value;
+      // Matrix mode: omit project so /api/run runs across all configured
+      // projects (chromium + firefox + webkit) in one pass.
+      const matrix = !!opts.matrix;
+      const project = matrix ? '' : $('project').value;
       const headed = $('headed').checked;
       const lastFailed = !!opts.lastFailed;
 
-      logEl.classList.add('empty');
-      logEl.innerHTML = `<div><div class="empty-art" aria-hidden="true">⏳</div><div>${lastFailed ? 'Re-running failed tests…' : 'Starting…'}</div></div>`;
-      logStartedFlag = false;
-      statPills.hidden = true;
-      pillFail.hidden = true;
-      setStatus('running', lastFailed ? 'Re-running last-failed tests…' : `running ${feature || 'all features'} on ${project}${headed ? ' (headed)' : ''}…`);
+      clearDashboard({
+        logMsg: lastFailed ? 'Re-running failed tests…' : (matrix ? 'Running across all browsers…' : 'Starting…'),
+      });
+      setStatus('running',
+        lastFailed ? 'Re-running last-failed tests…' :
+        matrix ? `running ${feature || 'all features'} across chromium + firefox + webkit${headed ? ' (headed)' : ''}…` :
+                 `running ${feature || 'all features'} on ${project}${headed ? ' (headed)' : ''}…`);
       setRunInFlight(true);
+      // Live ETA tick. Skip only re-run-failed (no comparable history —
+      // it's deliberately a subset). Matrix mode looks up its own runs OR
+      // falls back to max(per-browser median).
+      if (!lastFailed) startEtaTicker({ feature, project, matrix });
 
       // Reset the live waterfall for this run.
       const wfState = { total: 0, cursor: 0, results: [] };
@@ -1646,10 +2680,15 @@ INSTRUCTIONS FOR CLAUDE:
         setStatus('fail', String(err && err.message));
         showToast('Run failed', 'error');
       } finally {
+        stopEtaTicker();
         setRunInFlight(false);
         refreshReports();
         refreshGallery();
+        // Refresh flake list FIRST so triage cards can decorate themselves
+        // with the latest stability data on render.
+        await refreshFlaky();
         refreshTriage();
+        refreshHistory();
       }
     }
 
@@ -1660,11 +2699,102 @@ INSTRUCTIONS FOR CLAUDE:
       return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
+    /* ---- 30-run history sparkline -------------------------------------
+       One <rect> per past run; height encodes pass-rate, color encodes
+       verdict (green=clean, red=any failed, amber=broken-but-not-failed). */
+    async function refreshHistory() {
+      const spark = $('history-spark');
+      if (!spark) return;
+      try {
+        const resp = await fetch('/api/history?limit=30');
+        if (!resp.ok) { spark.hidden = true; return; }
+        const data = await resp.json();
+        const runs = data.runs || [];
+        if (runs.length === 0) { spark.hidden = true; return; }
+        spark.hidden = false;
+        const W = 120, H = 22, gap = 1;
+        const barW = Math.max(1, (W - gap * (runs.length - 1)) / runs.length);
+        spark.innerHTML = '';
+        runs.forEach((r, i) => {
+          const total = r.total || 0;
+          const ratio = total > 0 ? (r.passed || 0) / total : 0;
+          const h = Math.max(2, Math.round(ratio * H));
+          const x = i * (barW + gap);
+          const y = H - h;
+          let cls = 'pass';
+          if ((r.failed || 0) > 0) cls = 'fail';
+          else if ((r.broken || 0) > 0) cls = 'broken';
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('class', `bar ${cls}`);
+          rect.setAttribute('x', String(x));
+          rect.setAttribute('y', String(y));
+          rect.setAttribute('width', String(barW));
+          rect.setAttribute('height', String(h));
+          rect.setAttribute('rx', '0.5');
+          const tip = `${new Date(r.ts).toLocaleString()} — ${r.passed}/${r.total} on ${r.project}${r.feature && r.feature !== 'all' ? ` · ${r.feature}` : ''}`;
+          const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+          title.textContent = tip;
+          rect.appendChild(title);
+          spark.appendChild(rect);
+        });
+      } catch {
+        spark.hidden = true;
+      }
+    }
+
+    // When the user picks a different feature, refresh the coverage panel.
+    $('feature').addEventListener('change', () => refreshCoverage());
+
     loadFeatures();
     refreshReports();
     refreshGallery();
-    refreshTriage();
+    refreshFlaky().then(() => refreshTriage());
+    refreshHistory();
     updatePrompt();
+
+    /* ---- Theme toggle: light ↔ dark, persisted, follows OS if not opted ----
+       The initial paint is set by the inline <head> bootstrap so there's no
+       flash. This block only handles the click + OS-change listeners. */
+    (function setupThemeToggle() {
+      const STORAGE_KEY = 'agentic-qa.theme';
+      const root = document.documentElement;
+      const btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+
+      // Icon visibility is CSS-driven from :root[data-theme="dark"]. JS only
+      // updates the accessible label/tooltip so screen readers track the state.
+      function paint(theme) {
+        const isDark = theme === 'dark';
+        const label = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('title', label);
+      }
+
+      // Reflect whatever the head bootstrap set.
+      paint(root.dataset.theme === 'dark' ? 'dark' : 'light');
+
+      btn.addEventListener('click', () => {
+        const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+        root.dataset.theme = next;
+        try { localStorage.setItem(STORAGE_KEY, next); } catch (e) { /* private mode, etc. */ }
+        paint(next);
+      });
+
+      // Follow OS preference changes only when the user hasn't explicitly opted.
+      if (window.matchMedia) {
+        const mql = window.matchMedia('(prefers-color-scheme: dark)');
+        const handler = (e) => {
+          let stored = null;
+          try { stored = localStorage.getItem(STORAGE_KEY); } catch (err) { /* ignore */ }
+          if (stored === 'dark' || stored === 'light') return; // user has opted; do not override
+          const next = e.matches ? 'dark' : 'light';
+          root.dataset.theme = next;
+          paint(next);
+        };
+        if (mql.addEventListener) mql.addEventListener('change', handler);
+        else if (mql.addListener) mql.addListener(handler); // Safari < 14
+      }
+    })();
   </script>
 </body>
 </html>

@@ -2,25 +2,45 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-28 11:26:46
-**Browser:** chromium
-**Status:** ✅ PASS (10/10)
-**Duration:** 33.7 s
+**Last run:** 2026-06-30 16:45:15
+**Browser:** chromium + firefox + webkit
+**Status:** ✅ PASS (30/30)
+**Duration:** 96.9 s
 
 ## Results
 
-| Spec | Test | Status | Duration | Error |
-|------|------|--------|---------:|-------|
-| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 4.8 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 3.0 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | ✅ PASS | 2.9 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | ✅ PASS | 3.0 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 3.3 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 3.7 s | — |
-| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | ✅ PASS | 2.9 s | — |
-| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | ✅ PASS | 3.7 s | — |
-| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 3.3 s | — |
-| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 3.0 s | — |
+| Spec | Test | Browser | Status | Duration | Error |
+|------|------|---------|--------|---------:|-------|
+| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | `chromium` | ✅ PASS | 2.3 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | `firefox` | ✅ PASS | 3.4 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | `webkit` | ✅ PASS | 3.0 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | `chromium` | ✅ PASS | 2.1 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | `firefox` | ✅ PASS | 2.9 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | `webkit` | ✅ PASS | 3.0 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | `chromium` | ✅ PASS | 1.8 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | `firefox` | ✅ PASS | 2.3 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | `webkit` | ✅ PASS | 4.3 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | `chromium` | ✅ PASS | 1.8 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | `firefox` | ✅ PASS | 2.2 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | `webkit` | ✅ PASS | 3.2 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | `chromium` | ✅ PASS | 2.3 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | `firefox` | ✅ PASS | 2.8 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | `webkit` | ✅ PASS | 3.9 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | `chromium` | ✅ PASS | 2.9 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | `firefox` | ✅ PASS | 4.0 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | `webkit` | ✅ PASS | 6.2 s | — |
+| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | `chromium` | ✅ PASS | 1.8 s | — |
+| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | `firefox` | ✅ PASS | 2.4 s | — |
+| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | `webkit` | ✅ PASS | 3.9 s | — |
+| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | `chromium` | ✅ PASS | 2.9 s | — |
+| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | `firefox` | ✅ PASS | 3.7 s | — |
+| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | `webkit` | ✅ PASS | 5.7 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | `chromium` | ✅ PASS | 2.8 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | `firefox` | ✅ PASS | 3.4 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | `webkit` | ✅ PASS | 4.9 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | `chromium` | ✅ PASS | 3.1 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | `firefox` | ✅ PASS | 3.3 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | `webkit` | ✅ PASS | 4.4 s | — |
 
 ## Artifacts
 
