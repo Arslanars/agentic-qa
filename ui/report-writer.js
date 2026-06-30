@@ -134,20 +134,32 @@ function findStoryFile(slug, root, paths) {
 function buildAutoBlock(feature, storyId, tests) {
   const total = tests.length;
   const passed = tests.filter((t) => t.status === 'passed').length;
-  // 'interrupted' = worker crash / manual cancel — bucket it as failed so an
-  // aborted run can't masquerade as a clean PASS.
-  const failed = tests.filter((t) => ['failed', 'timedOut', 'interrupted'].includes(t.status)).length;
+  // FAILED = the test ran end-to-end but an assertion didn't hold.
+  // BROKEN = the test couldn't complete (timeout / worker crash / cancel).
+  // Both break the green, but the distinction matters for triage: failed
+  // usually means a real product defect; broken usually means infra/flake.
+  const failed = tests.filter((t) => t.status === 'failed').length;
+  const broken = tests.filter((t) => ['timedOut', 'interrupted'].includes(t.status)).length;
+  const timedOut = tests.filter((t) => t.status === 'timedOut').length;
+  const interrupted = tests.filter((t) => t.status === 'interrupted').length;
   const flaky = tests.filter((t) => t.status === 'flaky').length;
   const skipped = tests.filter((t) => t.status === 'skipped').length;
-  const interrupted = tests.filter((t) => t.status === 'interrupted').length;
   const totalDuration = tests.reduce((sum, t) => sum + (t.duration || 0), 0);
-  const project = tests[0]?.project || '—';
+  // For cross-browser matrix runs we'll have multiple project values per
+  // feature; surface them all in the header and add a per-row Browser col.
+  const projectsSet = [...new Set(tests.map((t) => t.project).filter(Boolean))];
+  const project = projectsSet.length > 1 ? projectsSet.join(' + ') : (projectsSet[0] || '—');
+  const isMatrix = projectsSet.length > 1;
 
   // Verdict ladder: PASS requires passed+skipped+flaky === total. Anything
-  // failed/timedOut/interrupted (or unknown) breaks the green.
+  // failed/timedOut/interrupted (or unknown) breaks the green. The headline
+  // splits failed vs broken so triage knows where to look first.
   let overallStatus;
-  if (failed > 0) {
-    overallStatus = `❌ FAIL (${passed}/${total}${interrupted > 0 ? `, ${interrupted} interrupted` : ''})`;
+  if (failed > 0 || broken > 0) {
+    const bits = [];
+    if (failed > 0) bits.push(`${failed} failed`);
+    if (broken > 0) bits.push(`${broken} broken`);
+    overallStatus = `❌ FAIL (${passed}/${total} — ${bits.join(', ')})`;
   } else if (passed + skipped + flaky !== total) {
     overallStatus = `⚠️ INCOMPLETE (${passed}/${total})`;
   } else if (skipped === total) {
@@ -163,8 +175,12 @@ function buildAutoBlock(feature, storyId, tests) {
     const errCol = t.errorMessage
       ? '`' + String(t.errorMessage).split('\n')[0].slice(0, 120).replace(/\|/g, '\\|') + '`'
       : '—';
-    return `| \`${file}\` | ${t.fullTitle.replace(/\|/g, '\\|')} | ${fmtStatusBadge(t.status)} | ${fmtDuration(t.duration)} | ${errCol} |`;
+    const browserCol = isMatrix ? ` | \`${t.project || '—'}\`` : '';
+    return `| \`${file}\` | ${t.fullTitle.replace(/\|/g, '\\|')}${browserCol} | ${fmtStatusBadge(t.status)} | ${fmtDuration(t.duration)} | ${errCol} |`;
   }).join('\n');
+  const tableHeader = isMatrix
+    ? '| Spec | Test | Browser | Status | Duration | Error |\n|------|------|---------|--------|---------:|-------|'
+    : '| Spec | Test | Status | Duration | Error |\n|------|------|--------|---------:|-------|';
 
   return [
     AUTO_START,
@@ -173,14 +189,14 @@ function buildAutoBlock(feature, storyId, tests) {
     `**Browser:** ${project}`,
     `**Status:** ${overallStatus}`,
     `**Duration:** ${fmtDuration(totalDuration)}`,
+    failed > 0 ? `**Failed (assertion):** ${failed}` : null,
+    broken > 0 ? `**Broken (timeout/interrupted):** ${broken}${timedOut > 0 ? ` — ${timedOut} timed out` : ''}${interrupted > 0 ? `${timedOut > 0 ? ', ' : ' — '}${interrupted} interrupted` : ''}` : null,
     flaky > 0 ? `**Flaky:** ${flaky}` : null,
     skipped > 0 ? `**Skipped:** ${skipped}` : null,
-    interrupted > 0 ? `**Interrupted:** ${interrupted}` : null,
     '',
     '## Results',
     '',
-    '| Spec | Test | Status | Duration | Error |',
-    '|------|------|--------|---------:|-------|',
+    tableHeader,
     rows,
     '',
     '## Artifacts',

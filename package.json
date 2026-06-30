@@ -27,6 +27,7 @@
     "test:headed": "bddgen && playwright test --headed",
     "test:debug": "bddgen && playwright test --debug",
     "test:report": "playwright show-report",
+    "baselines:update": "bddgen && playwright test --update-snapshots --grep-invert=@destructive",
     "setup": "node bin/setup.js",
     "ui": "node bin/agentic-qa.js ui",
     "allure:clean": "node -e \"require('fs').rmSync('allure-results',{recursive:true,force:true});require('fs').rmSync('allure-report',{recursive:true,force:true})\"",

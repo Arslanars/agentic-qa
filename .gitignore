@@ -18,3 +18,10 @@ node_modules/
 
 # playwright-bdd compiles .feature → .spec.js here at runtime
 /.features-gen/
+
+# Run history (per-run + per-test summaries that accumulate machine-locally —
+# used by the status-bar sparkline, ETA estimator, and flakiness detector.
+# Shouldn't be checked in: it's noisy, would conflict between teammates, and
+# is regenerated automatically as runs happen.)
+/reports/history.jsonl
+/reports/test-history.jsonl
