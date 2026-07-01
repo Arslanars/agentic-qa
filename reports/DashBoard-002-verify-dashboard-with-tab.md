@@ -2,27 +2,20 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-30 16:45:15
-**Browser:** chromium + firefox + webkit
-**Status:** ✅ PASS (12/12)
-**Duration:** 63.3 s
+**Last run:** 2026-06-30 23:00:16
+**Browser:** chromium
+**Status:** ✅ PASS (5/5)
+**Duration:** 20.7 s
 
 ## Results
 
-| Spec | Test | Browser | Status | Duration | Error |
-|------|------|---------|--------|---------:|-------|
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC1-POS-01 — valid credentials log in and reach the location picker | `chromium` | ✅ PASS | 3.6 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC1-POS-01 — valid credentials log in and reach the location picker | `firefox` | ✅ PASS | 5.8 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC1-POS-01 — valid credentials log in and reach the location picker | `webkit` | ✅ PASS | 5.6 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC2-POS-01 — the "Select Your Location" prompt is shown after login | `chromium` | ✅ PASS | 4.0 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC2-POS-01 — the "Select Your Location" prompt is shown after login | `firefox` | ✅ PASS | 5.1 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC2-POS-01 — the "Select Your Location" prompt is shown after login | `webkit` | ✅ PASS | 5.1 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | `chromium` | ✅ PASS | 4.0 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | `firefox` | ✅ PASS | 6.7 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | `webkit` | ✅ PASS | 6.0 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC4-POS-01 — clicking the Inventory tab activates the Inventory view | `chromium` | ✅ PASS | 3.9 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC4-POS-01 — clicking the Inventory tab activates the Inventory view | `firefox` | ✅ PASS | 6.3 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC4-POS-01 — clicking the Inventory tab activates the Inventory view | `webkit` | ✅ PASS | 7.2 s | — |
+| Spec | Test | Status | Duration | Error |
+|------|------|--------|---------:|-------|
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC1-POS-01 — valid credentials log in and reach the location picker | ✅ PASS | 3.9 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ✅ PASS | 3.8 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ✅ PASS | 3.2 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC4-POS-01 — clicking the Inventory tab activates the Inventory view | ✅ PASS | 3.5 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › Edit a vendor's name from the Vendors list | ✅ PASS | 6.2 s | — |
 
 ## Artifacts
 
@@ -75,7 +68,7 @@ DashBoard-002 ("Verify Dashboard with tab") is **DashBoard-001 + one new criteri
 | **AC1** — Visit the website and log in with the given credentials | `AC1-POS-01` | After submitting the provided credentials, `LocationPickerPage.expectLoaded()` asserts the app left `/login` and is on `/select-location`. | ✅ PASS |
 | **AC2** — After login you can see the "Select Your Location" text | `AC2-POS-01` | `expect(getByRole('heading', { name: 'Select Your Location' })).toBeVisible()`. | ✅ PASS |
 | **AC3** — Click "Main Location" → URL is `…/inventory-vendors` | `AC3-POS-01` | After clicking "Main Location", `expect(page).toHaveURL('https://moontower.aiimone.com/inventory-vendors')`. | ✅ PASS |
-| **AC4** — Click on inventory tab | `AC4-POS-01` | After clicking the **"Inventory"** sidebar tab: URL stays `…/inventory-vendors`, `inventoryHeading` ("Inventory") is visible, and `inventoryTab` carries the active class `bg-[#DC2626]`. | ✅ PASS |
+| **AC4** — Click on inventory tab | `AC4-POS-01` | After clicking the **"Inventory"** sidebar tab: URL stays `…/inventory-vendors`, `inventoryHeading` ("Inventory") is visible, and `inventoryTab` carries the active class `bg-[#A4D0FA]` (re-themed from the earlier `bg-[#DC2626]` red). | ✅ PASS |
 
 > Notes on the AC text vs. the live app:
 > - "Mian Loaction" / "Main Loaction" in the AC is a typo — the live button's accessible name is exactly **"Main Location"** (confirmed during exploration; same as DashBoard-001).
@@ -92,7 +85,7 @@ Performed live against `https://moontower.aiimone.com` with the established Moon
 | 3 | Click "Main Location" | SPA navigation to **`https://moontower.aiimone.com/inventory-vendors`**; page shows **"Loading…"** for several seconds before the chrome renders. |
 | 4 | Inspect the loaded dashboard | Left **sidebar** of `<button>` nav items: `Dashboard, Inventory, Quick Inventory, Vendors, Orders, Inventory Items, Menu Items, Inflation Tracker, Settings`. No `role="tab"`. The view **defaults to Inventory** (heading "Inventory" + subtitle "Track stock levels, manage vendors, and identify ordering needs"). |
 | 5 | Click the "Inventory" tab | URL stays `…/inventory-vendors`; Inventory view stays active; the "267 items running low on stock" banner renders as inventory data loads. |
-| 6 | Inspect active-tab markup | **No** `aria-selected`/`aria-current`/`data-state`. The active tab is conveyed **only** by CSS class — active = `bg-[#DC2626] text-[#FFFFFF]` (red); inactive siblings = `text-[#CBD5E1]` (grey). |
+| 6 | Inspect active-tab markup | **No** `aria-selected`/`aria-current`/`data-state`. The active tab is conveyed **only** by CSS class — active = `bg-[#A4D0FA] text-[#06378D]` (blue; the app was re-themed from the earlier `bg-[#DC2626] text-[#FFFFFF]` red); inactive siblings carry no such background. |
 
 **Key insights applied to the automation:**
 1. The dashboard renders "Loading…" before the sidebar appears, so `DashboardPage.openInventoryTab()` waits for the Inventory tab to be **visible** (30 s budget) before clicking.
@@ -115,7 +108,7 @@ Performed live against `https://moontower.aiimone.com` with the established Moon
 |-------|--------|
 | OBS-1 | The AC spells the location "Mian Loaction"/"Main Loaction"; the real accessible name is **"Main Location"**. Tests target the real label. |
 | OBS-2 | `/inventory-vendors` defaults to the **Inventory** sub-view, so the AC4 click selects a tab that is already active by default. AC4-POS-01 still exercises the real click and asserts the resulting active state (heading + active class), so the test is meaningful rather than a no-op green. |
-| OBS-3 | The dashboard exposes **no ARIA selected-state** for its sidebar tabs (no `role="tab"`, `aria-selected`, or `aria-current`). The active-tab assertion relies on the Tailwind active class `bg-[#DC2626]`; if the design system changes that color token, the AC4 active-class assertion (only) would need a one-line update. |
+| OBS-3 | The dashboard exposes **no ARIA selected-state** for its sidebar tabs (no `role="tab"`, `aria-selected`, or `aria-current`). The active-tab assertion relies on the Tailwind active class `bg-[#A4D0FA]`; the app was re-themed from `bg-[#DC2626]` (red) to `bg-[#A4D0FA]` (blue), and as predicted this required exactly a one-line update to the AC4 active-class assertion. If the design system changes that token again, the same one-line update applies. |
 | OBS-LOGIN-NEG | (Carried over from DashBoard-001 — **not** in this changeset.) The pre-existing `login` feature's negative scenarios are intermittently flaky. Out of scope here; this story modifies no `login` code. |
 
 ## 6. Test Coverage Analysis

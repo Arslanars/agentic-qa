@@ -41,3 +41,12 @@ Feature: Verify Dashboard with tab
     And I choose the "Main Location" option
     And I open the "Inventory" tab
     Then the "Inventory" tab should be the active dashboard tab
+
+Scenario: Edit a vendor's name from the Vendors list
+  Given I am on the Moontower login page
+  When I log in with the provided Moontower credentials
+  And I choose the "Main Location" option
+  And I navigate to the Vendors List
+  And I open the first vendor's details
+  And I edit the vendor name to "SOFA" and save the changes
+  Then the vendor changes should be saved

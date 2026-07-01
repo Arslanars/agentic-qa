@@ -2,24 +2,18 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-06-30 16:45:15
-**Browser:** chromium + firefox + webkit
-**Status:** ✅ PASS (9/9)
-**Duration:** 45.3 s
+**Last run:** 2026-06-30 23:00:16
+**Browser:** chromium
+**Status:** ✅ PASS (3/3)
+**Duration:** 8.7 s
 
 ## Results
 
-| Spec | Test | Browser | Status | Duration | Error |
-|------|------|---------|--------|---------:|-------|
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | `chromium` | ✅ PASS | 4.9 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | `firefox` | ✅ PASS | 4.6 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | `webkit` | ✅ PASS | 5.3 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | `chromium` | ✅ PASS | 3.6 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | `firefox` | ✅ PASS | 4.7 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | `webkit` | ✅ PASS | 5.7 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | `chromium` | ✅ PASS | 4.3 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | `firefox` | ✅ PASS | 6.0 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | `webkit` | ✅ PASS | 6.1 s | — |
+| Spec | Test | Status | Duration | Error |
+|------|------|--------|---------:|-------|
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | ✅ PASS | 2.9 s | — |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ✅ PASS | 2.7 s | — |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ✅ PASS | 3.1 s | — |
 
 ## Artifacts
 
