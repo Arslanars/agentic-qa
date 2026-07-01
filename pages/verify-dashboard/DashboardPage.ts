@@ -14,7 +14,8 @@ import { BasePage } from '../BasePage';
  * rather than create a second DashboardPage — with the left sidebar's
  * **Inventory** tab. The dashboard exposes no `role="tab"`/`aria-selected`; the
  * nav items are styled `<button>`s and the *active* tab is conveyed only by a
- * CSS class (`bg-[#DC2626]` red). `inventoryTab` / `inventoryHeading` are the
+ * CSS class (`bg-[#A4D0FA]` blue — was `bg-[#DC2626]` red before the app
+ * re-theme). `inventoryTab` / `inventoryHeading` are the
  * single source of truth for those AC4 locators.
  */
 export class DashboardPage extends BasePage {

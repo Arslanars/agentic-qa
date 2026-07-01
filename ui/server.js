@@ -8,7 +8,7 @@
 // the Claude Code path (see QAEnd2EndPromptFile.md), or by hand-authoring.
 
 const express = require('express');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { renderReport } = require('./report-renderer');
@@ -432,6 +432,163 @@ INSTRUCTIONS FOR CLAUDE:
   await streamClaudeWithPrompt(res, prompt);
 });
 
+// Spec Doctor — critique a user story for testability BEFORE the user
+// commits to a full Generate Tests round-trip. This is the only feature
+// that calls claude *synchronously* (no stream) — the response is short,
+// the UI shows a small spinner, and we want a clean structured payload
+// rather than line-by-line drip.
+app.post('/api/critique-spec', async (req, res) => {
+  const { url, title, ac, creds, storyId } = req.body || {};
+  if (!url || !title || !ac) {
+    return res.status(400).json({ error: 'url, title, and ac are required' });
+  }
+  if ((ac || '').length > 20_000) {
+    return res.status(413).json({ error: 'ac is too long (>20KB)' });
+  }
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) {
+    return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  }
+  if (activeGenerate) {
+    return res.status(409).json({ error: 'another Claude job is in progress' });
+  }
+
+  const prompt = `You are a QA lint for user-story acceptance criteria. Score the input ACs against a testability rubric and return STRICT JSON — nothing else, no commentary outside the JSON object.
+
+Rubric (find issues — each issue should target ONE AC):
+1. AMBIGUOUS_VERB — uses words like "works correctly", "should be fast", "behaves well" with no measurable assertion.
+2. VAGUE_QUANTITY — uses "many", "few", "lots", "some" instead of a specific count/threshold.
+3. MISSING_NEGATIVE — describes only the happy path; no negative case (wrong input, error state, denied permission) named for this AC.
+4. UNTESTABLE_ASSERTION — the AC's outcome cannot be observed deterministically from the browser (e.g. "the user is happy", "the system is secure").
+5. MISSING_PRECONDITION — the AC implies a setup state (logged in, account exists, item in cart) that isn't declared.
+6. SCOPE_CREEP — bundles multiple ACs into one (use of "and" linking distinct outcomes).
+
+INPUT
+URL: ${url}
+${storyId ? `Story ID: ${storyId}\n` : ''}Title: ${title}
+${creds ? `Credentials: ${creds}\n` : ''}
+Acceptance Criteria:
+${ac}
+
+OUTPUT — return EXACTLY this JSON shape (no markdown fences, no preamble, no trailing text):
+
+{
+  "issues": [
+    {
+      "ruleId": "AMBIGUOUS_VERB",
+      "severity": "blocker" | "high" | "medium" | "low",
+      "acRef": "AC1" | "AC2" | ...,
+      "snippet": "the exact AC fragment with the problem",
+      "description": "one-sentence explanation of why this is untestable",
+      "suggestedRewrite": "a concrete revised AC that is testable, OR null if no clean rewrite"
+    }
+  ],
+  "summary": "one short sentence overall: 'looks solid', 'two AC fragments need tightening', etc."
+}
+
+If the spec is clean and passes the rubric, return:
+{ "issues": [], "summary": "Spec passes the testability rubric." }
+
+Be strict but fair — flag only real testability problems, not stylistic nits. Maximum 8 issues.`;
+
+  const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+  const args = ['--print', '--dangerously-skip-permissions'];
+  let proc;
+  try {
+    proc = spawn(cmd, args, {
+      cwd: ROOT,
+      env: process.env,
+      shell: process.platform === 'win32',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    return res.status(500).json({ error: `claude spawn failed: ${err.message}` });
+  }
+  activeGenerate = { proc, startedAt: Date.now() };
+
+  let stdout = '';
+  let stderr = '';
+  proc.stdout.on('data', (d) => { stdout += d.toString(); });
+  proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+  try {
+    proc.stdin.on('error', () => {});
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+  } catch (_) { /* swallow — handled by exit code below */ }
+
+  // Bound the wait so a hung claude doesn't tie up the request indefinitely.
+  // Critique should be <30s in practice; 60s is a comfortable ceiling.
+  const TIMEOUT_MS = 60_000;
+  const timer = setTimeout(() => {
+    if (!proc.killed) killProcessTree(proc);
+  }, TIMEOUT_MS);
+
+  proc.on('close', (code) => {
+    clearTimeout(timer);
+    activeGenerate = null;
+    if (code !== 0) {
+      return res.status(502).json({
+        error: `claude exited ${code}`,
+        stderr: stderr.slice(0, 2000),
+      });
+    }
+    // Extract the JSON object from claude's response. Claude usually returns
+    // pure JSON when asked but occasionally wraps in ```json fences or adds a
+    // brief preamble; this scan finds the first balanced {…} block.
+    const parsed = extractJsonObject(stdout);
+    if (!parsed) {
+      return res.status(502).json({
+        error: 'could not parse JSON from claude response',
+        rawPreview: stdout.slice(0, 500),
+      });
+    }
+    res.json({
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      summary: parsed.summary || '',
+    });
+  });
+  proc.on('error', (err) => {
+    clearTimeout(timer);
+    activeGenerate = null;
+    res.status(500).json({ error: `claude error: ${err.message}` });
+  });
+});
+
+// Walk a string and return the first balanced {…} block parsed as JSON.
+// Tolerates ```json … ``` fences + preamble + trailing prose. Returns null
+// if no parseable object is found.
+function extractJsonObject(s) {
+  if (!s) return null;
+  // Strip markdown fences first — common claude habit.
+  let txt = s.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1');
+  // Find first balanced { … } via simple depth counting (good enough for
+  // claude's outputs which are well-formed JSON without unbalanced braces in
+  // string values that would confuse this naive scan in practice).
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < txt.length; i++) {
+    const c = txt[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        try { return JSON.parse(txt.slice(start, i + 1)); }
+        catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 // Shared executor: spawn `claude --print --verbose --output-format stream-json
 // --dangerously-skip-permissions`, feed `prompt` via stdin, and stream the
 // JSONL events back to the client as formatted NDJSON log lines. Owns the
@@ -713,6 +870,1028 @@ function recordTestHistory({ feature, project } = {}) {
   fs.mkdirSync(path.dirname(historyPath), { recursive: true });
   fs.writeFileSync(historyPath, lines.join('\n') + '\n');
 }
+
+// ---- Coverage Gap Closer -----------------------------------------------
+// Given an uncovered AC (feature slug + AC id + AC text), have claude draft
+// ONE Gherkin scenario that covers it, reusing existing step phrasings from
+// the feature's .steps.ts where they match. Synchronous call — small
+// structured JSON response the UI shows in a preview panel. The user then
+// accepts to /api/recorder/append (existing) + optionally chains into
+// /api/scaffold-missing-steps (existing) for any newly-invented steps.
+app.post('/api/coverage/draft-scenario', async (req, res) => {
+  const { feature, acId, acText } = req.body || {};
+  if (!feature || !isSafeName(feature)) {
+    return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  }
+  const acN = parseInt(acId, 10);
+  if (!Number.isInteger(acN) || acN < 1 || acN > 999) {
+    return res.status(400).json({ error: 'acId must be a positive integer' });
+  }
+  if (!acText || typeof acText !== 'string' || acText.trim().length < 3) {
+    return res.status(400).json({ error: 'acText is required' });
+  }
+  if (String(acText).length > 2000) {
+    return res.status(413).json({ error: 'acText too long' });
+  }
+
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+
+  // Gather context: existing steps + POMs + one sample scenario from the
+  // feature file so claude can match the project's tone/style.
+  let existingSteps = '';
+  let sampleScenario = '';
+  let existingFeatureFile = '';
+  const featureDir = path.join(ROOT, 'features', feature);
+  if (fs.existsSync(featureDir)) {
+    const stepsFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.steps.ts'));
+    if (stepsFile) {
+      try { existingSteps = fs.readFileSync(path.join(featureDir, stepsFile), 'utf8').slice(0, 20000); } catch (_) {}
+    }
+    const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+    if (featureFile) {
+      existingFeatureFile = featureFile;
+      try {
+        const txt = fs.readFileSync(path.join(featureDir, featureFile), 'utf8');
+        // Grab the first non-Background Scenario as a style sample
+        const m = txt.match(/Scenario(?:\s+Outline)?:[\s\S]*?(?=\n\s*Scenario|\n\s*Feature|$)/);
+        sampleScenario = m ? m[0].slice(0, 1500) : '';
+      } catch (_) {}
+    }
+  }
+
+  let pomContent = '';
+  const pomDir = path.join(ROOT, 'pages', feature);
+  if (fs.existsSync(pomDir)) {
+    const pomFiles = fs.readdirSync(pomDir).filter((f) => f.endsWith('.ts'));
+    for (const f of pomFiles) {
+      pomContent += `\n// ----- pages/${feature}/${f} -----\n${fs.readFileSync(path.join(pomDir, f), 'utf8').slice(0, 4000)}\n`;
+    }
+  }
+
+  const prompt = `Draft ONE Gherkin Scenario block that covers this acceptance criterion. Return STRICT JSON, no markdown fences.
+
+TARGET AC:
+  ${acId}: ${acText}
+
+RULES for the scenario name — the FIRST scenario naming rule matters most:
+1. MUST start with "${acId}-" so the framework's coverage detector links it back to this AC.
+2. Add a POS or NEG suffix + a two-digit number:
+     - POS-01, POS-02 for happy paths
+     - NEG-01, NEG-02 for error / rejection paths
+3. Then a "—" separator and a short human-readable description.
+   Example valid names: "${acId}-POS-01 — successful login with valid credentials"
+
+EXISTING STEP DEFINITIONS (features/${feature}/${feature}.steps.ts — REUSE these phrasings when they fit; only invent new steps when nothing matches):
+\`\`\`typescript
+${existingSteps.slice(0, 15000) || '(no existing step definitions)'}
+\`\`\`
+
+${sampleScenario ? `SAMPLE SCENARIO from the same .feature file (match its style):
+\`\`\`gherkin
+${sampleScenario}
+\`\`\`
+` : ''}
+POM (pages/${feature}/) — reuse existing methods where they exist:
+\`\`\`typescript
+${pomContent.slice(0, 12000) || '(no POM found)'}
+\`\`\`
+
+INSTRUCTIONS:
+1. Produce exactly ONE Gherkin Scenario block. Start with "Scenario: ${acId}-POS-01 — <name>" (or a NEG variant).
+2. Use Given/When/Then/And/But steps. Prefer existing phrases from the .steps.ts file.
+3. Focus on the HAPPY PATH first (POS-01). If the AC covers rejection/validation, a NEG variant is fine.
+4. Keep it 4-8 steps. Do not overreach — one scenario, one AC.
+5. Do NOT include the Feature: header or Background — only the Scenario block.
+
+OUTPUT (STRICT JSON, no markdown fences):
+
+{
+  "scenario": "Scenario: ${acId}-POS-01 — <name>\\n  Given …\\n  When …\\n  Then …\\n",
+  "name": "${acId}-POS-01 — <name>",
+  "newSteps": [
+    { "phrase": "Given/When/Then + step text", "rationale": "no existing step covered this action" }
+  ]
+}
+
+If every step you use already exists in the steps file, return "newSteps": [].`;
+
+  const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+  const args = ['--print', '--dangerously-skip-permissions'];
+  let proc;
+  try {
+    proc = spawn(cmd, args, {
+      cwd: ROOT, env: process.env,
+      shell: process.platform === 'win32',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    return res.status(500).json({ error: `claude spawn failed: ${err.message}` });
+  }
+  activeGenerate = { proc, startedAt: Date.now() };
+
+  let stdout = '', stderr = '';
+  proc.stdout.on('data', (d) => { stdout += d.toString(); });
+  proc.stderr.on('data', (d) => { stderr += d.toString(); });
+  try {
+    proc.stdin.on('error', () => {});
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+  } catch (_) {}
+
+  const TIMEOUT_MS = 90_000;
+  let finished = false;
+  const timer = setTimeout(() => { if (!proc.killed) killProcessTree(proc); }, TIMEOUT_MS);
+
+  res.on('close', () => {
+    if (finished) return;
+    if (!proc.killed) killProcessTree(proc);
+    clearTimeout(timer);
+    activeGenerate = null;
+  });
+
+  proc.on('close', (code) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    activeGenerate = null;
+    if (res.writableEnded || res.destroyed) return;
+    if (code !== 0) {
+      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
+    }
+    const parsed = extractJsonObject(stdout);
+    if (!parsed || !parsed.scenario) {
+      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    }
+    res.json({
+      scenario: String(parsed.scenario).slice(0, 5000),
+      name: String(parsed.name || '').slice(0, 200),
+      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+      featureFile: existingFeatureFile ? `features/${feature}/${existingFeatureFile}` : `features/${feature}/`,
+    });
+  });
+  proc.on('error', (err) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    activeGenerate = null;
+    if (res.writableEnded || res.destroyed) return;
+    res.status(500).json({ error: `claude error: ${err.message}` });
+  });
+});
+
+// ---- AI Explain Failure ------------------------------------------------
+// Translate a test failure into plain English suitable for a non-technical
+// stakeholder (PM, product owner, QA lead). DIFFERENT from auto-heal:
+// heal *fixes* the test; explain just *narrates* what happened from the
+// user's perspective. Synchronous claude --print call returning structured
+// JSON the UI can render inline on the triage card.
+app.post('/api/explain-failure', async (req, res) => {
+  const { feature, fullTitle, file, line, errorMessage, errorStack, screenshot, category } = req.body || {};
+
+  // Validators — feature is path-validated even though we never write to
+  // it (defense in depth; the user-story / feature-file reads use it).
+  if (!feature || !isSafeName(feature)) {
+    return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  }
+  if (!fullTitle || typeof fullTitle !== 'string') {
+    return res.status(400).json({ error: 'fullTitle is required' });
+  }
+  if (!errorMessage || typeof errorMessage !== 'string') {
+    return res.status(400).json({ error: 'errorMessage is required' });
+  }
+  if (String(errorMessage).length > 8000) {
+    return res.status(413).json({ error: 'errorMessage too long' });
+  }
+
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+
+  // Gather optional context: the user-story ACs + the matching Gherkin
+  // scenario. The richer the context, the more grounded the explanation —
+  // claude can name the actual user goal instead of guessing.
+  let acsContext = '';
+  let scenarioContext = '';
+  try {
+    const storiesDir = CFG_PATHS.stories;
+    if (fs.existsSync(storiesDir)) {
+      const storyFile = fs.readdirSync(storiesDir).find(
+        (f) => f.toLowerCase().endsWith(`-${feature.toLowerCase()}.md`) && !f.startsWith('_')
+      );
+      if (storyFile) {
+        const md = fs.readFileSync(path.join(storiesDir, storyFile), 'utf8');
+        const acMatch = md.match(/##\s*Acceptance Criteria([\s\S]*?)(?:\n##|$)/i);
+        acsContext = acMatch ? acMatch[1].trim().slice(0, 2000) : '';
+      }
+    }
+    const featureDir = path.join(ROOT, 'features', feature);
+    if (fs.existsSync(featureDir)) {
+      const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+      if (featureFile) {
+        const txt = fs.readFileSync(path.join(featureDir, featureFile), 'utf8');
+        // The fullTitle is shaped "Feature › Scenario Name" — pull the
+        // scenario name and try to locate its block. Tolerant matcher so
+        // minor whitespace / pluralization drift doesn't break the lookup.
+        // fullTitle is "<Feature> › <Scenario>". Bail when there's no
+        // separator rather than matching the whole title against scenario
+        // names — otherwise an untitled background block can pull random
+        // context from the file.
+        const _parts = String(fullTitle).split('›');
+        const scName = _parts.length > 1 ? _parts.pop().trim() : '';
+        if (scName) {
+          const escName = scName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const reg = new RegExp(`Scenario(?:\\s+Outline)?:\\s*${escName}[\\s\\S]*?(?=\\n\\s*Scenario|\\n\\s*Feature|$)`, 'i');
+          const m = txt.match(reg);
+          if (m) scenarioContext = m[0].slice(0, 1800);
+        }
+      }
+    }
+  } catch (_) { /* best-effort — fall through to a less-grounded explanation */ }
+
+  // Strip terminal ANSI escapes from the error message — they bleed into
+  // claude's prompt as noise and waste tokens.
+  const cleanErr = String(errorMessage).replace(/\[[0-9;]*m/g, '');
+  const cleanStack = errorStack ? String(errorStack).replace(/\[[0-9;]*m/g, '').split('\n').slice(0, 5).join('\n').slice(0, 800) : '';
+
+  const prompt = `You are a senior QA engineer translating a failed automated test into a plain-English explanation for a non-technical product manager. The PM has NEVER seen the test code and cares only about end-user impact.
+
+CONTEXT:
+- Feature: ${feature}
+- Failing scenario: ${fullTitle}
+- Failure category: ${category || 'failed'}
+    failed      = an expected condition didn't hold (the product behaved differently than expected)
+    broken      = the test couldn't complete (page timed out, worker died)
+    interrupted = the test was killed before finishing (manual abort or external signal)
+- Error message (technical, do NOT quote verbatim):
+${cleanErr.slice(0, 2000)}
+${cleanStack ? `\n- Stack trace excerpt:\n${cleanStack}\n` : ''}
+${acsContext ? `\nUSER STORY ACCEPTANCE CRITERIA — these describe what the user is trying to do:\n${acsContext}\n` : ''}
+${scenarioContext ? `\nGHERKIN SCENARIO — these are the user-visible steps:\n${scenarioContext}\n` : ''}
+
+INSTRUCTIONS:
+1. Explain what went wrong from the USER's perspective, NOT the test's. Refer to UI elements by what a user would call them ("the Sign In button", "the email field", "the dashboard").
+2. FORBIDDEN vocabulary (pure code/automation jargon only):
+     selector, locator, getByRole, getByLabel, getByTestId, testid, page.click, page.fill, page.goto,
+     aria-attribute names (aria-*), DOM, querySelector, assertion failed, hydration, race condition,
+     stack trace, regex, async, await, promise, exception, fixture
+   Words that ARE allowed even though they sound technical:
+     timeout, "the page took too long to load", viewport, button, form, click, field, page.
+3. HARD LIMIT: the explanation MUST be 1 or 2 sentences. If you write a third sentence you have failed the task — count before responding.
+4. Severity rubric — answer in order, pick the FIRST that fits:
+     Q1. Can the user complete the core job at all?         NO → "blocker"
+     Q2. Important feature degraded but workaround exists?  YES → "major"
+     Q3. Cosmetic / convenience-only / single-edge-case?    YES → "minor"
+5. If the failure is clearly a TEST/AUTOMATION issue (selector drift, timing, flaky network, expired fixture) rather than a real product bug:
+   - severity = "minor" UNLESS the underlying flow is critical
+   - userImpact = "Test infrastructure problem — real users are unaffected."
+   - suggestedNextStep should call it out plainly ("Re-run; if it fails again, fix the test for X.")
+6. Suggest ONE concrete next step.
+
+LOW-CONTEXT FALLBACK: if there are no acceptance criteria or scenario context above (i.e. only the feature name + error message), be explicit about uncertainty in your explanation ("we don't have a user story for this feature, so the impact estimate is a best guess") and lean toward severity = "major".
+
+EXAMPLES — study the shape AND length:
+
+GOOD example:
+  explanation: "The Sign In button stayed disabled after entering valid credentials. The user is stuck on the login screen with no way to reach the dashboard."
+  userImpact: "Anyone trying to log in right now would be unable to access the app."
+  severity: "blocker"
+  suggestedNextStep: "File a bug — this is reproducible. Check whether the login API is rejecting valid inputs."
+
+BAD example (too many sentences, jargon, vague):
+  explanation: "The locator for #submit-btn timed out. The selector didn't resolve. The page may not have hydrated."
+
+OUTPUT — return STRICT JSON, no markdown fences, no preamble.
+The severity field MUST be one of exactly these three lowercase strings: "blocker", "major", or "minor". Do NOT use "critical", "high", "low", "p1", "trivial", or any other word.
+
+{
+  "explanation": "...",
+  "userImpact": "...",
+  "severity": "blocker",
+  "suggestedNextStep": "..."
+}`;
+
+  const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+  const args = ['--print', '--dangerously-skip-permissions'];
+  let proc;
+  try {
+    proc = spawn(cmd, args, {
+      cwd: ROOT, env: process.env,
+      shell: process.platform === 'win32',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    return res.status(500).json({ error: `claude spawn failed: ${err.message}` });
+  }
+  activeGenerate = { proc, startedAt: Date.now() };
+
+  let stdout = '', stderr = '';
+  proc.stdout.on('data', (d) => { stdout += d.toString(); });
+  proc.stderr.on('data', (d) => { stderr += d.toString(); });
+  try {
+    proc.stdin.on('error', () => {});
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+  } catch (_) { /* exit handler reports */ }
+
+  const TIMEOUT_MS = 45_000;
+  let finished = false;
+  const timer = setTimeout(() => { if (!proc.killed) killProcessTree(proc); }, TIMEOUT_MS);
+
+  // Clean up when the client disconnects (tab close / network drop).
+  // Without this, an abandoned request keeps `activeGenerate` held for up
+  // to 45s and locks every other claude-using endpoint with 409.
+  res.on('close', () => {
+    if (finished) return;
+    if (!proc.killed) killProcessTree(proc);
+    clearTimeout(timer);
+    activeGenerate = null;
+  });
+
+  proc.on('close', (code) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    activeGenerate = null;
+    if (res.writableEnded || res.destroyed) return;
+    if (code !== 0) {
+      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
+    }
+    const parsed = extractJsonObject(stdout);
+    if (!parsed) {
+      return res.status(502).json({ error: 'claude returned non-JSON', rawPreview: stdout.slice(0, 500) });
+    }
+    // Accept a couple of likely key drifts — claude sometimes renames keys
+    // when the prompt is dense.
+    const explanationRaw = parsed.explanation || parsed.explanationText || parsed.summary || '';
+    if (!explanationRaw) {
+      return res.status(502).json({ error: 'response missing explanation field', rawPreview: stdout.slice(0, 500) });
+    }
+
+    // Severity normalization — catches "Major", "Blocker", "critical",
+    // "high" etc. instead of silently coercing them all to "major"
+    // (which would hide blocker-grade bugs).
+    const sevRaw = String(parsed.severity || '').trim().toLowerCase();
+    const SEVERITY_MAP = {
+      critical: 'blocker', high: 'blocker', blocker: 'blocker', p0: 'blocker', p1: 'blocker',
+      moderate: 'major', medium: 'major', major: 'major', p2: 'major',
+      low: 'minor', trivial: 'minor', cosmetic: 'minor', minor: 'minor', p3: 'minor', p4: 'minor',
+    };
+    const severity = SEVERITY_MAP[sevRaw] || 'major';
+    if (sevRaw && !SEVERITY_MAP[sevRaw]) {
+      console.warn('[explain-failure] unknown severity from claude:', JSON.stringify(parsed.severity));
+    }
+
+    // Enforce the 2-sentence cap server-side too. Claude treats sentence
+    // caps as soft suggestions; this is the hard one.
+    const sentences = String(explanationRaw).split(/(?<=[.!?])\s+/).filter(Boolean);
+    const explanation = sentences.slice(0, 2).join(' ').slice(0, 600);
+
+    res.json({
+      explanation,
+      userImpact: String(parsed.userImpact || parsed.impact || '').slice(0, 400),
+      severity,
+      suggestedNextStep: String(parsed.suggestedNextStep || parsed.nextStep || parsed.recommendation || '').slice(0, 400),
+    });
+  });
+  proc.on('error', (err) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    activeGenerate = null;
+    if (res.writableEnded || res.destroyed) return;
+    res.status(500).json({ error: `claude error: ${err.message}` });
+  });
+});
+
+// ---- Auto-implement missing step definitions --------------------------
+// When a user writes a new Gherkin scenario (manually or via the recorder),
+// bddgen complains about steps it doesn't yet recognise. This endpoint
+// closes that loop: it runs bddgen, parses the missing-step block out of
+// its output, hands the missing phrases + the matching POM + the existing
+// steps file to claude, then appends the generated implementations back
+// into the right .steps.ts file. NDJSON-streamed so the user sees progress.
+app.post('/api/scaffold-missing-steps', async (req, res) => {
+  const { feature } = req.body || {};
+  if (feature && !isSafeName(feature)) {
+    return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  }
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+
+  // Helper: run bddgen + capture stdout/stderr together so we can scan for
+  // the "Missing step definitions: N" block.
+  async function captureBddgen() {
+    return new Promise((resolve) => {
+      let buf = '';
+      const p = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
+        ['bddgen', '--config', 'playwright.config.js'],
+        { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+      p.stdout.on('data', (d) => { buf += d.toString(); });
+      p.stderr.on('data', (d) => { buf += d.toString(); });
+      p.on('close', () => resolve(buf));
+      p.on('error', () => resolve(buf));
+    });
+  }
+
+  write({ type: 'log', stream: 'stdout', text: '[scaffold] running bddgen to detect missing steps…\n' });
+  const bddOut = await captureBddgen();
+
+  // Parse the bddgen output. Each missing step looks like:
+  //   When('phrase', async ({}) => {
+  //     // Step: And I do something
+  //     // From: features\<feature>\<file>.feature:N:M
+  //   });
+  //
+  // The phrase between '…' is JS-source-escaped, so apostrophes inside it
+  // appear as `\'` (e.g. `vendor\'s details`). The capturing group must
+  // tolerate backslash-escape sequences — the original `[^']+?` pattern
+  // stopped at the first single quote and missed any phrase containing one.
+  const blockRe = /(Given|When|Then)\('((?:[^'\\]|\\.)+?)',\s*async\s*\(([^)]*)\)\s*=>\s*\{[\s\S]*?\/\/\s*From:\s*([^\s\n]+)/g;
+  const missingSteps = [];
+  let m;
+  while ((m = blockRe.exec(bddOut)) !== null) {
+    const [, keyword, escapedPhrase, params, source] = m;
+    // Un-escape: \' → '   \\ → \   (drop other backslash escapes back to the raw char)
+    const phrase = escapedPhrase.replace(/\\(.)/g, '$1');
+    const srcNorm = String(source).replace(/\\/g, '/');
+    const featMatch = srcNorm.match(/features\/([^/]+)\//);
+    const detectedFeature = featMatch ? featMatch[1] : null;
+    if (feature && detectedFeature !== feature) continue;
+    missingSteps.push({ keyword, phrase, params: params.trim(), source: srcNorm, feature: detectedFeature });
+  }
+
+  if (missingSteps.length === 0) {
+    write({ type: 'log', stream: 'stdout', text: '[scaffold] no missing step definitions found — nothing to do.\n' });
+    write({ type: 'done', exitCode: 0, generatedCount: 0 });
+    return res.end();
+  }
+
+  write({ type: 'log', stream: 'stdout', text: `[scaffold] found ${missingSteps.length} missing step(s) across ${new Set(missingSteps.map((s) => s.feature)).size} feature(s)\n` });
+
+  // Group by feature so we generate + write per-feature.
+  const byFeature = new Map();
+  for (const s of missingSteps) {
+    if (!s.feature) continue;
+    if (!byFeature.has(s.feature)) byFeature.set(s.feature, []);
+    byFeature.get(s.feature).push(s);
+  }
+
+  let totalGenerated = 0;
+  // Collected per-step code blocks across all features — surfaced in the
+  // done event so the recorder review panel can display them.
+  const generatedStepsByFeature = {};
+  for (const [feat, steps] of byFeature) {
+    write({ type: 'log', stream: 'stdout', text: `\n[scaffold] feature "${feat}" — ${steps.length} step(s) to implement\n` });
+
+    const stepsDir = path.join(ROOT, 'features', feat);
+    if (!fs.existsSync(stepsDir)) {
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   feature folder not found: features/${feat}/\n` });
+      continue;
+    }
+    const stepsFileName = fs.readdirSync(stepsDir).find((f) => f.endsWith('.steps.ts'));
+    if (!stepsFileName) {
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   no .steps.ts in features/${feat}/ — recorder/Save&Generate normally creates this\n` });
+      continue;
+    }
+    const stepsPath = path.join(stepsDir, stepsFileName);
+    const existingSteps = fs.readFileSync(stepsPath, 'utf8');
+
+    // POMs give claude method context — pages/<feat>/*.ts
+    const pomDir = path.join(ROOT, 'pages', feat);
+    const pomFiles = fs.existsSync(pomDir)
+      ? fs.readdirSync(pomDir).filter((f) => f.endsWith('.ts'))
+      : [];
+    let pomContent = '';
+    for (const f of pomFiles) {
+      const txt = fs.readFileSync(path.join(pomDir, f), 'utf8');
+      pomContent += `\n// ----- pages/${feat}/${f} -----\n${txt.slice(0, 6000)}\n`;
+    }
+
+    const stepList = steps.map((s, i) => `${i + 1}. ${s.keyword}: "${s.phrase}"`).join('\n');
+    const prompt = `Generate Playwright-BDD step definition implementations for these missing Gherkin steps. Return STRICT JSON, no markdown fences, no preamble.
+
+MISSING STEPS:
+${stepList}
+
+EXISTING STEP-DEFINITIONS FILE (features/${feat}/${stepsFileName}) — match its imports, createBdd tag-scoping, and POM-wrapping style:
+\`\`\`typescript
+${existingSteps.slice(0, 18000)}
+\`\`\`
+
+EXISTING PAGE OBJECT FILES under pages/${feat}/ — reuse these methods where they fit:
+\`\`\`typescript
+${pomContent.slice(0, 14000)}
+\`\`\`
+
+INSTRUCTIONS:
+1. Generate ONE complete step block per missing step. Use the SAME { Given, When, Then } binding pattern already in the steps file (e.g. tag-scoped createBdd).
+2. PREFER calling existing POM methods. If a needed method doesn't exist, use inline page.click / page.fill / page.getByRole / expect(...).toBeVisible — do NOT invent POM methods that aren't already in the POM files above.
+3. {string} or {int} args from the Gherkin phrase map to function parameters; type them as string / number.
+4. Each step should be 3-12 lines. Add no comments except where logic is non-obvious.
+5. If the same import would already be present in the existing steps file, omit it from newImports.
+
+OUTPUT EXACTLY this JSON shape:
+{
+  "steps": [
+    { "keyword": "When", "phrase": "I navigate to the Vendors List under Quick Inventory", "code": "When('I navigate to the Vendors List under Quick Inventory', async ({ page }) => {\\n  // ...\\n});" }
+  ],
+  "newImports": [],
+  "summary": "Implemented 4 steps using DashboardPage + page.getByRole."
+}`;
+
+    const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+    const claudeArgs = ['--print', '--dangerously-skip-permissions'];
+    write({ type: 'log', stream: 'stdout', text: `[scaffold]   calling claude…\n` });
+
+    const result = await new Promise((resolve) => {
+      let p;
+      try {
+        p = spawn(cmd, claudeArgs, { cwd: ROOT, env: process.env, shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (err) {
+        return resolve({ code: 1, out: '', err: err.message });
+      }
+      activeGenerate = { proc: p, startedAt: Date.now() };
+      let out = '', err = '';
+      p.stdout.on('data', (d) => { out += d.toString(); });
+      p.stderr.on('data', (d) => { err += d.toString(); });
+      try { p.stdin.write(prompt); p.stdin.end(); } catch (_) {}
+      const timer = setTimeout(() => { if (!p.killed) killProcessTree(p); }, 120_000);
+      p.on('close', (code) => { clearTimeout(timer); activeGenerate = null; resolve({ code, out, err }); });
+      p.on('error', (e) => { clearTimeout(timer); activeGenerate = null; resolve({ code: 1, out: '', err: e.message }); });
+    });
+
+    if (result.code !== 0) {
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   claude exited ${result.code}: ${result.err.slice(0, 400)}\n` });
+      continue;
+    }
+    const parsed = extractJsonObject(result.out);
+    if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length === 0) {
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   could not parse claude response\n` });
+      continue;
+    }
+
+    // Update the .steps.ts file: add new imports + append step blocks under
+    // a clearly-marked banner so the user can find/audit what was generated.
+    let updated = existingSteps;
+    const newImports = Array.isArray(parsed.newImports) ? parsed.newImports : [];
+    for (const imp of newImports) {
+      const trimmed = String(imp).trim();
+      if (!trimmed || updated.includes(trimmed)) continue;
+      const lastImportMatch = updated.match(/^[ \t]*import\s+[^\n]+;[ \t]*$/gm);
+      if (lastImportMatch) {
+        const lastImport = lastImportMatch[lastImportMatch.length - 1];
+        const idx = updated.lastIndexOf(lastImport);
+        updated = updated.slice(0, idx + lastImport.length) + '\n' + trimmed + updated.slice(idx + lastImport.length);
+      } else {
+        updated = trimmed + '\n' + updated;
+      }
+    }
+    const banner = `\n\n// ---- auto-generated step definitions (scaffold-missing-steps) ----\n`;
+    const stepBlocks = parsed.steps.map((s) => String(s.code || '').trim()).filter(Boolean).join('\n\n');
+    updated = updated.trimEnd() + banner + stepBlocks + '\n';
+    fs.writeFileSync(stepsPath, updated, 'utf8');
+
+    totalGenerated += parsed.steps.length;
+    // Stash the generated steps so the done event can carry them back to
+    // the UI (for the recorder review panel etc).
+    generatedStepsByFeature[feat] = parsed.steps.map((s) => ({
+      keyword: s.keyword || '',
+      phrase: s.phrase || '',
+      code: String(s.code || '').trim(),
+    }));
+    write({ type: 'log', stream: 'stdout', text: `[scaffold]   wrote ${parsed.steps.length} step(s) → features/${feat}/${stepsFileName}\n` });
+    if (parsed.summary) write({ type: 'log', stream: 'stdout', text: `[scaffold]   ${parsed.summary}\n` });
+  }
+
+  // Re-run bddgen to confirm what's left.
+  write({ type: 'log', stream: 'stdout', text: '\n[scaffold] re-running bddgen to verify…\n' });
+  const verifyOut = await captureBddgen();
+  const stillMissing = parseInt((verifyOut.match(/Missing step definitions:\s*(\d+)/) || [, '0'])[1], 10);
+  write({ type: 'log', stream: 'stdout', text: `[scaffold] done. Generated ${totalGenerated} step(s). ${stillMissing} step(s) still missing.\n` });
+  write({
+    type: 'done',
+    exitCode: 0,
+    generatedCount: totalGenerated,
+    stillMissingCount: stillMissing,
+    generatedSteps: generatedStepsByFeature,
+  });
+  res.end();
+});
+
+// ---- Test Recorder Integration ----------------------------------------
+// Wraps `playwright codegen` so the user can drive the app manually,
+// capture the generated Playwright code, and translate it into a Gherkin
+// scenario via the local `claude` CLI. Completely separate from the
+// Save & Generate flow — codegen is driven by clicks (not by a prompt),
+// and the conversion step is a small synchronous claude call (not a
+// streaming generation).
+let activeRecorder = null;
+
+// Locate where `playwright codegen` should write its output. Codegen DOES
+// stream code to stdout in real-time as the user interacts (we capture
+// that incrementally), AND on graceful exit (user closes the Inspector)
+// it writes the final code to --output if specified. Belt-and-suspenders.
+function recorderOutputFile() {
+  return path.join(CFG_PATHS.testResults, '.recorder-output.js');
+}
+
+app.post('/api/recorder/start', (req, res) => {
+  const { url, browser } = req.body || {};
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'url is required' });
+  }
+  // Basic URL sanity — codegen accepts file:// too, but we only want HTTP(S)
+  // here since this is a web QA tool.
+  if (!/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ error: 'url must start with http:// or https://' });
+  }
+  if (url.length > 2048) {
+    return res.status(400).json({ error: 'url too long' });
+  }
+  const safeBrowsers = new Set(['chromium', 'firefox', 'webkit']);
+  const useBrowser = safeBrowsers.has(browser) ? browser : 'chromium';
+
+  if (activeRecorder) {
+    return res.status(409).json({ error: 'a recording is already in progress; stop it first' });
+  }
+
+  // Make sure the output dir exists + the previous output is wiped so the
+  // capture for THIS recording is clean.
+  try {
+    fs.mkdirSync(CFG_PATHS.testResults, { recursive: true });
+    if (fs.existsSync(recorderOutputFile())) fs.unlinkSync(recorderOutputFile());
+  } catch (_) { /* best-effort */ }
+
+  const args = [
+    'playwright', 'codegen',
+    '--target=javascript',
+    `--browser=${useBrowser}`,
+    `--output=${recorderOutputFile()}`,
+    url,
+  ];
+  let proc;
+  try {
+    proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
+      cwd: ROOT,
+      env: process.env,
+      shell: process.platform === 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    return res.status(500).json({ error: `failed to spawn codegen: ${err.message}` });
+  }
+
+  // Accumulate stdout — codegen streams the regenerated code as the user
+  // interacts, so the latest snapshot reflects the current recording state.
+  let captured = '';
+  let stderr = '';
+  proc.stdout.on('data', (d) => { captured += d.toString(); });
+  proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+  const startedAt = Date.now();
+  activeRecorder = {
+    proc,
+    startedAt,
+    url,
+    browser: useBrowser,
+    getCaptured: () => captured,
+    getStderr: () => stderr,
+  };
+
+  // When codegen exits gracefully (user closes the Inspector window), the
+  // final code lands in the --output file. We don't auto-respond here —
+  // the client polls /api/recorder/status or calls /stop.
+  proc.on('close', (code) => {
+    if (activeRecorder && activeRecorder.proc === proc) {
+      activeRecorder.exitCode = code;
+      activeRecorder.endedAt = Date.now();
+    }
+  });
+  proc.on('error', (err) => {
+    if (activeRecorder && activeRecorder.proc === proc) {
+      activeRecorder.error = String(err && err.message);
+      activeRecorder.endedAt = Date.now();
+    }
+  });
+
+  res.json({ ok: true, recordingId: String(startedAt), url, browser: useBrowser });
+});
+
+app.get('/api/recorder/status', (_req, res) => {
+  if (!activeRecorder) {
+    return res.json({ active: false });
+  }
+  const exited = activeRecorder.proc.killed || activeRecorder.exitCode != null;
+  res.json({
+    active: !exited,
+    recordingId: String(activeRecorder.startedAt),
+    url: activeRecorder.url,
+    browser: activeRecorder.browser,
+    capturedChars: activeRecorder.getCaptured().length,
+    exitCode: activeRecorder.exitCode ?? null,
+    error: activeRecorder.error || null,
+  });
+});
+
+app.post('/api/recorder/stop', (_req, res) => {
+  if (!activeRecorder) {
+    return res.status(404).json({ error: 'no active recording' });
+  }
+  const rec = activeRecorder;
+  // SIGTERM first so codegen has a chance to flush --output; if it lingers
+  // past 800ms we send a hard kill so the user isn't stuck.
+  try { if (!rec.proc.killed) rec.proc.kill('SIGTERM'); } catch (_) { /* already dead */ }
+  setTimeout(() => {
+    if (rec.proc && !rec.proc.killed) killProcessTree(rec.proc);
+  }, 800);
+
+  // Give the process a moment to flush the --output file, then read it.
+  // Stream stdout is the fallback if the file is empty or missing.
+  setTimeout(() => {
+    let code = '';
+    try {
+      if (fs.existsSync(recorderOutputFile())) {
+        code = fs.readFileSync(recorderOutputFile(), 'utf8');
+      }
+    } catch (_) { /* fall through to stdout */ }
+    if (!code || code.trim().length < 10) code = rec.getCaptured();
+    activeRecorder = null;
+    res.json({
+      ok: true,
+      code: code || '',
+      stderr: rec.getStderr().slice(0, 1000),
+      durationMs: Date.now() - rec.startedAt,
+    });
+  }, 900);
+});
+
+// Convert the captured Playwright code into a Gherkin scenario. The prompt
+// gives claude the existing step-definition file so the generated scenario
+// REUSES existing step phrases where possible instead of inventing new ones.
+// Synchronous like /api/critique-spec — small response, UI shows a spinner.
+app.post('/api/recorder/convert', async (req, res) => {
+  const { code, feature } = req.body || {};
+  if (!code || typeof code !== 'string' || code.trim().length < 20) {
+    return res.status(400).json({ error: 'code (the captured Playwright script) is required' });
+  }
+  if (feature && !isSafeName(feature)) {
+    return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  }
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+
+  // Load existing step defs so claude prefers existing Given/When/Then phrasings.
+  let existingSteps = '';
+  if (feature) {
+    const stepsDir = path.join(ROOT, 'features', feature);
+    if (fs.existsSync(stepsDir)) {
+      const stepsFile = fs.readdirSync(stepsDir).find((f) => f.endsWith('.steps.ts'));
+      if (stepsFile) {
+        try { existingSteps = fs.readFileSync(path.join(stepsDir, stepsFile), 'utf8').slice(0, 30_000); }
+        catch (_) { /* missing/unreadable — claude will invent new steps */ }
+      }
+    }
+  }
+
+  const prompt = `Convert this captured Playwright codegen output into ONE Gherkin Scenario block.
+
+CAPTURED PLAYWRIGHT CODE (from \`playwright codegen\`):
+\`\`\`javascript
+${code.slice(0, 8000)}
+\`\`\`
+
+${existingSteps ? `EXISTING STEP DEFINITIONS for feature "${feature}" — REUSE these phrasings when the captured action maps to an existing step. Do not invent new steps when an existing one fits.
+
+\`\`\`typescript
+${existingSteps}
+\`\`\`
+` : ''}
+INSTRUCTIONS:
+1. Output ONE Scenario block in Gherkin. Start with a one-line "Scenario:" name that describes what the user just did, then Given/When/Then steps.
+2. Prefer existing step phrasings from the file above when they match.
+3. Skip browser navigation that just goes back to the start URL (treat that as the Background — don't add a Given for it unless the existing steps already have one).
+4. Group multiple consecutive clicks/fills on the same form into a higher-level When step where it makes sense ("When I fill the sign-in form and submit" instead of 5 separate fill/click whens) — but only IF that matches the existing-step style.
+5. Output STRICT JSON with this exact shape, nothing else:
+
+{
+  "scenario": "Scenario: <name>\\n  Given …\\n  When …\\n  Then …\\n",
+  "name": "<one-line scenario name>",
+  "newSteps": [
+    { "phrase": "When I do something new", "rationale": "no existing step covered this action" }
+  ]
+}
+
+If every step you used already exists in the steps file, return newSteps: [].`;
+
+  // Run claude --print synchronously and parse JSON out of its response.
+  const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+  const args = ['--print', '--dangerously-skip-permissions'];
+  let proc;
+  try {
+    proc = spawn(cmd, args, {
+      cwd: ROOT,
+      env: process.env,
+      shell: process.platform === 'win32',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    return res.status(500).json({ error: `claude spawn failed: ${err.message}` });
+  }
+  activeGenerate = { proc, startedAt: Date.now() };
+  let stdout = '', stderr = '';
+  proc.stdout.on('data', (d) => { stdout += d.toString(); });
+  proc.stderr.on('data', (d) => { stderr += d.toString(); });
+  try {
+    proc.stdin.on('error', () => {});
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+  } catch (_) { /* handled below */ }
+
+  const TIMEOUT_MS = 90_000;
+  const timer = setTimeout(() => { if (!proc.killed) killProcessTree(proc); }, TIMEOUT_MS);
+
+  proc.on('close', (exitCode) => {
+    clearTimeout(timer);
+    activeGenerate = null;
+    if (exitCode !== 0) {
+      return res.status(502).json({ error: `claude exited ${exitCode}`, stderr: stderr.slice(0, 2000) });
+    }
+    const parsed = extractJsonObject(stdout);
+    if (!parsed || !parsed.scenario) {
+      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    }
+    res.json({
+      scenario: parsed.scenario,
+      name: parsed.name || '',
+      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+    });
+  });
+  proc.on('error', (err) => {
+    clearTimeout(timer);
+    activeGenerate = null;
+    res.status(500).json({ error: `claude error: ${err.message}` });
+  });
+});
+
+// Append a Gherkin scenario to the target feature's .feature file. The file
+// must already exist — recorder is for ADDING scenarios to an existing
+// feature, not for scaffolding new ones (that's what Save & Generate is for).
+app.post('/api/recorder/append', (req, res) => {
+  const { feature, scenario } = req.body || {};
+  if (!feature || !isSafeName(feature)) {
+    return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  }
+  if (!scenario || typeof scenario !== 'string' || scenario.trim().length < 10) {
+    return res.status(400).json({ error: 'scenario text is required' });
+  }
+  if (scenario.length > 10_000) {
+    return res.status(413).json({ error: 'scenario too long' });
+  }
+  const featureDir = path.join(ROOT, 'features', feature);
+  if (!fs.existsSync(featureDir)) {
+    return res.status(404).json({ error: `feature folder not found: features/${feature}/` });
+  }
+  const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+  if (!featureFile) {
+    return res.status(404).json({ error: `no .feature file in features/${feature}/` });
+  }
+  const filePath = path.join(featureDir, featureFile);
+  try {
+    const existing = fs.readFileSync(filePath, 'utf8');
+    // Ensure exactly one blank line between the previous content and the new scenario.
+    const trimmed = existing.replace(/\s+$/, '');
+    const appended = `${trimmed}\n\n${scenario.replace(/^\s+/, '').trimEnd()}\n`;
+    fs.writeFileSync(filePath, appended, 'utf8');
+    res.json({ ok: true, file: `features/${feature}/${featureFile}`, scenarioBytes: scenario.length });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// PR Impact Radar: uses `git diff` + `git status` to identify which files have
+// changed vs the base branch, then maps those files to features whose scenarios
+// are likely affected. Heuristic mapping — designed to catch obvious cases.
+app.get('/api/pr-impact', (req, res) => {
+  const base = String(req.query.base || 'main').replace(/[^a-zA-Z0-9._/-]/g, '');
+  const includeUncommitted = req.query.uncommitted !== '0';
+  try { execSync('git rev-parse --git-dir', { cwd: ROOT, stdio: 'pipe' }); }
+  catch { return res.json({ isGitRepo: false, impactedFeatures: [], changedFiles: [] }); }
+
+  let committed = [], uncommitted = [];
+  try {
+    committed = execSync(`git diff --name-only ${base}...HEAD`, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n').filter(Boolean);
+  } catch {
+    try {
+      committed = execSync(`git diff --name-only HEAD~5..HEAD`, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+        .split('\n').filter(Boolean);
+    } catch { committed = []; }
+  }
+  if (includeUncommitted) {
+    try {
+      uncommitted = execSync('git status --porcelain', { cwd: ROOT, encoding: 'utf8' })
+        .split('\n').filter(Boolean)
+        .map((l) => l.slice(3).replace(/^"|"$/g, '').replace(/\\/g, '/').split(' -> ').pop().trim());
+    } catch { uncommitted = []; }
+  }
+  const allChanged = [...new Set([...committed, ...uncommitted])].filter(Boolean);
+
+  const featuresRoot = path.join(ROOT, 'features');
+  let features = [];
+  try {
+    features = fs.readdirSync(featuresRoot)
+      .filter((n) => !n.startsWith('_') && !n.startsWith('.') && fs.statSync(path.join(featuresRoot, n)).isDirectory());
+  } catch { features = []; }
+
+  const featureScenarios = new Map();
+  const featureSteps = new Map();
+  for (const f of features) {
+    const dir = path.join(featuresRoot, f);
+    try {
+      const files = fs.readdirSync(dir);
+      const featureFile = files.find((x) => x.endsWith('.feature') && !x.startsWith('_'));
+      if (featureFile) {
+        const content = fs.readFileSync(path.join(dir, featureFile), 'utf8');
+        featureScenarios.set(f, (content.match(/^\s*Scenario:/gm) || []).length);
+      }
+      const stepsFile = files.find((x) => x.endsWith('.steps.ts'));
+      if (stepsFile) featureSteps.set(f, fs.readFileSync(path.join(dir, stepsFile), 'utf8'));
+    } catch { /* skip */ }
+  }
+
+  const impact = new Map(); // feature -> Set of reasons
+  const addImpact = (feature, reason) => {
+    if (!impact.has(feature)) impact.set(feature, new Set());
+    impact.get(feature).add(reason);
+  };
+
+  for (const file of allChanged) {
+    const norm = file.replace(/\\/g, '/');
+    const fMatch = norm.match(/^features\/([^/]+)\//);
+    if (fMatch && features.includes(fMatch[1])) {
+      const kind = norm.endsWith('.feature') ? 'scenario file' :
+        norm.endsWith('.steps.ts') ? 'step defs' : 'file';
+      addImpact(fMatch[1], `Direct: ${kind} changed`);
+      continue;
+    }
+    const pMatch = norm.match(/^pages\/([^/]+)\//);
+    if (pMatch) {
+      const pageDir = pMatch[1];
+      const fileName = path.basename(norm, path.extname(norm));
+      for (const [feat, stepsCode] of featureSteps.entries()) {
+        const importRe = new RegExp(`from\\s+['\"][^'\"]*pages/${pageDir}(?:/[^'\"]*)?['\"]`, 'g');
+        const classRe = new RegExp(`\\b${fileName}\\b`, 'g');
+        if (importRe.test(stepsCode) || classRe.test(stepsCode)) {
+          addImpact(feat, `POM: pages/${pageDir}/ referenced`);
+        }
+      }
+      continue;
+    }
+    const sMatch = norm.match(/^user-stories\/(.+)\.md$/i);
+    if (sMatch) {
+      const storyName = sMatch[1].toLowerCase();
+      for (const f of features) {
+        const slug = f.toLowerCase().replace(/-/g, '');
+        if (storyName.replace(/-/g, '').includes(slug) || slug.includes(storyName.replace(/-/g, ''))) {
+          addImpact(f, `Story changed: ${path.basename(sMatch[1])}`);
+        }
+      }
+      continue;
+    }
+    const cfgMatch = norm.match(/^(playwright\.config\.js|package\.json|features\/_shared\/|utils\/)/);
+    if (cfgMatch) {
+      for (const f of features) addImpact(f, `Global: ${cfgMatch[1]} changed`);
+    }
+  }
+
+  const impactedFeatures = [...impact.entries()]
+    .map(([name, reasons]) => ({
+      name,
+      reasons: [...reasons],
+      scenarioCount: featureScenarios.get(name) || 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({
+    isGitRepo: true,
+    base,
+    changedFiles: allChanged,
+    committedCount: committed.length,
+    uncommittedCount: uncommitted.length,
+    impactedFeatures,
+  });
+});
 
 // Coverage-gap detector: cross-reference the ACs in a story with the
 // scenarios in its .feature file. The project's convention is that scenario

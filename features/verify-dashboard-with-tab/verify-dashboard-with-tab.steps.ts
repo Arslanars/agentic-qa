@@ -84,7 +84,7 @@ When('I open the {string} tab', async ({ page }, tab: string) => {
 Then('the {string} tab should be the active dashboard tab', async ({ page }, tab: string) => {
   // AC4: after clicking the Inventory tab the Inventory view must be active.
   // The app exposes no aria-selected/aria-current — the only "selected" signal
-  // is the active CSS class (bg-[#DC2626], red) — so prove selection three
+  // is the active CSS class (bg-[#A4D0FA], blue) — so prove selection three
   // ways: stayed on the dashboard route, the Inventory heading is visible, and
   // the tab carries the active styling.
   expect(/^inventory$/i.test(tab), 'AC4 only covers the Inventory tab').toBeTruthy();
@@ -97,7 +97,54 @@ Then('the {string} tab should be the active dashboard tab', async ({ page }, tab
     timeout: 20_000,
   });
   await expect(dashboard.inventoryTab, 'AC4: the Inventory tab is the active (highlighted) tab').toHaveClass(
-    /bg-\[#DC2626\]/,
+    /bg-\[#A4D0FA\]/,
     { timeout: 10_000 },
   );
+});
+
+// ---- Vendors-list edit flow (verified live against the app 2026-06-30) ----
+When('I navigate to the Vendors List', async ({ page }) => {
+  // "Vendors List" is a sub-item of the collapsible **Vendors** sidebar group
+  // (NOT under Quick Inventory — that route is /quick-inventory and has no such
+  // item). On the freshly-loaded dashboard the group is collapsed, so expand
+  // "Vendors" first, then open its "Vendors List" sub-item, which routes to
+  // /vendors ("Manage Vendors"). Idempotent: skip the expand if it's already open.
+  const vendorsList = page.getByRole('button', { name: /vendors list/i });
+  if (!(await vendorsList.isVisible().catch(() => false))) {
+    // exact:true so "Vendors" doesn't also match "Vendors List" / "Vendor Items".
+    const vendorsGroup = page.getByRole('button', { name: 'Vendors', exact: true });
+    await vendorsGroup.waitFor({ state: 'visible', timeout: 30_000 });
+    await vendorsGroup.click();
+  }
+  await vendorsList.waitFor({ state: 'visible', timeout: 15_000 });
+  await vendorsList.click();
+  await expect(page.getByRole('heading', { name: 'Manage Vendors' })).toBeVisible({ timeout: 20_000 });
+});
+
+When("I open the first vendor's details", async ({ page }) => {
+  // The Vendors List renders vendors as cards (default "Card" view), not a
+  // table. Each card carries an "Edit vendor" icon button that opens the
+  // editable "Edit Vendor Details" drawer; open the first vendor's editor.
+  const editFirstVendor = page.getByRole('button', { name: 'Edit vendor' }).first();
+  await editFirstVendor.waitFor({ state: 'visible', timeout: 20_000 });
+  await editFirstVendor.click();
+  await expect(page.getByRole('heading', { name: /edit vendor details/i })).toBeVisible({ timeout: 15_000 });
+});
+
+When('I edit the vendor name to {string} and save the changes', async ({ page }, name: string) => {
+  // The editor's name field has the accessible name "Enter vendor name". The
+  // always-mounted "Add New Vendor" drawer is aria-hidden, so this role query
+  // resolves only to the open editor (verified count=1). Save = "Save Changes".
+  const nameField = page.getByRole('textbox', { name: 'Enter vendor name', exact: true });
+  await nameField.waitFor({ state: 'visible', timeout: 15_000 });
+  await nameField.fill(name);
+  await page.getByRole('button', { name: /save changes/i }).click();
+});
+
+Then('the vendor changes should be saved', async ({ page }) => {
+  // A successful save surfaces the aria-live toast "Vendor details updated
+  // successfully!" and closes the editor — the toast is the stable success signal.
+  await expect(page.getByText(/updated successfully|has been saved/i).first()).toBeVisible({
+    timeout: 15_000,
+  });
 });

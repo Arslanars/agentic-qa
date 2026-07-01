@@ -47,13 +47,13 @@ All extend `BasePage` and use role-based locators.
 2. Clicking "Main Location" routes to **`https://moontower.aiimone.com/inventory-vendors`** (SPA client-side nav). The dashboard shows **"Loading…"** for several seconds before the chrome renders.
 3. Once loaded, the dashboard exposes a **left sidebar** of `<button>` nav items: `Dashboard, Inventory, Quick Inventory, Vendors, Orders, Inventory Items, Menu Items, Inflation Tracker, Settings`. There is **no `role="tab"`/`role="tablist"`** — these are styled buttons. The "inventory tab" is the button whose exact accessible name is **"Inventory"** (`count=1`, visible).
 4. `/inventory-vendors` **defaults to the Inventory sub-view** — heading "Inventory" + subtitle "Track stock levels, manage vendors, and identify ordering needs". Clicking the Inventory tab keeps the URL at `/inventory-vendors` and keeps the Inventory view active.
-5. **Active-tab signal:** the app exposes **no** `aria-selected`/`aria-current`/`data-state`. The active tab is conveyed **only by CSS class** — active = `bg-[#DC2626] text-[#FFFFFF]` (red), inactive siblings = `text-[#CBD5E1]` (grey). AC4 therefore proves "the tab is selected" via (a) the Inventory **heading** being visible and (b) the tab's **active class**, alongside the unchanged URL.
+5. **Active-tab signal:** the app exposes **no** `aria-selected`/`aria-current`/`data-state`. The active tab is conveyed **only by CSS class** — active = `bg-[#A4D0FA] text-[#06378D]` (blue; the app was re-themed from the earlier `bg-[#DC2626]` red), inactive siblings carry no such background. AC4 therefore proves "the tab is selected" via (a) the Inventory **heading** being visible and (b) the tab's **active class**, alongside the unchanged URL.
 
 ## AC4 verification strategy (why these assertions)
 AC4 ("Click on inventory tab") states no explicit post-condition, and `/inventory-vendors` already defaults to the Inventory view. To keep the test **honest** (Rule 8 — no watered-down green), AC4-POS-01 exercises the real click and then proves an observable selected-state:
 - `expect(page).toHaveURL('https://moontower.aiimone.com/inventory-vendors')` — still on the dashboard route after the click.
 - `expect(inventoryHeading).toBeVisible()` — the Inventory view is rendered.
-- `expect(inventoryTab).toHaveClass(/bg-\[#DC2626\]/)` — the Inventory tab is the **active** tab (the only active-state signal the app exposes).
+- `expect(inventoryTab).toHaveClass(/bg-\[#A4D0FA\]/)` — the Inventory tab is the **active** tab (the only active-state signal the app exposes).
 
 ## Out of scope
 - Negative / validation login — owned by the `login-user` feature; not duplicated (Rule 3/4).

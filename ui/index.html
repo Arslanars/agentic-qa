@@ -31,16 +31,19 @@
        Log + lightbox stay dark — terminal/viewer conventions, not light-bleed.
        ===================================================================== */
     :root {
-      /* Surfaces — warm off-white, low contrast layering */
-      --bg-0: #fafaf9;          /* page (zinc-50, very faint warm tint) */
-      --bg-1: #ffffff;          /* primary surface */
-      --bg-2: #f4f4f5;          /* sunken / sidebar / sub-panel (zinc-100) */
+      /* Surfaces — layered so panels visually pop above the page background.
+         The earlier palette (#fafaf9 page / #ffffff panel) was only a half-
+         step apart, which made everything look like one big white wash.
+         Stepping the page down to a clear gray gives white panels weight. */
+      --bg-0: #e9ecf2;          /* page — slate-100ish; clearly cool gray */
+      --bg-1: #ffffff;          /* primary surface (panels) */
+      --bg-2: #f1f3f7;          /* sunken / sub-panel (sits inside white) */
       --surface: #ffffff;
-      --surface-hover: #fafaf9;
-      --border: #e4e4e7;        /* zinc-200 — hairline (panels, dividers) */
-      --border-strong: #d4d4d8; /* zinc-300 — hover/focus border */
-      --field-border: #cbd5e1;       /* slate-300 — visible input outline */
-      --field-border-hover: #94a3b8; /* slate-400 — input hover */
+      --surface-hover: #f1f3f7;
+      --border: #d4d8e0;        /* hairline — visible on white (~1.6:1) */
+      --border-strong: #9ca3af; /* gray-400 — hover/focus / button outlines */
+      --field-border: #94a3b8;       /* slate-400 — input outline (clearly visible) */
+      --field-border-hover: #64748b; /* slate-500 — input hover */
 
       /* Text — zinc scale, all WCAG AA on white */
       --text: #18181b;          /* zinc-900 — body text */
@@ -283,7 +286,13 @@
     }
     .left { display: flex; flex-direction: column; overflow: hidden; }
     .left-scroll { overflow: auto; padding: 18px; }
-    .right { display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+    /* Flex column instead of grid so the log gets the elastic space
+       regardless of which optional panels (banner, step-timeline, gallery,
+       triage) are visible above it. Each direct child auto-sizes; only
+       .log-wrap stretches to fill. */
+    .right { display: flex; flex-direction: column; overflow: hidden; }
+    .right > * { flex: 0 0 auto; }
+    .right > .log-wrap { flex: 1 1 0; min-height: 0; }
 
     /* ---------- Form sections ---------- */
     .section-label {
@@ -316,6 +325,188 @@
     .field input:focus, .field select:focus, .field textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-ring);
+    }
+
+    /* ---------- Modernized <select> ----------
+       Strip the native OS chrome (arrow + sometimes-ugly background) so the
+       control matches the rest of the form. Native <option> menus stay
+       native — they can't be cross-browser styled, and we keep them so
+       keyboard nav + screen readers continue to work out of the box.
+       The chevron is an inline SVG via background-image so theme variables
+       drive its color (override below for dark mode). */
+    .field select {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background-color: var(--bg-1);
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 11px center;
+      background-size: 14px 14px;
+      padding-right: 34px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+    }
+    /* Dark-mode chevron is a lighter zinc so it stays visible on dark bg. */
+    :root[data-theme="dark"] .field select {
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    }
+    /* Hover lifts the background slightly + brightens the chevron. */
+    .field select:hover:not(:disabled) {
+      background-color: var(--surface);
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    }
+    :root[data-theme="dark"] .field select:hover:not(:disabled) {
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e4e4e7' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    }
+    /* On focus, chevron turns indigo to echo the focus ring. */
+    .field select:focus { background-color: var(--surface); }
+    .field select:focus {
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    }
+    :root[data-theme="dark"] .field select:focus {
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    }
+    .field select:disabled {
+      opacity: 0.6; cursor: not-allowed;
+      background-color: var(--bg-2);
+    }
+    /* Style native <option> as well — Chrome/Edge pick this up; Firefox/Safari
+       partially ignore it but the default rendering is already acceptable.
+       (When the custom combobox is active the native <select> is hidden so
+       these only apply during the brief window before JS upgrades it.) */
+    .field select option {
+      background-color: var(--bg-1);
+      color: var(--text);
+      padding: 8px 12px;
+    }
+    :root[data-theme="dark"] .field select option { background-color: #1e1e22; color: var(--text); }
+
+    /* ---------- Custom combobox (.cd-*) ----------
+       Replaces the native <select> dropdown with a fully styled, themeable
+       listbox. The underlying <select> is kept (visually hidden) so existing
+       change listeners + form-submit semantics still work — the custom UI
+       just drives it. Keyboard nav, ARIA roles, and screen-reader fallback
+       are all wired up so the modern look doesn't sacrifice accessibility. */
+    .cd-wrap { position: relative; }
+    .cd-wrap select.cd-native {
+      /* Visually hidden but still in the accessibility tree for SR fallback */
+      position: absolute; opacity: 0; pointer-events: none;
+      width: 1px; height: 1px; padding: 0; margin: 0; border: 0;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;
+    }
+    .cd-trigger {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%;
+      background: var(--bg-1);
+      border: 1px solid var(--field-border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+    }
+    .cd-trigger:hover:not(:disabled) { border-color: var(--field-border-hover); background: var(--surface); }
+    .cd-trigger:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-ring);
+    }
+    .cd-trigger.open {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-ring);
+    }
+    .cd-trigger:disabled { opacity: 0.6; cursor: not-allowed; }
+    .cd-trigger-text {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .cd-trigger-meta { color: var(--text-faint); font-size: 11.5px; font-weight: 400; margin-left: 6px; }
+    .cd-trigger-chevron {
+      width: 14px; height: 14px; flex-shrink: 0;
+      color: var(--text-faint);
+      transition: transform 0.18s ease, color 0.12s ease;
+    }
+    .cd-trigger.open .cd-trigger-chevron {
+      transform: rotate(180deg);
+      color: var(--accent);
+    }
+
+    /* The menu — absolutely-positioned listbox below the trigger. */
+    .cd-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0; right: 0;
+      background: var(--bg-1);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg);
+      padding: 5px;
+      z-index: 60;
+      max-height: 320px;
+      overflow-y: auto;
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+      transform-origin: top center;
+      transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s linear 0.15s;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .cd-menu.open {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+      visibility: visible;
+      transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s;
+    }
+    .cd-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px;
+      border-radius: 5px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.08s ease, color 0.08s ease;
+      user-select: none;
+    }
+    .cd-option:hover, .cd-option.highlighted {
+      background: var(--bg-2);
+    }
+    .cd-option.selected {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .cd-option.selected::after {
+      content: '✓';
+      margin-left: auto;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .cd-option .cd-option-label {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .cd-option .cd-option-meta {
+      color: var(--text-faint);
+      font-size: 11px;
+      font-weight: 400;
+      flex-shrink: 0;
+    }
+    .cd-option.selected .cd-option-meta { color: var(--accent); opacity: 0.7; }
+
+    /* Custom scrollbar inside the menu for visual polish on long lists. */
+    .cd-menu::-webkit-scrollbar { width: 8px; }
+    .cd-menu::-webkit-scrollbar-track { background: transparent; }
+    .cd-menu::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 4px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
     }
     .field textarea { min-height: 110px; resize: vertical; font-family: ui-monospace, monospace; font-size: 12.5px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -366,11 +557,14 @@
     }
     button.primary:hover:not(:disabled) { background: var(--accent-fill-hover); }
 
+    /* Ghost buttons sit on --bg-2 (sunken tint) instead of white so they
+       read as buttons even when the parent panel is white. The stronger
+       border keeps them distinct from the panel below them. */
     button.ghost {
-      background: var(--bg-1); color: var(--text);
-      border: 1px solid var(--border);
+      background: var(--bg-2); color: var(--text);
+      border: 1px solid var(--border-strong);
     }
-    button.ghost:hover:not(:disabled) { background: var(--bg-2); border-color: var(--border-strong); }
+    button.ghost:hover:not(:disabled) { background: var(--surface); border-color: var(--accent); color: var(--accent); }
 
     /* ---------- Status bar ---------- */
     .status-bar {
@@ -419,6 +613,263 @@
     }
     .pill.pass { background: var(--success-soft); color: var(--success); }
     .pill.fail { background: var(--danger-soft); color: var(--danger); }
+
+    /* ---------- Missing-steps banner -------------------------------------
+       Compact one-line strip that appears when the log mentions
+       "Missing step definitions: N". Designed to use the minimum vertical
+       space so the dashboard underneath stays uncluttered. Subtle gradient
+       background, animated slide-in, refined CTA with arrow icon. */
+    .missing-steps-banner {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 14px;
+      background: linear-gradient(90deg,
+        var(--warn-soft) 0%,
+        color-mix(in srgb, var(--warn-soft) 60%, var(--bg-1)) 100%);
+      border-bottom: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+      color: var(--text);
+      font-size: 12.5px;
+      flex-shrink: 0;
+      animation: msb-enter 0.22s ease-out;
+    }
+    @keyframes msb-enter {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .missing-steps-banner .msb-icon {
+      font-size: 14px;
+      flex-shrink: 0;
+      filter: saturate(1.3);
+    }
+    .missing-steps-banner .msb-text {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      line-height: 1.4;
+    }
+    .missing-steps-banner .msb-text b {
+      color: var(--warn);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .missing-steps-banner .msb-sep {
+      color: var(--text-faint);
+      margin: 0 4px;
+    }
+    .missing-steps-banner .msb-hint {
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .missing-steps-banner .msb-action {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--accent-fill); color: var(--on-fill);
+      border: 0; border-radius: 999px;
+      padding: 5px 12px 5px 14px;
+      font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-shadow: 0 1px 2px var(--accent-glow);
+      transition: background 0.12s ease, transform 0.05s ease, box-shadow 0.12s ease;
+    }
+    .missing-steps-banner .msb-action svg {
+      width: 13px; height: 13px;
+      transition: transform 0.15s ease;
+    }
+    .missing-steps-banner .msb-action:hover {
+      background: var(--accent-fill-hover);
+      box-shadow: 0 2px 6px var(--accent-glow);
+    }
+    .missing-steps-banner .msb-action:hover svg {
+      transform: translateX(2px);
+    }
+    .missing-steps-banner .msb-action:active { transform: translateY(0.5px); }
+    .missing-steps-banner .msb-action:disabled {
+      opacity: 0.6; cursor: not-allowed;
+      box-shadow: none;
+    }
+    .missing-steps-banner .msb-dismiss {
+      background: transparent; border: 0;
+      color: var(--text-faint);
+      font-size: 16px; line-height: 1;
+      cursor: pointer; padding: 2px 4px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: color 0.12s ease, background 0.12s ease;
+    }
+    .missing-steps-banner .msb-dismiss:hover {
+      color: var(--text);
+      background: color-mix(in srgb, var(--text-faint) 15%, transparent);
+    }
+    /* Collapse hint text on narrow viewports — keep count + button visible. */
+    @media (max-width: 1100px) {
+      .missing-steps-banner .msb-sep,
+      .missing-steps-banner .msb-hint { display: none; }
+    }
+
+    /* ---------- Liquid Gherkin Step Timeline ------------------------------
+       Sits between the status-bar and the log. While a scenario runs, each
+       Given/When/Then step is a horizontal beam that "fills" as the step
+       executes, then locks to its terminal color (green pass / red fail).
+       Driven by [LIVE_STEP] events emitted by ui/live-step-reporter.js. */
+    /* Step timeline — green/red filled bars per step (the user prefers
+       the bar treatment over flat status-icon rows). Polished from the
+       original: subtle vertical gradient on the fill so the bar reads as
+       a solid surface rather than a flat slab, sharper text legibility,
+       and the inline error block + slow-step duration warning kept. */
+    .step-timeline {
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-1);
+      max-height: 40vh;
+      overflow-y: auto;
+    }
+    .step-timeline-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-2);
+    }
+    .step-timeline-icon {
+      width: 18px; height: 18px;
+      flex-shrink: 0;
+      display: grid; place-items: center;
+      border-radius: 50%;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+    }
+    .step-timeline-icon svg { width: 11px; height: 11px; color: var(--accent); }
+    .step-timeline-title {
+      font-size: 13px; font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex: 1; min-width: 0;
+      letter-spacing: -0.005em;
+    }
+    .step-timeline-meta {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 11.5px; color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    .step-timeline-meta .verdict-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px; border-radius: 999px;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .step-timeline-meta .verdict-chip.passed { background: var(--success-soft); color: var(--success); }
+    .step-timeline-meta .verdict-chip.failed { background: var(--danger-soft); color: var(--danger); }
+    .step-timeline-meta .verdict-chip.running { background: var(--accent-soft); color: var(--accent); }
+
+    .step-timeline-list {
+      padding: 10px 18px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+
+    .step-row {
+      display: grid;
+      grid-template-columns: 56px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+    .step-row .step-keyword {
+      font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      text-align: right;
+    }
+
+    /* The beam — full-width filled bar with the step text overlaid. */
+    .step-beam {
+      position: relative;
+      height: 26px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .step-beam-fill {
+      position: absolute; inset: 0 100% 0 0;
+      transition: right 0.25s ease, background 0.2s ease;
+      border-radius: 3px;
+    }
+    .step-beam-text {
+      position: absolute;
+      left: 10px; right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      color: var(--text);
+      z-index: 1;
+      pointer-events: none;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.10);
+    }
+
+    /* State-specific fill gradients — subtle top→bottom shading reads as
+       a 3D surface rather than a flat slab. Terminal states lock to full
+       width via the inline style set in the renderer. */
+    .step-row.passed  .step-beam-fill {
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--success) 96%, white 4%) 0%,
+        var(--success) 100%);
+    }
+    .step-row.passed  .step-beam-text { color: #ffffff; font-weight: 500; }
+
+    .step-row.failed  .step-beam-fill {
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--danger) 96%, white 4%) 0%,
+        var(--danger) 100%);
+    }
+    .step-row.failed  .step-beam-text { color: #ffffff; font-weight: 600; }
+
+    .step-row.skipped .step-beam-fill {
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--warn) 90%, white 10%) 0%,
+        var(--warn) 100%);
+      opacity: 0.85;
+    }
+    .step-row.skipped .step-beam-text { color: #ffffff; }
+
+    .step-row.running .step-beam-fill {
+      background: linear-gradient(90deg, var(--accent-soft) 0%, var(--accent) 100%);
+      animation: step-beam-pulse 1.4s ease-in-out infinite;
+    }
+    .step-row.running .step-beam-text { color: var(--text); font-weight: 500; }
+    @keyframes step-beam-pulse {
+      0%, 100% { opacity: 0.92; }
+      50%      { opacity: 1.0; }
+    }
+
+    .step-row.pending .step-beam-text { color: var(--text-faint); }
+
+    .step-duration {
+      font-family: ui-monospace, monospace;
+      font-size: 10.5px;
+      color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      flex-shrink: 0;
+      min-width: 48px;
+    }
+    .step-row.slow .step-duration { color: var(--warn); font-weight: 600; }
+
+    /* Inline error block for failed steps — spans the keyword + beam +
+       duration cols, hugs right under the failed row. */
+    .step-row.failed .step-error {
+      grid-column: 2 / -1;
+      margin-top: 6px;
+      padding: 6px 10px;
+      background: var(--danger-soft);
+      border-radius: 4px;
+      font-family: ui-monospace, monospace;
+      font-size: 11.5px;
+      color: var(--danger);
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
 
     /* ---------- Log viewer (intentionally dark — terminal convention) ---------- */
     .log-wrap { overflow: hidden; display: flex; flex-direction: column; }
@@ -594,6 +1045,118 @@
     }
     .prompt-copy:hover { color: var(--accent); border-color: var(--accent); }
     .prompt-copy svg { width: 12px; height: 12px; }
+
+    /* ---------- Test Recorder modal ----------
+       A small dialog that drives the codegen → claude → append flow. The
+       modal is its own slim z-index layer; mostly a vertical card with
+       state-specific bodies (idle / recording / captured / converting /
+       proposed). Doesn't touch any other dialog or overlay. */
+    .rec-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(24, 24, 27, 0.55);
+      display: none; z-index: 220;
+    }
+    .rec-backdrop.show { display: block; }
+    .rec-modal {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(640px, 92vw);
+      max-height: 88vh;
+      background: var(--bg-1);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      z-index: 221;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .rec-modal.show { display: flex; }
+    .rec-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-1);
+    }
+    .rec-head h3 {
+      flex: 1; margin: 0;
+      font-size: 14px; font-weight: 600; color: var(--text);
+    }
+    .rec-head .close {
+      background: var(--bg-2); border: 1px solid var(--border);
+      color: var(--text-dim); font-size: 16px; line-height: 1;
+      width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+      display: grid; place-items: center;
+    }
+    .rec-head .close:hover { color: var(--text); background: var(--border); }
+    .rec-body { padding: 16px 18px; overflow-y: auto; font-size: 13px; color: var(--text-dim); }
+    .rec-body p { margin: 0 0 10px; line-height: 1.55; }
+    .rec-body .field { margin-bottom: 10px; }
+    .rec-foot {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-2);
+    }
+    .rec-foot .spacer { flex: 1; }
+    .rec-status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600;
+      background: var(--info-soft); color: var(--info);
+    }
+    .rec-status-pill.live::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--danger);
+      animation: rec-pulse 1.1s ease-in-out infinite;
+    }
+    @keyframes rec-pulse {
+      0%, 100% { opacity: 0.9; transform: scale(1); }
+      50%      { opacity: 0.5; transform: scale(0.85); }
+    }
+    .rec-code, .rec-scenario {
+      background: #18181b; color: #d4d4d8;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-size: 11.5px;
+      line-height: 1.55;
+      max-height: 280px;
+      overflow: auto;
+      white-space: pre;
+      border: 1px solid #27272a;
+    }
+    .rec-scenario { white-space: pre-wrap; word-break: break-word; }
+    .rec-new-steps {
+      margin-top: 10px;
+      padding: 8px 12px;
+      background: var(--warn-soft);
+      border-left: 3px solid var(--warn);
+      border-radius: 4px;
+      font-size: 11.5px;
+      color: var(--text);
+    }
+    .rec-new-steps b { color: var(--warn); }
+    .rec-new-steps ul { margin: 4px 0 0 16px; padding: 0; }
+
+    /* Review state — two-section panel showing the Gherkin scenario that
+       was appended plus the step-definition code that was generated. */
+    .rec-review-section { margin-bottom: 14px; }
+    .rec-review-section:last-child { margin-bottom: 0; }
+    .rec-review-head {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11.5px; font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .rec-review-head code {
+      text-transform: none; letter-spacing: 0;
+      font-weight: 400;
+      font-size: 11px;
+      color: var(--text-faint);
+    }
 
     /* ---------- Toast ---------- */
     .toast {
@@ -858,50 +1421,335 @@
        a meta-property (the test's RELIABILITY, not this run's outcome). */
     .cat-chip.flaky { background: var(--info-soft); color: var(--info); }
     .pill.flaky { background: var(--info-soft); color: var(--info); cursor: pointer; }
+    .pill.pr-impact {
+      background: color-mix(in srgb, var(--accent) 15%, var(--bg-2));
+      color: var(--accent);
+      cursor: pointer;
+      border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+      font-weight: 600;
+    }
+    .pill.pr-impact:hover { background: color-mix(in srgb, var(--accent) 22%, var(--bg-2)); }
+    .pill.pr-impact.zero {
+      background: var(--success-soft); color: var(--success);
+      border-color: color-mix(in srgb, var(--success) 25%, transparent);
+    }
+    /* PR Impact panel — drops down from the status bar */
+    .pr-impact-panel {
+      margin: 8px 0 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-1);
+      box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow, black) 8%, transparent);
+      overflow: hidden;
+    }
+    .pr-impact-head {
+      display: flex; align-items: center; padding: 10px 14px;
+      background: color-mix(in srgb, var(--accent) 6%, var(--bg-1));
+      border-bottom: 1px solid var(--border);
+    }
+    .pr-impact-title { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text); font-size: 13px; flex: 1; }
+    .pr-impact-title svg { color: var(--accent); }
+    .pr-impact-close {
+      background: none; border: none; cursor: pointer;
+      font-size: 22px; line-height: 1; color: var(--text-faint);
+      padding: 0 4px;
+    }
+    .pr-impact-close:hover { color: var(--text); }
+    .pr-impact-body { padding: 10px 14px; font-size: 12.5px; }
+    .pr-impact-body .pri-meta { color: var(--text-faint); font-size: 11.5px; margin-bottom: 8px; }
+    .pr-impact-body .pri-empty { color: var(--text-faint); font-style: italic; padding: 8px 0; }
+    .pr-impact-body .pri-feature {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 10px; margin: 4px 0;
+      background: var(--bg-2); border-radius: 6px;
+      border-left: 3px solid var(--accent);
+    }
+    .pr-impact-body .pri-feature .pri-name { font-weight: 600; color: var(--text); flex: 1; }
+    .pr-impact-body .pri-feature .pri-count { color: var(--text-faint); font-size: 11px; }
+    .pr-impact-body .pri-feature .pri-reasons { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+    .pr-impact-body .pri-changed-files {
+      margin-top: 12px; padding-top: 10px;
+      border-top: 1px dashed var(--border);
+      font-size: 11px; color: var(--text-faint);
+      max-height: 100px; overflow: auto;
+    }
+    .pr-impact-body .pri-changed-files code {
+      background: var(--bg-2); padding: 1px 5px; border-radius: 3px;
+      font-size: 10.5px; display: inline-block; margin: 2px 3px 2px 0;
+    }
+    .pr-impact-foot {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg-2) 60%, var(--bg-1));
+    }
+    .pr-impact-foot .spacer { flex: 1; }
 
-    /* Coverage panel — sits below the feature/browser row, summarizes
-       AC-vs-scenario coverage for the selected feature with an inline
-       expandable list of per-AC status. */
-    .coverage-panel {
-      margin: 8px 0 0;
+    /* Spec Doctor critique panel — sits under the actions row, surfaces
+       per-AC testability issues from /api/critique-spec. Each issue is a
+       small card with severity, snippet, explanation, and an
+       "Accept rewrite" affordance when a clean rewrite is available. */
+    .critique-panel {
+      margin-top: 12px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       background: var(--bg-1);
       overflow: hidden;
     }
-    .coverage-summary {
+    .critique-panel .head {
       display: flex; align-items: center; gap: 8px;
-      width: 100%;
-      padding: 8px 11px;
+      padding: 8px 12px;
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px; font-weight: 600; color: var(--text-dim);
+    }
+    .critique-panel .head .summary { flex: 1; }
+    .critique-panel .head .close {
       background: transparent; border: 0; cursor: pointer;
-      font-size: 12px; font-weight: 500; color: var(--text-dim);
+      color: var(--text-faint); font-size: 16px; line-height: 1;
+      padding: 0 4px;
+    }
+    .critique-panel .head .close:hover { color: var(--text); }
+    .critique-panel.clean .head { background: var(--success-soft); color: var(--success); }
+    .critique-issue {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: start;
+      font-size: 12.5px;
+    }
+    .critique-issue:last-child { border-bottom: 0; }
+    .critique-issue .sev {
+      padding: 2px 7px; border-radius: 999px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; line-height: 1.4;
+      align-self: start;
+      white-space: nowrap;
+    }
+    .critique-issue .sev.blocker { background: var(--danger-soft); color: var(--danger); }
+    .critique-issue .sev.high    { background: var(--warn-soft); color: var(--warn); }
+    .critique-issue .sev.medium  { background: var(--info-soft); color: var(--info); }
+    .critique-issue .sev.low     { background: var(--bg-2); color: var(--text-faint); }
+    .critique-issue .body { min-width: 0; }
+    .critique-issue .ac-ref {
+      font-family: ui-monospace, monospace;
+      font-size: 11px; color: var(--text-faint);
+      margin-right: 6px;
+    }
+    .critique-issue .rule {
+      font-family: ui-monospace, monospace;
+      font-size: 10.5px; color: var(--text-faint);
+    }
+    .critique-issue .snippet {
+      font-family: ui-monospace, monospace;
+      font-size: 11.5px;
+      padding: 4px 8px;
+      margin: 4px 0;
+      background: var(--bg-2);
+      border-left: 2px solid var(--border-strong);
+      border-radius: 2px;
+      color: var(--text);
+      word-break: break-word;
+    }
+    .critique-issue .desc { color: var(--text); margin-top: 2px; }
+    .critique-issue .rewrite {
+      margin-top: 6px;
+      padding: 6px 8px;
+      background: var(--accent-soft);
+      border-radius: 4px;
+      border-left: 2px solid var(--accent);
+      font-size: 12px;
+    }
+    .critique-issue .rewrite .label {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+      text-transform: uppercase; color: var(--accent);
+      margin-right: 6px;
+    }
+    .critique-issue .accept-btn {
+      margin-top: 4px;
+      background: var(--accent); color: var(--on-fill);
+      border: 0; border-radius: 4px;
+      padding: 3px 10px; font-size: 11px; font-weight: 600;
+      cursor: pointer;
+    }
+    .critique-issue .accept-btn:hover { background: var(--accent-hover); }
+    .critique-issue .accept-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Coverage panel — modernized with progress bar, per-AC rows, and a
+       "Close gaps" primary CTA when uncovered ACs exist. */
+    .coverage-panel {
+      margin: 8px 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-1);
+      overflow: hidden;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .coverage-panel.has-gaps { border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+    .coverage-panel.all-green { border-color: color-mix(in srgb, var(--success) 30%, var(--border)); }
+
+    /* Header row — a flex container with the toggle button + optional CTA
+       as siblings. Nesting the CTA inside the toggle would be invalid HTML
+       (buttons cannot contain buttons) and browsers would hoist it out. */
+    .coverage-header {
+      display: flex; align-items: stretch; gap: 0;
+      width: 100%;
+    }
+    .coverage-summary {
+      display: flex; align-items: center; gap: 10px;
+      flex: 1; min-width: 0;
+      padding: 9px 12px;
+      background: transparent; border: 0; cursor: pointer;
+      font-size: 12.5px; font-weight: 500; color: var(--text);
       text-align: left;
       transition: background 0.12s ease;
     }
     .coverage-summary:hover { background: var(--bg-2); }
     .coverage-summary[aria-expanded="true"] .coverage-chevron { transform: rotate(90deg); }
     .coverage-chevron {
-      width: 12px; height: 12px; margin-left: auto;
+      width: 12px; height: 12px;
       color: var(--text-faint);
       transition: transform 0.15s ease;
       flex-shrink: 0;
     }
-    .coverage-summary-text { flex: 1; }
-    .coverage-summary-text.full { color: var(--success); }
-    .coverage-summary-text.partial { color: var(--warn); }
-    .coverage-summary-text.empty { color: var(--text-faint); }
+
+    .coverage-metric {
+      display: inline-flex; align-items: baseline; gap: 3px;
+      font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    .coverage-metric .num {
+      font-size: 15px; font-weight: 700;
+    }
+    .coverage-metric .num.full    { color: var(--success); }
+    .coverage-metric .num.partial { color: var(--warn); }
+    .coverage-metric .num.empty   { color: var(--text-faint); }
+    .coverage-metric .total { color: var(--text-faint); font-size: 12px; }
+
+    .coverage-summary-text {
+      flex: 1; min-width: 0;
+      color: var(--text-dim);
+      font-size: 11.5px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .coverage-summary-text .status-word.full    { color: var(--success); font-weight: 600; }
+    .coverage-summary-text .status-word.partial { color: var(--warn);    font-weight: 600; }
+
+    /* Progress bar directly below the summary — the fastest read on
+       coverage state. Green when 100%, amber when partial, gray when 0. */
+    .coverage-progress {
+      height: 3px;
+      background: var(--bg-2);
+      position: relative;
+      overflow: hidden;
+    }
+    .coverage-progress-fill {
+      position: absolute; inset: 0 100% 0 0;
+      transition: right 0.25s ease, background 0.15s ease;
+    }
+    .coverage-progress-fill.full    { background: linear-gradient(90deg, var(--success), color-mix(in srgb, var(--success) 60%, transparent)); }
+    .coverage-progress-fill.partial { background: linear-gradient(90deg, var(--warn),    color-mix(in srgb, var(--warn) 60%, transparent)); }
+    .coverage-progress-fill.empty   { background: var(--border-strong); }
+
+    /* Close-gaps CTA — only shown in the summary when uncovered ACs > 0.
+       Sits inline between the metric and the chevron, tinted amber to
+       match the "has-gaps" panel state. */
+    .coverage-gaps-cta {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--warn-soft); color: var(--warn);
+      border: 0;
+      padding: 5px 12px;
+      margin: 4px 4px 4px 0;
+      border-radius: 999px;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.12s ease, transform 0.05s ease, box-shadow 0.12s ease;
+      flex-shrink: 0;
+      align-self: center;
+      white-space: nowrap;
+    }
+    .coverage-gaps-cta:hover {
+      background: var(--warn); color: #ffffff;
+      box-shadow: 0 2px 6px color-mix(in srgb, var(--warn) 30%, transparent);
+    }
+    .coverage-gaps-cta svg { width: 12px; height: 12px; }
+    .coverage-gaps-cta:active { transform: translateY(0.5px); }
+    /* .coverage-gaps-cta's `display: inline-flex` overrides the browser's
+       [hidden] rule (which is only ua-level display:none) — force-hide when
+       the attribute is present so the CTA actually disappears at 0 gaps. */
+    .coverage-gaps-cta[hidden] { display: none !important; }
+
+    /* Expanded details */
     .coverage-details {
       border-top: 1px solid var(--border);
       padding: 10px 12px;
       background: var(--bg-2);
       font-size: 12px; color: var(--text-dim);
     }
-    .coverage-details ul { margin: 0; padding-left: 18px; list-style: none; }
-    .coverage-details li { margin-bottom: 4px; line-height: 1.5; }
-    .coverage-details li.covered::before { content: '✓ '; color: var(--success); font-weight: 700; }
-    .coverage-details li.uncovered::before { content: '✗ '; color: var(--danger); font-weight: 700; }
-    .coverage-details .ac-text { color: var(--text); }
-    .coverage-details .scenario-count { color: var(--text-faint); font-size: 11px; margin-left: 4px; }
+    .coverage-details .ac-list {
+      display: flex; flex-direction: column; gap: 4px;
+      margin: 0; padding: 0; list-style: none;
+    }
+    .coverage-details .ac-row {
+      display: grid;
+      grid-template-columns: 20px auto 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      transition: border-color 0.12s ease;
+    }
+    .coverage-details .ac-row:hover { border-color: var(--border-strong); }
+    .coverage-details .ac-row .ac-icon {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      flex-shrink: 0;
+    }
+    .coverage-details .ac-row.covered   .ac-icon { background: var(--success-soft); color: var(--success); }
+    .coverage-details .ac-row.uncovered .ac-icon { background: var(--danger-soft);  color: var(--danger); }
+    .coverage-details .ac-row .ac-icon svg {
+      width: 12px; height: 12px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .coverage-details .ac-row .ac-id {
+      font-family: ui-monospace, monospace;
+      font-size: 11px; font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+    .coverage-details .ac-row .ac-text {
+      color: var(--text);
+      font-size: 12px;
+      min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .coverage-details .ac-row .ac-meta {
+      font-size: 10.5px;
+      color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    .coverage-details .ac-row .ac-draft-btn {
+      background: var(--accent); color: var(--on-fill);
+      border: 0; border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em;
+      cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px;
+      transition: background 0.12s ease, opacity 0.12s ease;
+    }
+    .coverage-details .ac-row .ac-draft-btn:hover { background: var(--accent-hover); }
+    .coverage-details .ac-row .ac-draft-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .coverage-details .ac-row .ac-draft-btn svg { width: 11px; height: 11px; }
+
     .coverage-details .orphan-header {
       margin-top: 10px; padding-top: 8px;
       border-top: 1px dashed var(--border);
@@ -957,6 +1805,7 @@
     }
     .triage-card .actions-row {
       display: flex; gap: 8px; margin-top: 6px;
+      flex-wrap: wrap; row-gap: 6px;
     }
     .triage-card .actions-row a, .triage-card .actions-row button {
       font-size: 11px; padding: 3px 8px; border-radius: 4px;
@@ -980,6 +1829,118 @@
       background: var(--accent-fill);
       border-color: var(--accent-fill);
     }
+
+    /* Explain button — lower visual weight than Heal because it's
+       informational (no file changes), tinted with --info to distinguish
+       it as a different kind of AI affordance. */
+    .triage-card .actions-row button.explain-btn {
+      color: var(--info);
+      border-color: var(--info);
+      background: var(--info-soft);
+      font-weight: 600;
+    }
+    .triage-card .actions-row button.explain-btn:hover {
+      color: var(--on-fill);
+      background: var(--info);
+      border-color: var(--info);
+    }
+    .triage-card .actions-row button.explain-btn:disabled {
+      opacity: 0.6; cursor: not-allowed;
+    }
+
+    /* Inline explanation block — appears below the actions row in a triage
+       card after the user clicks Explain. Designed to be skimmable: severity
+       chip + 1-2 sentence explanation + user impact + next step + copy. */
+    .triage-card .explain-block {
+      grid-column: 1 / -1;
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--bg-2);
+      border-left: 3px solid var(--info);
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--text);
+      animation: explain-enter 0.18s ease-out;
+    }
+    @keyframes explain-enter {
+      from { opacity: 0; transform: translateY(-3px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .triage-card .explain-block.loading {
+      color: var(--text-faint); font-style: italic;
+    }
+    .triage-card .explain-block.loading::before {
+      content: '◐';
+      display: inline-block;
+      margin-right: 6px;
+      animation: explain-spin 1s linear infinite;
+    }
+    @keyframes explain-spin {
+      from { transform: rotate(0); }
+      to   { transform: rotate(360deg); }
+    }
+    .triage-card .explain-block.error {
+      border-left-color: var(--danger);
+      color: var(--danger);
+    }
+    .triage-card .explain-block .sev-chip {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .triage-card .explain-block .sev-chip.blocker { background: var(--danger-soft); color: var(--danger); }
+    .triage-card .explain-block .sev-chip.major   { background: var(--warn-soft);   color: var(--warn); }
+    .triage-card .explain-block .sev-chip.minor   { background: var(--info-soft);   color: var(--info); }
+    .triage-card .explain-block .explanation-text {
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .triage-card .explain-block .meta-line {
+      font-size: 11.5px;
+      line-height: 1.5;
+      margin-bottom: 4px;
+      color: var(--text-dim);
+    }
+    .triage-card .explain-block .meta-line b {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .triage-card .explain-block .copy-row {
+      margin-top: 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .triage-card .explain-block .copy-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: color 0.12s ease, border-color 0.12s ease;
+    }
+    .triage-card .explain-block .copy-btn:hover {
+      color: var(--info);
+      border-color: var(--info);
+    }
+    .triage-card .explain-block .dismiss-btn {
+      background: transparent;
+      border: 0;
+      color: var(--text-faint);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 6px;
+      margin-left: auto;
+    }
+    .triage-card .explain-block .dismiss-btn:hover { color: var(--text); }
 
     /* ---------- Log linkification ---------- */
     .log a.spec-link, .log a.shot-link {
@@ -1099,11 +2060,25 @@
               </div>
             </div>
             <div id="coverage-panel" class="coverage-panel" hidden>
-              <button type="button" class="coverage-summary" id="coverage-summary" aria-expanded="false"
-                      title="Click to see per-AC coverage details for this feature">
-                <span id="coverage-summary-text">Coverage: —</span>
-                <svg class="coverage-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-              </button>
+              <div class="coverage-header">
+                <button type="button" class="coverage-summary" id="coverage-summary" aria-expanded="false"
+                        aria-controls="coverage-details"
+                        title="Click to see per-AC coverage details for this feature">
+                  <span class="coverage-metric">
+                    <span id="coverage-metric-num" class="num empty">–</span>
+                    <span id="coverage-metric-total" class="total">/–</span>
+                  </span>
+                  <span id="coverage-summary-text" class="coverage-summary-text">Coverage: —</span>
+                  <svg class="coverage-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+                <button id="coverage-gaps-cta" type="button" class="coverage-gaps-cta" hidden aria-label="Draft scenarios for uncovered ACs">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                  <span id="coverage-gaps-cta-text">Close 0 gaps</span>
+                </button>
+              </div>
+              <div class="coverage-progress" aria-hidden="true">
+                <div id="coverage-progress-fill" class="coverage-progress-fill empty"></div>
+              </div>
               <div id="coverage-details" class="coverage-details" hidden></div>
             </div>
             <label class="check">
@@ -1126,7 +2101,21 @@
                 </svg>
                 <span id="save-label">Save &amp; Generate Tests</span>
               </button>
+              <button id="critique" class="btn ghost" title="Lint the user story for ambiguous ACs / vague verbs / missing negatives BEFORE generating — saves a wasted Claude round-trip on bad input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                <span id="critique-label">Critique Story</span>
+              </button>
+              <button id="record" class="btn ghost" style="grid-column: 1 / -1;" title="Drive the app manually in a real browser; the actions you take get captured and converted into a Gherkin scenario you can append to an existing feature">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"/>
+                  <circle cx="12" cy="12" r="3.5" fill="currentColor"/>
+                </svg>
+                <span>Record New Scenario</span>
+              </button>
             </div>
+            <div id="critique-panel" class="critique-panel" hidden role="region" aria-label="Spec critique results"></div>
           </div>
 
           <details class="express">
@@ -1166,8 +2155,55 @@
             <span id="pill-time" class="pill">—</span>
           </div>
           <span id="pill-flaky" class="pill flaky" hidden title="Click to see which tests are unstable across recent runs"></span>
+          <button id="pill-pr-impact" type="button" class="pill pr-impact" hidden title="This PR touches files that likely affect these features — click to see + run them"></button>
           <svg id="history-spark" class="history-spark" viewBox="0 0 120 22" preserveAspectRatio="none" aria-label="Run history (last 30 runs)" role="img" hidden></svg>
           <div id="waterfall" class="waterfall" aria-hidden="true"></div>
+        </div>
+        <div id="pr-impact-panel" class="pr-impact-panel" hidden role="region" aria-label="PR impact analysis">
+          <div class="pr-impact-head">
+            <span class="pr-impact-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span id="pr-impact-heading">PR Impact Radar</span>
+            </span>
+            <button type="button" id="pr-impact-close" class="pr-impact-close" aria-label="Close">×</button>
+          </div>
+          <div id="pr-impact-body" class="pr-impact-body"></div>
+          <div class="pr-impact-foot">
+            <button type="button" id="pr-impact-refresh" class="btn ghost" title="Re-scan git diff">Refresh</button>
+            <div class="spacer"></div>
+            <button type="button" id="pr-impact-run" class="btn primary" hidden>Run impacted features</button>
+          </div>
+        </div>
+        <div id="missing-steps-banner" class="missing-steps-banner" hidden role="alert">
+          <span class="msb-icon" aria-hidden="true">🔨</span>
+          <span class="msb-text">
+            <b id="msb-count">0</b> missing step<span id="msb-plural">s</span>
+            <span class="msb-sep">·</span><span class="msb-hint">implement with your existing POM + step style</span>
+          </span>
+          <button type="button" id="msb-action" class="msb-action">
+            <span>Implement with Claude</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="5 12 19 12"/>
+              <polyline points="13 5 19 12 13 19"/>
+            </svg>
+          </button>
+          <button type="button" id="msb-dismiss" class="msb-dismiss" aria-label="Dismiss">×</button>
+        </div>
+        <div id="step-timeline" class="step-timeline" hidden aria-label="Live Gherkin step progress" role="region">
+          <div class="step-timeline-head">
+            <span class="step-timeline-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/>
+              </svg>
+            </span>
+            <span id="step-timeline-title" class="step-timeline-title">Idle</span>
+            <span id="step-timeline-meta" class="step-timeline-meta"></span>
+          </div>
+          <div id="step-timeline-list" class="step-timeline-list" aria-live="polite"></div>
         </div>
 
         <div class="log-wrap">
@@ -1231,6 +2267,104 @@
       <button id="report-drawer-close" type="button" class="close-drawer" aria-label="Close report drawer">×</button>
     </div>
     <iframe id="report-drawer-iframe" title="Report preview" src="about:blank"></iframe>
+  </div>
+
+  <!-- Test Recorder modal — driven by recorder.js below. Markup is static;
+       different state-bodies are toggled via .hidden as the state machine
+       advances (idle → recording → captured → converting → proposed). -->
+  <div id="rec-backdrop" class="rec-backdrop" aria-hidden="true"></div>
+  <div id="rec-modal" class="rec-modal" role="dialog" aria-modal="true" aria-labelledby="rec-title">
+    <div class="rec-head">
+      <h3 id="rec-title">Record New Scenario</h3>
+      <button type="button" class="close" id="rec-close" aria-label="Close recorder">×</button>
+    </div>
+    <div class="rec-body" id="rec-body">
+      <!-- STATE: idle/setup -->
+      <div id="rec-state-setup" data-state="setup">
+        <p>Drive the app yourself in a real browser; the recorder watches what you do and converts it into a Gherkin scenario. The new scenario is appended to an existing feature's <code>.feature</code> file.</p>
+        <div class="field">
+          <label for="rec-url">Start URL</label>
+          <input id="rec-url" type="url" placeholder="https://moontower.aiimone.com/Login" />
+        </div>
+        <div class="field">
+          <label for="rec-feature">Append to feature</label>
+          <select id="rec-feature"></select>
+        </div>
+        <div class="field">
+          <label for="rec-browser">Browser</label>
+          <select id="rec-browser">
+            <option value="chromium" selected>chromium</option>
+            <option value="firefox">firefox</option>
+            <option value="webkit">webkit</option>
+          </select>
+        </div>
+        <p style="color: var(--text-faint); font-size: 11.5px; margin-top: 12px;">
+          When you click <b>Start Recording</b>, a real browser window opens. Use it like you normally would.
+          Click <b>Stop Recording</b> back here (or close the codegen Inspector window) when you're done.
+        </p>
+      </div>
+
+      <!-- STATE: recording -->
+      <div id="rec-state-recording" data-state="recording" hidden>
+        <p><span class="rec-status-pill live">RECORDING</span></p>
+        <p>The codegen browser is open. Interact with the app naturally — every click, fill, and navigation is being captured.</p>
+        <p style="color: var(--text-faint); font-size: 11.5px;">When done, click <b>Stop Recording</b>. You can also close the Inspector window in the codegen browser to stop.</p>
+        <div style="font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-faint);">
+          URL: <span id="rec-running-url"></span><br>
+          Captured so far: <span id="rec-running-bytes">0</span> chars
+        </div>
+      </div>
+
+      <!-- STATE: captured -->
+      <div id="rec-state-captured" data-state="captured" hidden>
+        <p>Recording captured. Review the raw Playwright code, then click <b>Convert to Gherkin</b> to translate it.</p>
+        <pre id="rec-code" class="rec-code"></pre>
+      </div>
+
+      <!-- STATE: converting -->
+      <div id="rec-state-converting" data-state="converting" hidden>
+        <p><span class="rec-status-pill">Converting via Claude…</span></p>
+        <p style="color: var(--text-faint); font-size: 11.5px;">This usually takes 10-30s. The prompt includes your existing step definitions so the new scenario reuses your project's step library where possible.</p>
+      </div>
+
+      <!-- STATE: proposed -->
+      <div id="rec-state-proposed" data-state="proposed" hidden>
+        <p>Proposed Gherkin scenario. Review (and edit if needed), then click <b>Append</b> to add it to the feature file.</p>
+        <textarea id="rec-scenario" class="rec-scenario" spellcheck="false" style="width:100%;min-height:180px;"></textarea>
+        <div id="rec-new-steps" class="rec-new-steps" hidden></div>
+      </div>
+
+      <!-- STATE: scaffolding -->
+      <div id="rec-state-scaffolding" data-state="scaffolding" hidden>
+        <p><span class="rec-status-pill">Auto-implementing step definitions via Claude…</span></p>
+        <p style="color: var(--text-faint); font-size: 11.5px;">Reading your existing POM + step style, generating implementations for any new step phrases.</p>
+        <pre id="rec-scaffold-log" class="rec-code" style="max-height:180px;"></pre>
+      </div>
+
+      <!-- STATE: review -->
+      <div id="rec-state-review" data-state="review" hidden>
+        <p id="rec-review-summary"><b>Done.</b> Review what was added.</p>
+
+        <div class="rec-review-section">
+          <div class="rec-review-head">📜 Gherkin scenario appended to <code id="rec-review-feature-path">…</code></div>
+          <pre id="rec-review-scenario" class="rec-scenario"></pre>
+        </div>
+
+        <div id="rec-review-steps-wrap" class="rec-review-section" hidden>
+          <div class="rec-review-head">⚙️ Step definitions implemented in <code id="rec-review-steps-path">…</code></div>
+          <pre id="rec-review-steps" class="rec-code"></pre>
+        </div>
+
+        <div id="rec-review-nothing" class="rec-review-section" hidden style="color: var(--text-faint); font-style: italic; font-size: 12px;">
+          All step phrases already had implementations — no new code was generated.
+        </div>
+      </div>
+    </div>
+    <div class="rec-foot">
+      <div class="spacer"></div>
+      <button type="button" class="btn ghost" id="rec-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="rec-action"></button>
+    </div>
   </div>
 
   <div id="toast" class="toast">
@@ -1369,6 +2503,35 @@
     }
 
     function appendLog(text, stream) {
+      // Scan for the bddgen "Missing step definitions: N" line so we can
+      // surface the auto-implement banner the moment the user runs against
+      // a feature that has unbound scenarios. Cheap regex; runs per chunk.
+      if (text && /Missing step definitions:\s*\d+/.test(text)) {
+        const m = text.match(/Missing step definitions:\s*(\d+)/);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (n > 0) showMissingStepsBanner(n);
+        }
+      }
+      // Divert any [LIVE_STEP] reporter events into the step-timeline
+      // panel so they never reach the log viewer (would just look like
+      // noise to the user). All other text falls through to normal append.
+      if (text && text.includes('[LIVE_STEP]')) {
+        const lines = text.split('\n');
+        const passthrough = [];
+        for (const line of lines) {
+          if (line.startsWith('[LIVE_STEP]')) {
+            try {
+              const payload = JSON.parse(line.slice('[LIVE_STEP]'.length));
+              handleLiveStepEvent(payload);
+            } catch { /* malformed reporter line — drop silently */ }
+          } else if (line.length > 0) {
+            passthrough.push(line);
+          }
+        }
+        if (passthrough.length === 0) return;
+        text = passthrough.join('\n') + (text.endsWith('\n') ? '\n' : '');
+      }
       ensureLogStarted();
       const span = document.createElement('span');
       span.className = `log-entry ${stream === 'stderr' ? 'stderr' : ''}`;
@@ -1415,6 +2578,307 @@
       logEl.innerHTML = '<div><div class="empty-art" aria-hidden="true">⚡</div><div>Live test output will appear here</div></div>';
       updateLineCount();
       runLogSearch(); // re-evaluate against the now-empty log
+    }
+
+    /* ---- Missing-steps banner ---------------------------------------------
+       Shown the moment we detect "Missing step definitions: N" in the run
+       log. Click → POST /api/scaffold-missing-steps, stream the response
+       into the log (same pattern as Save & Generate). After completion,
+       hide the banner and refresh features so the dropdown's spec-count
+       reflects the new steps. */
+    function showMissingStepsBanner(count) {
+      const el = $('missing-steps-banner');
+      if (!el) return;
+      $('msb-count').textContent = String(count);
+      $('msb-plural').textContent = count === 1 ? '' : 's';
+      el.hidden = false;
+    }
+    function hideMissingStepsBanner() {
+      const el = $('missing-steps-banner');
+      if (el) el.hidden = true;
+    }
+    // Wipe the banner when a fresh run/generate kicks off — old missing-step
+    // counts shouldn't haunt the next run.
+    (function wireMissingStepsClear() {
+      const orig = window.clearDashboard;
+      // clearDashboard is defined below in the same script body; wait until
+      // it's available, then wrap it. DOMContentLoaded is the safe checkpoint.
+      document.addEventListener('DOMContentLoaded', () => {
+        if (typeof clearDashboard === 'function' && !clearDashboard._wrappedForMissingSteps) {
+          const realClear = clearDashboard;
+          window.clearDashboard = function (...args) {
+            hideMissingStepsBanner();
+            return realClear.apply(this, args);
+          };
+          window.clearDashboard._wrappedForMissingSteps = true;
+        }
+      });
+    })();
+
+    async function scaffoldMissingSteps() {
+      if (claudeCliAvailable === false) {
+        showToast('Claude Code CLI not detected — required for auto-implement', 'error');
+        return;
+      }
+      const btn = $('msb-action');
+      const origText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Working…';
+      try {
+        // Streaming response — same NDJSON shape as /api/run + /api/generate-tests.
+        const resp = await fetch('/api/scaffold-missing-steps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (resp.status === 501) {
+          showToast('Claude Code CLI not on PATH', 'error');
+          return;
+        }
+        if (resp.status === 409) {
+          showToast('Another Claude job is in progress', 'error');
+          return;
+        }
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          showToast(data.error || `HTTP ${resp.status}`, 'error');
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let exitCode = null;
+        let generatedCount = 0;
+        let stillMissing = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line) continue;
+            try {
+              const msg = JSON.parse(line);
+              if (msg.type === 'log') appendLog(msg.text, msg.stream);
+              else if (msg.type === 'done') {
+                exitCode = msg.exitCode;
+                generatedCount = msg.generatedCount || 0;
+                stillMissing = msg.stillMissingCount || 0;
+              }
+            } catch { appendLog(line + '\n'); }
+          }
+        }
+        if (exitCode === 0 && generatedCount > 0) {
+          showToast(`Implemented ${generatedCount} step${generatedCount === 1 ? '' : 's'}${stillMissing > 0 ? ` — ${stillMissing} still missing` : ''}`);
+          if (stillMissing === 0) hideMissingStepsBanner();
+          else { $('msb-count').textContent = String(stillMissing); }
+          // Refresh the feature dropdown so the spec count reflects the new steps.
+          loadFeatures();
+        } else if (exitCode === 0 && generatedCount === 0) {
+          showToast('No missing steps found', 'error');
+          hideMissingStepsBanner();
+        } else {
+          showToast(`Auto-implement failed (exit ${exitCode})`, 'error');
+        }
+      } catch (err) {
+        showToast('Auto-implement failed: ' + (err?.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      $('msb-action')?.addEventListener('click', scaffoldMissingSteps);
+      $('msb-dismiss')?.addEventListener('click', hideMissingStepsBanner);
+    });
+
+    /* ---- Liquid Gherkin Step Timeline state machine -------------------------
+       Inbound events come from ui/live-step-reporter.js as [LIVE_STEP] JSON
+       lines on stdout, diverted by appendLog. We track ONE active test at a
+       time — the most-recently-started — and animate its steps. When that
+       test ends, the panel keeps its terminal state visible until the next
+       testStart replaces it. */
+    const stepTimeline = { activeTestId: null, title: '', steps: new Map(), startedAt: 0, runningTicker: null };
+
+    function handleLiveStepEvent(ev) {
+      const panel = $('step-timeline');
+      if (!panel) return;
+      if (ev.ev === 'testStart') {
+        stepTimeline.activeTestId = ev.testId;
+        stepTimeline.title = ev.title || '';
+        stepTimeline.steps = new Map();
+        stepTimeline.startedAt = Date.now();
+        panel.hidden = false;
+        const titleEl = $('step-timeline-title');
+        if (titleEl) titleEl.textContent = ev.title || '(scenario starting…)';
+        const metaEl = $('step-timeline-meta');
+        if (metaEl) metaEl.textContent = '0 steps · running';
+        $('step-timeline-list').innerHTML = '';
+        startStepTimelineTicker();
+        return;
+      }
+      if (ev.testId !== stepTimeline.activeTestId) return; // ignore events from other workers
+      if (ev.ev === 'stepStart') {
+        // Mark every previously-running step as passed (Playwright doesn't
+        // emit stepEnd before the next stepStart in rare edge cases; this
+        // makes the UI consistent without waiting).
+        for (const s of stepTimeline.steps.values()) {
+          if (s.status === 'running') s.status = 'passed';
+        }
+        stepTimeline.steps.set(ev.stepId, { id: ev.stepId, title: ev.title, status: 'running', startedAt: ev.at });
+        renderStepTimeline();
+        return;
+      }
+      if (ev.ev === 'stepEnd') {
+        const s = stepTimeline.steps.get(ev.stepId);
+        if (s) {
+          s.status = ev.error ? 'failed' : 'passed';
+          s.durationMs = ev.durationMs;
+          s.error = ev.error || null;
+        }
+        renderStepTimeline();
+        return;
+      }
+      if (ev.ev === 'testEnd') {
+        // Lock the panel into the final state.
+        const metaEl = $('step-timeline-meta');
+        if (metaEl) {
+          const tag = ev.status === 'passed' ? '✅ passed' : ev.status === 'failed' ? '❌ failed' : ev.status;
+          metaEl.textContent = `${stepTimeline.steps.size} step${stepTimeline.steps.size === 1 ? '' : 's'} · ${tag} in ${fmtMsHuman(ev.durationMs || 0)}`;
+        }
+        stopStepTimelineTicker();
+        renderStepTimeline();
+        // Don't hide — leave the result up so the user can read it.
+        // The next testStart will replace the panel content.
+      }
+    }
+
+    function renderStepTimeline() {
+      const list = $('step-timeline-list');
+      if (!list) return;
+      list.innerHTML = '';
+      let pass = 0, fail = 0;
+      const SLOW_THRESHOLD_MS = 5000;
+      for (const s of stepTimeline.steps.values()) {
+        if (s.status === 'passed') pass++;
+        else if (s.status === 'failed') fail++;
+        const row = document.createElement('div');
+        row.className = `step-row ${s.status}`;
+        if (s.durationMs && s.durationMs > SLOW_THRESHOLD_MS) row.classList.add('slow');
+
+        // Pull the Gherkin keyword off the title so the row reads
+        // "GIVEN | <beam with step text> | 1.66s".
+        const m = s.title.match(/^(Given|When|Then|And|But)\s+(.+)$/i);
+
+        // Column 1: keyword
+        const kw = document.createElement('span');
+        kw.className = 'step-keyword';
+        kw.textContent = m ? m[1].toUpperCase() : '·';
+        row.appendChild(kw);
+
+        // Column 2: filled bar with text overlay
+        const beam = document.createElement('div');
+        beam.className = 'step-beam';
+        const fill = document.createElement('div');
+        fill.className = 'step-beam-fill';
+        // Terminal states lock the fill to 100% width; running fills based
+        // on elapsed-vs-heuristic (5s default); pending stays empty.
+        if (s.status === 'passed' || s.status === 'failed' || s.status === 'skipped') {
+          fill.style.right = '0%';
+        } else if (s.status === 'running') {
+          const elapsed = Date.now() - (s.startedAt || Date.now());
+          const pct = Math.min(95, (elapsed / 5000) * 100);
+          fill.style.right = `${100 - pct}%`;
+        } else {
+          fill.style.right = '100%';
+        }
+        beam.appendChild(fill);
+        const beamText = document.createElement('div');
+        beamText.className = 'step-beam-text';
+        beamText.textContent = m ? m[2] : s.title;
+        beamText.title = m ? m[2] : s.title;
+        beam.appendChild(beamText);
+        row.appendChild(beam);
+
+        // Column 3: duration
+        const dur = document.createElement('span');
+        dur.className = 'step-duration';
+        if (s.status === 'running') {
+          dur.textContent = `${((Date.now() - (s.startedAt || Date.now())) / 1000).toFixed(1)}s`;
+        } else if (s.durationMs != null) {
+          dur.textContent = `${(s.durationMs / 1000).toFixed(2)}s`;
+        } else {
+          dur.textContent = '—';
+        }
+        row.appendChild(dur);
+
+        // Inline error block for failed steps — under the row, spans
+        // beam + duration cols.
+        if (s.status === 'failed' && s.error) {
+          const errBox = document.createElement('div');
+          errBox.className = 'step-error';
+          errBox.textContent = s.error;
+          row.appendChild(errBox);
+        }
+
+        list.appendChild(row);
+      }
+
+      // Header meta — verdict chip + counts + elapsed.
+      const metaEl = $('step-timeline-meta');
+      if (metaEl) {
+        const total = stepTimeline.steps.size;
+        const running = stepTimeline.runningTicker;
+        const elapsed = Date.now() - stepTimeline.startedAt;
+        let verdict = 'running';
+        if (!running) verdict = fail > 0 ? 'failed' : 'passed';
+        const verdictText = verdict === 'passed' ? '✓ passed'
+                          : verdict === 'failed' ? '✕ failed'
+                          : '● running';
+        const countsText = `${total} step${total === 1 ? '' : 's'}`;
+        const durText = fmtMsHuman(elapsed);
+        // Compose with a chip + two muted lines on the right.
+        metaEl.innerHTML = '';
+        const counts = document.createElement('span');
+        counts.textContent = countsText;
+        metaEl.appendChild(counts);
+        const chip = document.createElement('span');
+        chip.className = `verdict-chip ${verdict}`;
+        chip.textContent = verdictText;
+        metaEl.appendChild(chip);
+        const durEl = document.createElement('span');
+        durEl.textContent = durText;
+        metaEl.appendChild(durEl);
+      }
+    }
+
+    function startStepTimelineTicker() {
+      stopStepTimelineTicker();
+      // 100ms tick is smooth enough for the beam fill animation without
+      // shredding the CPU on long-running steps.
+      stepTimeline.runningTicker = setInterval(renderStepTimeline, 100);
+    }
+    function stopStepTimelineTicker() {
+      if (stepTimeline.runningTicker) {
+        clearInterval(stepTimeline.runningTicker);
+        stepTimeline.runningTicker = null;
+      }
+    }
+
+    // Wipe the step timeline when a new run/generate starts. Called inside
+    // clearDashboard, so any caller that resets the dashboard automatically
+    // resets the timeline too.
+    function resetStepTimeline() {
+      stopStepTimelineTicker();
+      stepTimeline.activeTestId = null;
+      stepTimeline.title = '';
+      stepTimeline.steps = new Map();
+      const panel = $('step-timeline');
+      if (panel) panel.hidden = true;
+      const list = $('step-timeline-list');
+      if (list) list.innerHTML = '';
     }
 
     /* ---- Inline log search (Ctrl+F within the log) -------------------------
@@ -1535,60 +2999,138 @@
 
     // Coverage panel — render the analysis for whichever feature is selected.
     // Hidden when "all features" is picked (panel only makes sense per-feature).
+    // Cached copy of the last coverage response so click handlers on the
+    // per-AC "Draft" buttons don't have to re-fetch to know the AC text.
+    let lastCoverageData = null;
+    let lastCoverageFeature = null;
+
     async function refreshCoverage() {
       const panel = $('coverage-panel');
-      const summaryBtn = $('coverage-summary');
-      const summaryText = $('coverage-summary-text');
       const details = $('coverage-details');
+      const summaryText = $('coverage-summary-text');
+      const metricNum = $('coverage-metric-num');
+      const metricTotal = $('coverage-metric-total');
+      const progressFill = $('coverage-progress-fill');
+      const gapsCta = $('coverage-gaps-cta');
+      const gapsCtaText = $('coverage-gaps-cta-text');
       const feature = $('feature').value;
-      if (!feature) { panel.hidden = true; return; }
+      if (!feature) { panel.hidden = true; lastCoverageData = null; return; }
       try {
         const resp = await fetch(`/api/coverage-gaps?feature=${encodeURIComponent(feature)}`);
         if (!resp.ok) { panel.hidden = true; return; }
         const data = await resp.json();
+        lastCoverageData = data;
+        lastCoverageFeature = feature;
         panel.hidden = false;
         const sum = data.summary || {};
-        // Compose summary text. Three buckets:
-        // - "no ACs detected" → empty / unmappable story
-        // - "1/3 ACs covered" → partial (uncovered ACs present)
-        // - "3/3 ACs covered" → full
+
+        // Panel state class → drives border tint
+        panel.classList.remove('has-gaps', 'all-green');
+        if (sum.totalAcs > 0 && sum.uncoveredAcs === 0) panel.classList.add('all-green');
+        else if (sum.uncoveredAcs > 0) panel.classList.add('has-gaps');
+
+        // Metric block: big "1/3" style numeric with color-coded numerator.
         let cls = 'empty';
-        let text = '';
+        if (sum.totalAcs === 0) cls = 'empty';
+        else if (sum.uncoveredAcs > 0) cls = 'partial';
+        else cls = 'full';
+        metricNum.textContent = sum.totalAcs === 0 ? '–' : String(sum.coveredAcs);
+        metricNum.className = `num ${cls}`;
+        metricTotal.textContent = sum.totalAcs === 0 ? '/–' : `/${sum.totalAcs}`;
+
+        // Summary line: human-readable, colored status word.
+        summaryText.innerHTML = '';
         if (sum.totalAcs === 0) {
-          text = `No ACs parsed from story · ${sum.totalScenarios} scenarios`;
-          cls = 'empty';
+          const span = document.createElement('span');
+          span.textContent = `No ACs parsed · ${sum.totalScenarios} scenarios`;
+          summaryText.appendChild(span);
         } else if (sum.uncoveredAcs > 0) {
-          text = `Coverage: ${sum.coveredAcs}/${sum.totalAcs} ACs covered · ${sum.uncoveredAcs} gap${sum.uncoveredAcs === 1 ? '' : 's'}`;
-          cls = 'partial';
+          const status = document.createElement('span');
+          status.className = 'status-word partial';
+          status.textContent = `${sum.uncoveredAcs} gap${sum.uncoveredAcs === 1 ? '' : 's'}`;
+          summaryText.appendChild(status);
+          summaryText.appendChild(document.createTextNode(
+            sum.orphanCount > 0
+              ? ` · ${sum.orphanCount} extra scenario${sum.orphanCount === 1 ? '' : 's'}`
+              : ''
+          ));
         } else {
-          text = `Coverage: ${sum.coveredAcs}/${sum.totalAcs} ACs covered · all green`;
-          cls = 'full';
+          const status = document.createElement('span');
+          status.className = 'status-word full';
+          status.textContent = 'all green';
+          summaryText.appendChild(status);
+          summaryText.appendChild(document.createTextNode(
+            sum.orphanCount > 0
+              ? ` · ${sum.orphanCount} extra scenario${sum.orphanCount === 1 ? '' : 's'}`
+              : ''
+          ));
         }
-        if (sum.orphanCount > 0) text += ` · ${sum.orphanCount} extra scenario${sum.orphanCount === 1 ? '' : 's'}`;
-        summaryText.textContent = text;
-        summaryText.className = `coverage-summary-text ${cls}`;
-        // Build the details body (per-AC rows + orphan list)
+
+        // Progress bar
+        const rate = sum.coverageRate != null ? sum.coverageRate : (sum.totalAcs > 0 ? sum.coveredAcs / sum.totalAcs : 0);
+        progressFill.style.right = `${(1 - rate) * 100}%`;
+        progressFill.className = `coverage-progress-fill ${cls}`;
+
+        // Close-gaps CTA in header (only when uncovered)
+        if (sum.uncoveredAcs > 0 && claudeCliAvailable !== false) {
+          gapsCta.hidden = false;
+          gapsCtaText.textContent = `Close ${sum.uncoveredAcs} gap${sum.uncoveredAcs === 1 ? '' : 's'}`;
+        } else {
+          gapsCta.hidden = true;
+        }
+
+        // Details body — per-AC rows + orphan list.
         details.innerHTML = '';
-        const ul = document.createElement('ul');
+        const list = document.createElement('div');
+        list.className = 'ac-list';
         for (const ac of data.coverage || []) {
-          const li = document.createElement('li');
-          li.className = ac.covered ? 'covered' : 'uncovered';
-          const id = document.createElement('b');
-          id.textContent = `AC${ac.id}: `;
-          li.appendChild(id);
+          const row = document.createElement('div');
+          row.className = `ac-row ${ac.covered ? 'covered' : 'uncovered'}`;
+
+          const icon = document.createElement('span');
+          icon.className = 'ac-icon';
+          icon.innerHTML = ac.covered
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+          row.appendChild(icon);
+
+          const id = document.createElement('span');
+          id.className = 'ac-id';
+          id.textContent = `AC${ac.id}`;
+          row.appendChild(id);
+
           const txt = document.createElement('span');
           txt.className = 'ac-text';
           txt.textContent = ac.text;
-          li.appendChild(txt);
-          if (ac.scenarios && ac.scenarios.length > 0) {
-            const cnt = document.createElement('span');
-            cnt.className = 'scenario-count';
-            cnt.textContent = `(${ac.scenarios.length} scenario${ac.scenarios.length === 1 ? '' : 's'})`;
-            cnt.title = ac.scenarios.join('\n');
-            li.appendChild(cnt);
+          txt.title = ac.text;
+          row.appendChild(txt);
+
+          if (ac.covered) {
+            const meta = document.createElement('span');
+            meta.className = 'ac-meta';
+            meta.textContent = `${ac.scenarios?.length || 0} scenario${(ac.scenarios?.length || 0) === 1 ? '' : 's'}`;
+            meta.title = (ac.scenarios || []).join('\n');
+            row.appendChild(meta);
+          } else if (claudeCliAvailable !== false) {
+            const draft = document.createElement('button');
+            draft.type = 'button';
+            draft.className = 'ac-draft-btn';
+            draft.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg> <span>Draft scenario</span>';
+            draft.title = `Ask Claude to draft a Gherkin scenario for AC${ac.id}, reusing your existing step library.`;
+            draft.addEventListener('click', (e) => {
+              e.stopPropagation();
+              draftScenarioForAc(ac.id, ac.text);
+            });
+            row.appendChild(draft);
+          } else {
+            const meta = document.createElement('span');
+            meta.className = 'ac-meta';
+            meta.textContent = 'uncovered';
+            row.appendChild(meta);
           }
-          ul.appendChild(li);
+          list.appendChild(row);
         }
+
         if ((data.coverage || []).length === 0) {
           const empty = document.createElement('div');
           empty.style.fontStyle = 'italic';
@@ -1596,21 +3138,123 @@
           empty.textContent = 'No ACs detected in the user-story file. Tag scenarios "ACn-…" to enable coverage tracking.';
           details.appendChild(empty);
         } else {
-          details.appendChild(ul);
+          details.appendChild(list);
         }
+
         if ((data.orphanScenarios || []).length > 0) {
           const h = document.createElement('div');
           h.className = 'orphan-header';
           h.textContent = `Extra scenarios beyond ACs (${data.orphanScenarios.length})`;
           details.appendChild(h);
-          const list = document.createElement('div');
-          list.className = 'orphan-list';
-          list.textContent = data.orphanScenarios.join(' · ');
-          details.appendChild(list);
+          const orphanList = document.createElement('div');
+          orphanList.className = 'orphan-list';
+          orphanList.textContent = data.orphanScenarios.join(' · ');
+          details.appendChild(orphanList);
         }
       } catch {
         panel.hidden = true;
       }
+    }
+
+    /* ---- Coverage Gap Closer -----------------------------------------------
+       Per-AC "Draft scenario" click → POST /api/coverage/draft-scenario →
+       show the proposed Gherkin + let the user Accept → chain into
+       /api/recorder/append + /api/scaffold-missing-steps (both existing).
+
+       Shares the recorder's modal UI for the review-and-accept step, since
+       the shape is identical: proposed Gherkin → append → auto-implement. */
+    async function draftScenarioForAc(acId, acText) {
+      if (claudeCliAvailable === false) {
+        showToast('Claude Code CLI not detected', 'error');
+        return;
+      }
+      const feature = lastCoverageFeature || $('feature').value;
+      if (!feature) { showToast('No feature selected', 'error'); return; }
+
+      // Open the recorder modal in the "converting" state, then transition
+      // to "proposed" once the endpoint returns.
+      const backdrop = $('rec-backdrop');
+      const modal = $('rec-modal');
+      const titleEl = $('rec-title');
+      const actionBtn = $('rec-action');
+
+      titleEl.textContent = `Draft scenario for AC${acId}`;
+
+      const allStates = ['setup', 'recording', 'captured', 'converting', 'proposed', 'scaffolding', 'review'];
+      const showState = (next) => {
+        for (const s of allStates) {
+          const p = document.getElementById(`rec-state-${s}`);
+          if (p) p.hidden = (s !== next);
+        }
+      };
+      showState('converting');
+      actionBtn.textContent = 'Working…';
+      actionBtn.disabled = true;
+      backdrop.classList.add('show');
+      modal.classList.add('show');
+
+      try {
+        const resp = await fetch('/api/coverage/draft-scenario', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feature, acId, acText }),
+        });
+        if (resp.status === 501) { showToast('Claude Code CLI not on PATH', 'error'); closeCoverageModal(); return; }
+        if (resp.status === 409) { showToast('Another Claude job is in progress', 'error'); closeCoverageModal(); return; }
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          showToast(data.error || `HTTP ${resp.status}`, 'error');
+          closeCoverageModal();
+          return;
+        }
+        const data = await resp.json();
+
+        // Populate the "proposed" state with the drafted scenario.
+        $('rec-scenario').value = data.scenario || '';
+        const ns = $('rec-new-steps');
+        if ((data.newSteps || []).length > 0) {
+          const items = data.newSteps.map((s) => `<li><code>${escapeHtml(s.phrase || '')}</code><br><span style="font-size:11px;color:var(--text-faint);">${escapeHtml(s.rationale || '')}</span></li>`).join('');
+          ns.innerHTML = `<b>${data.newSteps.length} new step phrase${data.newSteps.length === 1 ? '' : 's'}</b> — these will be auto-implemented after you Accept:<ul>${items}</ul>`;
+          ns.hidden = false;
+        } else {
+          ns.hidden = true;
+          ns.innerHTML = '';
+        }
+        showState('proposed');
+        actionBtn.textContent = '✓ Append + implement';
+        actionBtn.disabled = false;
+
+        // Route the modal's action button through the standard append flow.
+        // (setupRecorder() already wired 'proposed' → appendScenario, which
+        // chains into scaffold. Setting the recorder's activeFeature is
+        // enough to reuse it.)
+        window.__recorderOverrideFeature = feature;
+      } catch (err) {
+        showToast('Draft failed: ' + (err?.message || err), 'error');
+        closeCoverageModal();
+      }
+    }
+
+    function closeCoverageModal() {
+      $('rec-backdrop').classList.remove('show');
+      $('rec-modal').classList.remove('show');
+      $('rec-title').textContent = 'Record New Scenario';
+      window.__recorderOverrideFeature = null;
+    }
+
+    // "Close N gaps" — iterate the uncovered ACs sequentially so we don't
+    // hit the activeGenerate 409 guard. Each one goes through the same
+    // preview → accept flow the per-row buttons use.
+    async function draftAllCoverageGaps() {
+      if (!lastCoverageData) return;
+      const uncovered = (lastCoverageData.coverage || []).filter((ac) => !ac.covered);
+      if (uncovered.length === 0) { showToast('No gaps to close'); return; }
+      // For MVP: just kick off the FIRST one — the user reviews + accepts,
+      // then the coverage panel auto-refreshes (via appendScenario's
+      // loadFeatures() → refreshCoverage()). If more gaps remain, the CTA
+      // stays visible and the user can click again.
+      const first = uncovered[0];
+      draftScenarioForAc(first.id, first.text);
     }
 
     // Wire the summary button to toggle the details. Single source of truth
@@ -1620,13 +3264,235 @@
       const btn = document.getElementById('coverage-summary');
       const details = document.getElementById('coverage-details');
       if (btn && details) {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+          // Don't toggle the panel when the user clicks the inner Close-gaps
+          // CTA (which lives inside the summary button).
+          if (e.target && e.target.closest('.coverage-gaps-cta')) return;
           const open = btn.getAttribute('aria-expanded') === 'true';
           btn.setAttribute('aria-expanded', open ? 'false' : 'true');
           details.hidden = open;
         });
       }
+      const cta = document.getElementById('coverage-gaps-cta');
+      if (cta) {
+        cta.addEventListener('click', (e) => {
+          e.stopPropagation();
+          draftAllCoverageGaps();
+        });
+      }
     });
+
+    /* ---- Custom combobox upgrade ------------------------------------------
+       Replaces a <select>'s native menu with a styled listbox while keeping
+       the <select> element underneath as the source of truth (form value,
+       change-event, accessibility fallback). All existing JS that reads or
+       writes select.value continues to work; the combobox just intercepts
+       the visual UX.
+
+       Each upgraded select gets:
+       - A trigger button showing the current label + chevron
+       - A floating .cd-menu listbox rebuilt on every open
+       - Keyboard nav: Space/Enter/ArrowDown open; ArrowUp/Down navigate;
+         Enter selects; Esc closes; Home/End jump to first/last;
+         type-ahead jumps to options starting with the typed letters.
+       - Click-outside-to-close
+       - MutationObserver re-renders the menu if the <select>'s options are
+         rebuilt programmatically (loadFeatures does this on every refresh).
+       - aria-haspopup/expanded/controls + role=listbox/option semantics. */
+    function upgradeSelect(selectEl) {
+      if (!selectEl || selectEl._cdUpgraded) return;
+      selectEl._cdUpgraded = true;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'cd-wrap';
+      selectEl.parentNode.insertBefore(wrap, selectEl);
+      wrap.appendChild(selectEl);
+      selectEl.classList.add('cd-native');
+      selectEl.setAttribute('aria-hidden', 'true');
+      selectEl.setAttribute('tabindex', '-1');
+
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'cd-trigger';
+      trigger.id = `${selectEl.id}-cd-trigger`;
+      trigger.setAttribute('role', 'combobox');
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+      // Re-point the field's <label for> at the trigger so clicking the
+      // label focuses the visible control instead of the hidden select.
+      const labelEl = document.querySelector(`label[for="${selectEl.id}"]`);
+      if (labelEl) labelEl.setAttribute('for', trigger.id);
+
+      const triggerText = document.createElement('span');
+      triggerText.className = 'cd-trigger-text';
+      trigger.appendChild(triggerText);
+
+      const chev = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      chev.setAttribute('class', 'cd-trigger-chevron');
+      chev.setAttribute('viewBox', '0 0 24 24');
+      chev.setAttribute('fill', 'none');
+      chev.setAttribute('stroke', 'currentColor');
+      chev.setAttribute('stroke-width', '2');
+      chev.setAttribute('stroke-linecap', 'round');
+      chev.setAttribute('stroke-linejoin', 'round');
+      chev.setAttribute('aria-hidden', 'true');
+      chev.innerHTML = '<polyline points="6 9 12 15 18 9"/>';
+      trigger.appendChild(chev);
+
+      const menu = document.createElement('div');
+      menu.className = 'cd-menu';
+      menu.id = `${selectEl.id}-cd-menu`;
+      menu.setAttribute('role', 'listbox');
+      trigger.setAttribute('aria-controls', menu.id);
+      wrap.appendChild(trigger);
+      wrap.appendChild(menu);
+
+      let highlighted = -1;
+      let typeBuf = '';
+      let typeTimer = null;
+
+      // Split "user-signup (1 .feature)" into a label + meta chip for the
+      // menu rendering; falls back to plain text when there's no parenthetical.
+      function splitOptionText(text) {
+        const m = String(text || '').match(/^(.+?)\s*(\(.+?\))\s*$/);
+        return m ? { label: m[1].trim(), meta: m[2].trim() } : { label: String(text || ''), meta: '' };
+      }
+
+      function rebuildMenu() {
+        menu.innerHTML = '';
+        Array.from(selectEl.options).forEach((opt, idx) => {
+          const item = document.createElement('div');
+          item.className = 'cd-option';
+          item.setAttribute('role', 'option');
+          item.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
+          item.dataset.idx = String(idx);
+          item.dataset.label = (opt.textContent || '').toLowerCase();
+          if (opt.selected) item.classList.add('selected');
+          const { label, meta } = splitOptionText(opt.textContent);
+          const lbl = document.createElement('span');
+          lbl.className = 'cd-option-label';
+          lbl.textContent = label || '(empty)';
+          item.appendChild(lbl);
+          if (meta) {
+            const m = document.createElement('span');
+            m.className = 'cd-option-meta';
+            m.textContent = meta;
+            item.appendChild(m);
+          }
+          item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectOptionByIndex(idx);
+            closeMenu();
+            trigger.focus();
+          });
+          item.addEventListener('mouseenter', () => setHighlighted(idx, false));
+          menu.appendChild(item);
+        });
+      }
+
+      function updateTriggerText() {
+        const opt = selectEl.options[selectEl.selectedIndex];
+        triggerText.innerHTML = '';
+        if (!opt) {
+          triggerText.textContent = '(none)';
+          return;
+        }
+        const { label, meta } = splitOptionText(opt.textContent);
+        triggerText.appendChild(document.createTextNode(label || opt.value || '(none)'));
+        if (meta) {
+          const m = document.createElement('span');
+          m.className = 'cd-trigger-meta';
+          m.textContent = meta;
+          triggerText.appendChild(m);
+        }
+      }
+
+      function selectOptionByIndex(idx) {
+        if (idx < 0 || idx >= selectEl.options.length) return;
+        if (selectEl.selectedIndex === idx) return;
+        selectEl.selectedIndex = idx;
+        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+        updateTriggerText();
+        rebuildMenu();
+      }
+
+      function setHighlighted(idx, scroll = true) {
+        if (highlighted >= 0 && menu.children[highlighted]) {
+          menu.children[highlighted].classList.remove('highlighted');
+        }
+        highlighted = idx;
+        if (idx >= 0 && menu.children[idx]) {
+          menu.children[idx].classList.add('highlighted');
+          if (scroll) menu.children[idx].scrollIntoView({ block: 'nearest' });
+        }
+      }
+
+      function openMenu() {
+        rebuildMenu();
+        menu.classList.add('open');
+        trigger.classList.add('open');
+        trigger.setAttribute('aria-expanded', 'true');
+        setHighlighted(selectEl.selectedIndex >= 0 ? selectEl.selectedIndex : 0);
+        // Defer attachment so the click that opened doesn't immediately close.
+        setTimeout(() => document.addEventListener('mousedown', onOutsideClick), 0);
+      }
+      function closeMenu() {
+        menu.classList.remove('open');
+        trigger.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+        highlighted = -1;
+        document.removeEventListener('mousedown', onOutsideClick);
+      }
+      function onOutsideClick(e) {
+        if (!wrap.contains(e.target)) closeMenu();
+      }
+
+      trigger.addEventListener('click', () => {
+        if (menu.classList.contains('open')) closeMenu();
+        else openMenu();
+      });
+
+      trigger.addEventListener('keydown', (e) => {
+        const open = menu.classList.contains('open');
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (!open) {
+            openMenu();
+          } else if (e.key === 'ArrowDown') {
+            setHighlighted((highlighted + 1) % selectEl.options.length);
+          } else if (e.key === 'ArrowUp') {
+            setHighlighted((highlighted - 1 + selectEl.options.length) % selectEl.options.length);
+          } else if (e.key === 'Enter' || e.key === ' ') {
+            if (highlighted >= 0) selectOptionByIndex(highlighted);
+            closeMenu();
+          }
+          return;
+        }
+        if (e.key === 'Escape' && open) { e.preventDefault(); closeMenu(); return; }
+        if (e.key === 'Home' && open) { e.preventDefault(); setHighlighted(0); return; }
+        if (e.key === 'End'  && open) { e.preventDefault(); setHighlighted(selectEl.options.length - 1); return; }
+        // Type-ahead: jump to first option starting with the buffered chars.
+        if (e.key.length === 1 && /\S/.test(e.key)) {
+          if (!open) openMenu();
+          if (typeTimer) clearTimeout(typeTimer);
+          typeBuf += e.key.toLowerCase();
+          typeTimer = setTimeout(() => { typeBuf = ''; }, 800);
+          const items = Array.from(menu.children);
+          const startFrom = highlighted >= 0 ? highlighted + 1 : 0;
+          const ordered = [...items.slice(startFrom), ...items.slice(0, startFrom)];
+          const match = ordered.find((it) => (it.dataset.label || '').startsWith(typeBuf));
+          if (match) setHighlighted(Number(match.dataset.idx));
+        }
+      });
+
+      // Repaint when the source <select>'s options change (loadFeatures
+      // rebuilds them after each generation).
+      const obs = new MutationObserver(() => { updateTriggerText(); if (menu.classList.contains('open')) rebuildMenu(); });
+      obs.observe(selectEl, { childList: true, attributes: true, subtree: true, attributeFilter: ['value'] });
+
+      updateTriggerText();
+      rebuildMenu();
+    }
 
     async function loadFeatures() {
       const select = $('feature');
@@ -2075,6 +3941,150 @@ INSTRUCTIONS FOR CLAUDE:
     // Send one failure to /api/heal — same streaming protocol as generate,
     // same log viewer rendering. After exit 0, refresh triage so a healed
     // failure either disappears (passed on retry) or shows the new state.
+    /* ---- AI Explain Failure -----------------------------------------------
+       Click toggles the inline .explain-block on the triage card. While the
+       request is in flight we show a spinner; on response we render a
+       severity chip + 2-sentence explanation + user impact + suggested next
+       step + a "Copy for Slack" button. Different surface than Heal because
+       this is purely informational — no files change. */
+    async function explainFailure(cardEl, btnEl, ctx) {
+      // Toggle behavior: clicking Explain again on a card that already has
+      // an open block dismisses it AND aborts the in-flight fetch — without
+      // the abort, the server-side claude job runs to completion and holds
+      // `activeGenerate` for up to 45s, blocking other Heal/Explain clicks.
+      const existing = cardEl.querySelector('.explain-block');
+      if (existing) {
+        if (cardEl.__explainAbort) { cardEl.__explainAbort.abort(); cardEl.__explainAbort = null; }
+        existing.remove();
+        btnEl.focus();
+        return;
+      }
+      if (claudeCliAvailable === false) {
+        showToast('Claude Code CLI not detected — required for Explain', 'error');
+        return;
+      }
+
+      const block = document.createElement('div');
+      block.className = 'explain-block loading';
+      // ARIA: announce the block to screen readers so SR users hear the
+      // wait + the result instead of staring at silence for 5–45s.
+      block.setAttribute('role', 'status');
+      block.setAttribute('aria-live', 'polite');
+      block.setAttribute('aria-busy', 'true');
+      block.textContent = 'Asking Claude for a plain-English explanation…';
+      cardEl.appendChild(block);
+      btnEl.disabled = true;
+
+      // AbortController so a re-click / dismiss can cancel the fetch.
+      const ac = new AbortController();
+      cardEl.__explainAbort = ac;
+
+      try {
+        const resp = await fetch('/api/explain-failure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ctx),
+          signal: ac.signal,
+        });
+        // Don't mutate the block if the user dismissed during the fetch.
+        if (!cardEl.contains(block)) return;
+        const data = await resp.json().catch(() => ({}));
+        if (!cardEl.contains(block)) return;
+        if (!resp.ok) {
+          block.classList.remove('loading');
+          block.classList.add('error');
+          block.setAttribute('role', 'alert');
+          block.setAttribute('aria-busy', 'false');
+          block.textContent = data.error || `HTTP ${resp.status}`;
+          return;
+        }
+        block.classList.remove('loading');
+        block.setAttribute('aria-busy', 'false');
+        block.innerHTML = '';
+
+        // Severity chip first — gives the PM the headline before reading.
+        const sev = document.createElement('span');
+        sev.className = `sev-chip ${data.severity || 'major'}`;
+        sev.textContent = (data.severity || 'major').toUpperCase();
+        block.appendChild(sev);
+
+        // Top-line explanation
+        const exp = document.createElement('div');
+        exp.className = 'explanation-text';
+        exp.textContent = data.explanation || '(no explanation returned)';
+        block.appendChild(exp);
+
+        if (data.userImpact) {
+          const impact = document.createElement('div');
+          impact.className = 'meta-line';
+          const label = document.createElement('b');
+          label.textContent = 'User impact: ';
+          impact.appendChild(label);
+          impact.appendChild(document.createTextNode(data.userImpact));
+          block.appendChild(impact);
+        }
+        if (data.suggestedNextStep) {
+          const next = document.createElement('div');
+          next.className = 'meta-line';
+          const label = document.createElement('b');
+          label.textContent = 'Next step: ';
+          next.appendChild(label);
+          next.appendChild(document.createTextNode(data.suggestedNextStep));
+          block.appendChild(next);
+        }
+
+        // Copy-for-Slack and dismiss
+        const row = document.createElement('div');
+        row.className = 'copy-row';
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'copy-btn';
+        copy.innerHTML = '<span aria-hidden="true">📋</span> Copy for Slack';
+        copy.addEventListener('click', async () => {
+          const md = [
+            `*${(data.severity || 'major').toUpperCase()}* — ${data.explanation || ''}`,
+            data.userImpact ? `*User impact:* ${data.userImpact}` : '',
+            data.suggestedNextStep ? `*Next step:* ${data.suggestedNextStep}` : '',
+            ctx.fullTitle ? `_Failing scenario: ${ctx.fullTitle}_` : '',
+          ].filter(Boolean).join('\n');
+          try {
+            await navigator.clipboard.writeText(md);
+            showToast('Copied to clipboard');
+          } catch { showToast('Could not access clipboard', 'error'); }
+        });
+        row.appendChild(copy);
+        const dismiss = document.createElement('button');
+        dismiss.type = 'button';
+        dismiss.className = 'dismiss-btn';
+        // Visible glyph is hidden from AT; the button's real name comes
+        // from aria-label so screen readers don't announce
+        // "multiplication-sign button" or just "× button".
+        dismiss.innerHTML = '<span aria-hidden="true">×</span>';
+        dismiss.setAttribute('aria-label', 'Dismiss explanation');
+        dismiss.title = 'Dismiss explanation';
+        dismiss.addEventListener('click', () => {
+          // Return focus to the Explain button BEFORE removing the block.
+          // Otherwise focus lands on <body> and the keyboard user's tab
+          // order resets to the top of the page.
+          btnEl.focus();
+          block.remove();
+        });
+        row.appendChild(dismiss);
+        block.appendChild(row);
+      } catch (err) {
+        if (err?.name === 'AbortError') return; // user dismissed; not an error
+        if (!cardEl.contains(block)) return;
+        block.classList.remove('loading');
+        block.classList.add('error');
+        block.setAttribute('role', 'alert');
+        block.setAttribute('aria-busy', 'false');
+        block.textContent = `Failed: ${err?.message || err}`;
+      } finally {
+        if (cardEl.__explainAbort === ac) cardEl.__explainAbort = null;
+        btnEl.disabled = false;
+      }
+    }
+
     async function healFailure(ctx) {
       clearDashboard({ logArt: '✨', logMsg: `Asking Claude to heal: ${ctx.fullTitle.slice(0, 80)}…` });
       setStatus('running', 'Healing failing test via Claude Code…');
@@ -2140,6 +4150,171 @@ INSTRUCTIONS FOR CLAUDE:
         setRunInFlight(false);
       }
     }
+
+    // ---- Spec Doctor — pre-generate critique ---------------------------
+    // POST the current story to /api/critique-spec, render issues inline.
+    // Each issue (when a clean rewrite is available) gets an "Accept" button
+    // that splices the rewrite into the AC textarea by replacing the
+    // matching AC line. Falls back to appending the rewrite if no exact line
+    // match is found (defensive against minor AC reformatting).
+    async function critiqueStory() {
+      const url = $('url').value.trim();
+      const title = $('title').value.trim();
+      const ac = $('ac').value.trim();
+      const creds = $('creds').value.trim();
+      const storyId = $('storyId').value.trim();
+      const missing = [];
+      if (!url) missing.push('url');
+      if (!title) missing.push('title');
+      if (!ac) missing.push('ac');
+      if (missing.length > 0) {
+        clearAllFieldErrors();
+        missing.forEach((id) => setFieldError(id, true));
+        $(missing[0]).focus();
+        showToast('Fill URL / title / AC first', 'error');
+        return;
+      }
+      if (claudeCliAvailable === false) {
+        showToast('Claude Code CLI not detected — critique requires it', 'error');
+        return;
+      }
+      const btn = $('critique');
+      const lbl = $('critique-label');
+      const origLabel = lbl?.textContent;
+      btn.disabled = true;
+      if (lbl) lbl.textContent = 'Critiquing…';
+      try {
+        const resp = await fetch('/api/critique-spec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, title, ac, creds, storyId }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          showToast(data.error || `HTTP ${resp.status}`, 'error');
+          return;
+        }
+        renderCritique(data);
+      } catch (err) {
+        showToast('Critique failed: ' + (err?.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+        if (lbl) lbl.textContent = origLabel;
+      }
+    }
+
+    function renderCritique(data) {
+      const panel = $('critique-panel');
+      panel.innerHTML = '';
+      panel.hidden = false;
+      panel.classList.toggle('clean', (data.issues || []).length === 0);
+
+      const head = document.createElement('div');
+      head.className = 'head';
+      const summary = document.createElement('span');
+      summary.className = 'summary';
+      summary.textContent = data.summary || ((data.issues || []).length === 0
+        ? 'Spec passes the testability rubric.'
+        : `${data.issues.length} issue${data.issues.length === 1 ? '' : 's'} to address before generating`);
+      head.appendChild(summary);
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'close';
+      close.setAttribute('aria-label', 'Dismiss critique');
+      close.textContent = '×';
+      close.addEventListener('click', () => { panel.hidden = true; });
+      head.appendChild(close);
+      panel.appendChild(head);
+
+      for (const issue of (data.issues || [])) {
+        const card = document.createElement('div');
+        card.className = 'critique-issue';
+        const sev = document.createElement('span');
+        sev.className = `sev ${(issue.severity || 'medium').toLowerCase()}`;
+        sev.textContent = (issue.severity || 'medium').toUpperCase();
+        card.appendChild(sev);
+
+        const body = document.createElement('div');
+        body.className = 'body';
+        const heading = document.createElement('div');
+        const acRef = document.createElement('span');
+        acRef.className = 'ac-ref';
+        acRef.textContent = issue.acRef || '';
+        heading.appendChild(acRef);
+        const rule = document.createElement('span');
+        rule.className = 'rule';
+        rule.textContent = issue.ruleId || '';
+        heading.appendChild(rule);
+        body.appendChild(heading);
+
+        if (issue.snippet) {
+          const snip = document.createElement('div');
+          snip.className = 'snippet';
+          snip.textContent = issue.snippet;
+          body.appendChild(snip);
+        }
+        const desc = document.createElement('div');
+        desc.className = 'desc';
+        desc.textContent = issue.description || '';
+        body.appendChild(desc);
+
+        if (issue.suggestedRewrite) {
+          const rw = document.createElement('div');
+          rw.className = 'rewrite';
+          const label = document.createElement('span');
+          label.className = 'label';
+          label.textContent = 'Rewrite:';
+          rw.appendChild(label);
+          rw.appendChild(document.createTextNode(issue.suggestedRewrite));
+          body.appendChild(rw);
+          const accept = document.createElement('button');
+          accept.type = 'button';
+          accept.className = 'accept-btn';
+          accept.textContent = '✓ Accept rewrite';
+          accept.addEventListener('click', () => {
+            applyRewrite(issue);
+            accept.textContent = '✓ Applied';
+            accept.disabled = true;
+          });
+          body.appendChild(accept);
+        }
+        card.appendChild(body);
+        panel.appendChild(card);
+      }
+    }
+
+    // Splice the rewrite into the AC textarea — find the matching AC line by
+    // ref (AC1/AC2/…) and replace its body. Fall back to appending if no
+    // ref match (defensive against weird formatting).
+    function applyRewrite(issue) {
+      const acEl = $('ac');
+      const lines = acEl.value.split('\n');
+      const ref = (issue.acRef || '').match(/AC\s*(\d+)/i);
+      let replaced = false;
+      if (ref) {
+        const n = ref[1];
+        const re = new RegExp(`^(\\s*(?:#{1,6}\\s+|[-*]\\s+)?AC\\s*${n}\\s*[:.\\-)]\\s*).+$`, 'i');
+        for (let i = 0; i < lines.length; i++) {
+          if (re.test(lines[i])) {
+            lines[i] = lines[i].replace(re, `$1${issue.suggestedRewrite}`);
+            replaced = true;
+            break;
+          }
+        }
+      }
+      if (!replaced) {
+        // Append as a new line annotated with the AC ref + the rewrite.
+        lines.push('', `${issue.acRef || 'AC?'}: ${issue.suggestedRewrite}  // applied from critique`);
+      }
+      acEl.value = lines.join('\n');
+      acEl.dispatchEvent(new Event('input', { bubbles: true }));
+      showToast(`Updated ${issue.acRef || 'AC'}`);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('critique');
+      if (btn) btn.addEventListener('click', critiqueStory);
+    });
 
     $('save').addEventListener('click', async () => {
       const body = {
@@ -2257,6 +4432,101 @@ INSTRUCTIONS FOR CLAUDE:
         $('pill-flaky').hidden = true;
       }
     }
+
+    // ---- PR Impact Radar -----------------------------------------------------
+    // Uses `git diff` server-side to figure out which features are likely
+    // affected by the current PR (committed + uncommitted). Powers the pill
+    // in the status bar + the details panel + a "Run impacted" fast path.
+    let lastPrImpact = null;
+    async function refreshPrImpact() {
+      const pill = $('pill-pr-impact');
+      if (!pill) return;
+      try {
+        const resp = await fetch('/api/pr-impact');
+        if (!resp.ok) { pill.hidden = true; return; }
+        const data = await resp.json();
+        lastPrImpact = data;
+        if (!data.isGitRepo) { pill.hidden = true; return; }
+        const n = (data.impactedFeatures || []).length;
+        if (n === 0 && data.changedFiles.length === 0) { pill.hidden = true; return; }
+        pill.hidden = false;
+        if (n === 0) {
+          pill.textContent = `📡 0 impacted`;
+          pill.classList.add('zero');
+          pill.title = `${data.changedFiles.length} file(s) changed but no features affected`;
+        } else {
+          pill.textContent = `📡 ${n} impacted`;
+          pill.classList.remove('zero');
+          const preview = data.impactedFeatures.slice(0, 3).map((f) => f.name).join(', ');
+          pill.title = `PR touches ${data.changedFiles.length} file(s) → ${n} feature(s) potentially impacted: ${preview}${n > 3 ? `, +${n - 3} more` : ''}`;
+        }
+      } catch {
+        pill.hidden = true;
+      }
+    }
+
+    function renderPrImpactPanel() {
+      const panel = $('pr-impact-panel');
+      const body = $('pr-impact-body');
+      const runBtn = $('pr-impact-run');
+      const heading = $('pr-impact-heading');
+      if (!panel || !body || !lastPrImpact) return;
+      const data = lastPrImpact;
+      heading.textContent = `PR Impact Radar — base: ${data.base}`;
+      const impacted = data.impactedFeatures || [];
+      const meta = `<div class="pri-meta">${data.changedFiles.length} file(s) changed (${data.committedCount} committed, ${data.uncommittedCount} uncommitted) · ${impacted.length} feature(s) potentially affected</div>`;
+      let html = meta;
+      if (impacted.length === 0) {
+        html += `<div class="pri-empty">No features look impacted by these changes. Safe to skip a full run.</div>`;
+        runBtn.hidden = true;
+      } else {
+        html += impacted.map((f) => `
+          <div class="pri-feature">
+            <div style="flex:1;">
+              <div class="pri-name">${escapeHtml(f.name)} <span class="pri-count">· ${f.scenarioCount} scenario${f.scenarioCount === 1 ? '' : 's'}</span></div>
+              <div class="pri-reasons">${(f.reasons || []).map((r) => escapeHtml(r)).join(' · ')}</div>
+            </div>
+          </div>
+        `).join('');
+        runBtn.hidden = false;
+        runBtn.textContent = `Run ${impacted.length} impacted feature${impacted.length === 1 ? '' : 's'}`;
+      }
+      if (data.changedFiles.length > 0) {
+        html += `<div class="pri-changed-files"><b>Changed files:</b><br>${data.changedFiles.slice(0, 40).map((f) => `<code>${escapeHtml(f)}</code>`).join('')}${data.changedFiles.length > 40 ? `<br><i>…and ${data.changedFiles.length - 40} more</i>` : ''}</div>`;
+      }
+      body.innerHTML = html;
+      panel.hidden = false;
+    }
+
+    function togglePrImpactPanel() {
+      const panel = $('pr-impact-panel');
+      if (!panel) return;
+      if (panel.hidden) { renderPrImpactPanel(); }
+      else { panel.hidden = true; }
+    }
+
+    async function runImpactedFeatures() {
+      if (!lastPrImpact || !lastPrImpact.impactedFeatures?.length) return;
+      // Fire the first impacted feature (existing run logic runs one feature at a time).
+      // For a multi-feature run, we'd wire a special mode server-side — for now,
+      // this jumps to the first impacted feature and triggers the standard Run.
+      const featureNames = lastPrImpact.impactedFeatures.map((f) => f.name);
+      const featureSelect = $('feature');
+      if (!featureSelect) return;
+      const first = featureNames[0];
+      if ([...featureSelect.options].some((o) => o.value === first)) {
+        featureSelect.value = first;
+        featureSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        showToast(`Set feature to "${first}" (${featureNames.length > 1 ? `${featureNames.length} impacted — run each in turn` : 'the only impacted feature'}). Click Run Tests.`);
+        $('pr-impact-panel').hidden = true;
+      }
+    }
+
+    // Wire up
+    $('pill-pr-impact')?.addEventListener('click', togglePrImpactPanel);
+    $('pr-impact-close')?.addEventListener('click', () => { $('pr-impact-panel').hidden = true; });
+    $('pr-impact-refresh')?.addEventListener('click', () => refreshPrImpact().then(renderPrImpactPanel));
+    $('pr-impact-run')?.addEventListener('click', runImpactedFeatures);
 
     // ---- Failure triage panel ------------------------------------------------
     // After every run we pull /api/last-failures and surface a card per failure
@@ -2382,6 +4652,25 @@ INSTRUCTIONS FOR CLAUDE:
                 category: f.category,
               }));
               actions.appendChild(heal);
+
+              // "Explain" button — generates a plain-English explanation of
+              // the failure suitable for non-technical stakeholders.
+              const explain = document.createElement('button');
+              explain.type = 'button';
+              explain.className = 'explain-btn';
+              explain.innerHTML = '<span aria-hidden="true">🗣️</span> Explain';
+              explain.title = 'Get a plain-English summary of what went wrong (suitable for sharing with PM / product)';
+              explain.addEventListener('click', () => explainFailure(card, explain, {
+                feature: featureSlug,
+                fullTitle: f.fullTitle || f.title,
+                file: f.file,
+                line: f.line,
+                errorMessage: f.errorMessage,
+                errorStack: f.errorStack,
+                screenshot: f.screenshot,
+                category: f.category,
+              }));
+              actions.appendChild(explain);
             }
           }
           meta.appendChild(titleRow);
@@ -2546,6 +4835,8 @@ INSTRUCTIONS FOR CLAUDE:
       pillTime.textContent = '';
       const wf = $('waterfall');
       if (wf) wf.innerHTML = '';
+      // Step timeline → reset (new run, fresh slate)
+      resetStepTimeline();
       // Gallery → hide + empty
       const gallery = $('gallery');
       const galleryGrid = $('gallery-grid');
@@ -2689,6 +4980,7 @@ INSTRUCTIONS FOR CLAUDE:
         await refreshFlaky();
         refreshTriage();
         refreshHistory();
+        refreshPrImpact();
       }
     }
 
@@ -2745,11 +5037,318 @@ INSTRUCTIONS FOR CLAUDE:
     // When the user picks a different feature, refresh the coverage panel.
     $('feature').addEventListener('change', () => refreshCoverage());
 
+    // Upgrade both <select>s to the custom combobox UI. Must run BEFORE
+    // loadFeatures() so the combobox observer picks up the populated options
+    // in its initial render — and the wrapping happens once, not on every
+    // refresh. The hidden <select> stays the source of truth.
+    upgradeSelect($('feature'));
+    upgradeSelect($('project'));
+
+    /* ---- Test Recorder modal state machine ---------------------------------
+       States: 'setup' → 'recording' → 'captured' → 'converting' → 'proposed'.
+       The footer's primary action button changes label + behavior per state.
+       Cancel is always present and closes/aborts the flow. All API calls go
+       to /api/recorder/*. */
+    (function setupRecorder() {
+      const backdrop = $('rec-backdrop');
+      const modal = $('rec-modal');
+      const actionBtn = $('rec-action');
+      const cancelBtn = $('rec-cancel');
+      const closeBtn = $('rec-close');
+      const allStates = ['setup', 'recording', 'captured', 'converting', 'proposed', 'scaffolding', 'review'];
+      let state = 'setup';
+      let capturedCode = '';
+      let proposedScenario = '';
+      let pollTimer = null;
+      let recordingFeature = null;
+
+      function showState(next) {
+        state = next;
+        for (const s of allStates) {
+          const panel = document.getElementById(`rec-state-${s}`);
+          if (panel) panel.hidden = (s !== state);
+        }
+        // Action button label + enabled
+        if (state === 'setup')        { actionBtn.textContent = '▶ Start Recording'; actionBtn.disabled = false; }
+        else if (state === 'recording'){ actionBtn.textContent = '■ Stop Recording'; actionBtn.disabled = false; }
+        else if (state === 'captured') { actionBtn.textContent = '✨ Convert to Gherkin'; actionBtn.disabled = capturedCode.length < 20; }
+        else if (state === 'converting'){ actionBtn.textContent = 'Working…'; actionBtn.disabled = true; }
+        else if (state === 'proposed') { actionBtn.textContent = '✓ Append + implement'; actionBtn.disabled = false; }
+        else if (state === 'scaffolding'){ actionBtn.textContent = 'Working…'; actionBtn.disabled = true; }
+        else if (state === 'review')   { actionBtn.textContent = 'Done'; actionBtn.disabled = false; }
+      }
+
+      function openModal() {
+        // Mirror the current feature dropdown options into the modal's picker
+        const recFeature = $('rec-feature');
+        recFeature.innerHTML = '';
+        const opts = Array.from($('feature').options).filter((o) => o.value);
+        if (opts.length === 0) {
+          const o = document.createElement('option');
+          o.value = '';
+          o.textContent = '(no features yet — create one with Save & Generate first)';
+          o.disabled = true;
+          recFeature.appendChild(o);
+        } else {
+          for (const o of opts) {
+            const clone = document.createElement('option');
+            clone.value = o.value;
+            clone.textContent = o.textContent;
+            recFeature.appendChild(clone);
+          }
+          // Default to whatever's currently selected in the main dropdown.
+          const cur = $('feature').value;
+          if (cur && opts.some((o) => o.value === cur)) recFeature.value = cur;
+        }
+        // Pre-fill URL from the story form if non-empty.
+        $('rec-url').value = $('url').value || '';
+        capturedCode = '';
+        proposedScenario = '';
+        showState('setup');
+        backdrop.classList.add('show');
+        modal.classList.add('show');
+      }
+
+      function closeModal() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        // If a recording is still active, abort it so codegen doesn't linger.
+        if (state === 'recording') {
+          fetch('/api/recorder/stop', { method: 'POST' }).catch(() => {});
+        }
+        backdrop.classList.remove('show');
+        modal.classList.remove('show');
+        state = 'setup';
+        // Restore the modal title if the coverage flow changed it, and
+        // clear the override so future recorder runs use the recording
+        // feature (not the last coverage one).
+        const titleEl = document.getElementById('rec-title');
+        if (titleEl) titleEl.textContent = 'Record New Scenario';
+        if (window.__recorderOverrideFeature) {
+          window.__recorderOverrideFeature = null;
+          // Refresh coverage panel so the newly-closed gap disappears from
+          // the uncovered list and the metric ticks up.
+          if (typeof refreshCoverage === 'function') refreshCoverage();
+        }
+      }
+
+      async function startRecording() {
+        const url = $('rec-url').value.trim();
+        const feature = $('rec-feature').value;
+        const browser = $('rec-browser').value;
+        if (!url) { showToast('Start URL is required', 'error'); return; }
+        if (!feature) { showToast('Pick a feature to append to', 'error'); return; }
+        recordingFeature = feature;
+        actionBtn.disabled = true;
+        try {
+          const resp = await fetch('/api/recorder/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, browser }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) { showToast(data.error || `HTTP ${resp.status}`, 'error'); actionBtn.disabled = false; return; }
+          $('rec-running-url').textContent = url;
+          $('rec-running-bytes').textContent = '0';
+          showState('recording');
+          // Poll status so the byte counter ticks AND so we detect when the
+          // user closes the codegen Inspector themselves (graceful exit).
+          pollTimer = setInterval(async () => {
+            try {
+              const r = await fetch('/api/recorder/status');
+              const s = await r.json();
+              $('rec-running-bytes').textContent = String(s.capturedChars || 0);
+              if (!s.active) {
+                // Codegen exited on its own — auto-stop to capture the code.
+                clearInterval(pollTimer); pollTimer = null;
+                await stopRecording();
+              }
+            } catch { /* keep polling */ }
+          }, 700);
+        } catch (err) {
+          showToast('Recorder start failed: ' + (err?.message || err), 'error');
+          actionBtn.disabled = false;
+        }
+      }
+
+      async function stopRecording() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        actionBtn.disabled = true;
+        try {
+          const resp = await fetch('/api/recorder/stop', { method: 'POST' });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) { showToast(data.error || `HTTP ${resp.status}`, 'error'); showState('setup'); return; }
+          capturedCode = (data.code || '').trim();
+          $('rec-code').textContent = capturedCode || '(no code captured — try recording again and close the Inspector window normally)';
+          showState('captured');
+        } catch (err) {
+          showToast('Stop failed: ' + (err?.message || err), 'error');
+          showState('setup');
+        }
+      }
+
+      async function convertCode() {
+        if (!capturedCode) { showToast('No code to convert', 'error'); return; }
+        showState('converting');
+        try {
+          const resp = await fetch('/api/recorder/convert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: capturedCode, feature: recordingFeature }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            showToast(data.error || `HTTP ${resp.status}`, 'error');
+            showState('captured');
+            return;
+          }
+          proposedScenario = data.scenario || '';
+          $('rec-scenario').value = proposedScenario;
+          const ns = $('rec-new-steps');
+          if ((data.newSteps || []).length > 0) {
+            const items = data.newSteps.map((s) => `<li><code>${escapeHtml(s.phrase || '')}</code><br><span style="font-size:11px;color:var(--text-faint);">${escapeHtml(s.rationale || '')}</span></li>`).join('');
+            ns.innerHTML = `<b>${data.newSteps.length} new step phrase${data.newSteps.length === 1 ? '' : 's'}</b> — you'll need to implement these in the matching <code>.steps.ts</code> file (Claude didn't find an existing match):<ul>${items}</ul>`;
+            ns.hidden = false;
+          } else {
+            ns.hidden = true;
+            ns.innerHTML = '';
+          }
+          showState('proposed');
+        } catch (err) {
+          showToast('Convert failed: ' + (err?.message || err), 'error');
+          showState('captured');
+        }
+      }
+
+      // After Append succeeds, chain straight into the scaffold endpoint so
+      // any new step phrases get implementations generated automatically.
+      // Then transition to the 'review' state where the user can audit both
+      // the Gherkin that was appended AND the step code that was written.
+      async function appendScenario() {
+        const text = $('rec-scenario').value.trim();
+        if (!text) { showToast('Scenario is empty', 'error'); return; }
+        const finalScenario = text;
+        actionBtn.disabled = true;
+        let appendFile = '';
+        // The Coverage Gap Closer reuses this modal — when it does, it sets
+        // window.__recorderOverrideFeature so we route the append to the
+        // right feature (not the recorder's own recordingFeature).
+        const targetFeature = window.__recorderOverrideFeature || recordingFeature;
+        try {
+          const resp = await fetch('/api/recorder/append', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ feature: targetFeature, scenario: finalScenario }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) { showToast(data.error || `HTTP ${resp.status}`, 'error'); actionBtn.disabled = false; return; }
+          appendFile = data.file || '';
+          showToast(`Appended to ${appendFile}`);
+          loadFeatures();
+        } catch (err) {
+          showToast('Append failed: ' + (err?.message || err), 'error');
+          actionBtn.disabled = false;
+          return;
+        }
+        // Chain into scaffold so any new step phrases get implementations.
+        showState('scaffolding');
+        const scaffoldLog = $('rec-scaffold-log');
+        scaffoldLog.textContent = '';
+        let generatedSteps = {};
+        let scaffoldExitCode = null;
+        try {
+          const resp = await fetch('/api/scaffold-missing-steps', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ feature: targetFeature }),
+          });
+          if (resp.status === 501) {
+            // Claude CLI missing — show review without step code.
+            scaffoldLog.textContent += '[scaffold] Claude CLI not available — skipping step implementation.\n';
+          } else if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            scaffoldLog.textContent += `[scaffold] error: ${data.error || resp.status}\n`;
+          } else {
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buf += decoder.decode(value, { stream: true });
+              const lines = buf.split('\n');
+              buf = lines.pop();
+              for (const line of lines) {
+                if (!line) continue;
+                try {
+                  const msg = JSON.parse(line);
+                  if (msg.type === 'log') {
+                    scaffoldLog.textContent += msg.text;
+                    scaffoldLog.scrollTop = scaffoldLog.scrollHeight;
+                  } else if (msg.type === 'done') {
+                    scaffoldExitCode = msg.exitCode;
+                    generatedSteps = msg.generatedSteps || {};
+                  }
+                } catch { scaffoldLog.textContent += line + '\n'; }
+              }
+            }
+          }
+        } catch (err) {
+          scaffoldLog.textContent += `[scaffold] network error: ${err?.message || err}\n`;
+        }
+        // Transition to review with everything we have
+        $('rec-review-feature-path').textContent = appendFile || `features/${targetFeature}/`;
+        $('rec-review-scenario').textContent = finalScenario;
+
+        const featSteps = generatedSteps[targetFeature] || [];
+        const stepsWrap = $('rec-review-steps-wrap');
+        const stepsCode = $('rec-review-steps');
+        const nothing = $('rec-review-nothing');
+        if (featSteps.length > 0) {
+          stepsWrap.hidden = false;
+          nothing.hidden = true;
+          $('rec-review-steps-path').textContent = `features/${targetFeature}/${targetFeature}.steps.ts`;
+          stepsCode.textContent = featSteps.map((s) => s.code).join('\n\n');
+        } else {
+          stepsWrap.hidden = true;
+          nothing.hidden = false;
+        }
+
+        const summary = $('rec-review-summary');
+        if (scaffoldExitCode === 0 && featSteps.length > 0) {
+          summary.innerHTML = `<b>Done.</b> Appended 1 scenario and generated ${featSteps.length} new step definition${featSteps.length === 1 ? '' : 's'}.`;
+        } else if (scaffoldExitCode === 0) {
+          summary.innerHTML = `<b>Done.</b> Appended 1 scenario. All step phrases matched existing definitions — no new code needed.`;
+        } else {
+          summary.innerHTML = `<b>Appended 1 scenario.</b> Step implementation skipped or failed; you can re-run tests and use the "Implement with Claude" banner.`;
+        }
+        showState('review');
+      }
+
+      actionBtn.addEventListener('click', () => {
+        if (state === 'setup')        startRecording();
+        else if (state === 'recording') stopRecording();
+        else if (state === 'captured')  convertCode();
+        else if (state === 'proposed')  appendScenario();
+        else if (state === 'review')    closeModal();
+      });
+      cancelBtn.addEventListener('click', closeModal);
+      closeBtn.addEventListener('click', closeModal);
+      backdrop.addEventListener('click', closeModal);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();
+      });
+
+      // Open from the form button.
+      $('record')?.addEventListener('click', openModal);
+    })();
+
     loadFeatures();
     refreshReports();
     refreshGallery();
     refreshFlaky().then(() => refreshTriage());
     refreshHistory();
+    refreshPrImpact();
+    setInterval(refreshPrImpact, 45_000);
     updatePrompt();
 
     /* ---- Theme toggle: light ↔ dark, persisted, follows OS if not opted ----

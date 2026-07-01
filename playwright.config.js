@@ -39,6 +39,10 @@ export default defineConfig({
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [
     ['list'],
+    // Custom reporter that streams per-step lifecycle events to stdout so
+    // the UI can render the "Liquid Gherkin Step Timeline" — see
+    // ui/live-step-reporter.js for the event shape.
+    ['./ui/live-step-reporter.js'],
     ['html', { open: 'never' }],
     ['json', { outputFile: 'test-results/results.json' }],
     ['allure-playwright', {
