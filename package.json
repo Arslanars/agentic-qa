@@ -1,7 +1,7 @@
 {
-  "name": "agentic-qa",
-  "version": "0.2.0",
-  "description": "QA pipeline for Playwright — POM convention, visual test runner with live streaming, screenshots gallery, and Allure reporting. Test authoring via Claude Code or by hand; no paid API required.",
+  "name": "@arslanars/agentic-qa",
+  "version": "0.1.0",
+  "description": "Local Playwright + BDD framework with a visual test runner UI. Turns user stories into executable browser tests, auto-heals failures, tracks flakiness, and maps git diff to affected features. No paid API required.",
   "bin": {
     "agentic-qa": "bin/agentic-qa.js"
   },
@@ -13,7 +13,10 @@
     ".claude/agents/",
     "ONBOARDING.md",
     "INTEGRATE.md",
-    "README.md"
+    "QAEnd2EndPromptFile.md",
+    "pages/README.md",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "bddgen": "bddgen",
@@ -37,28 +40,55 @@
   },
   "keywords": [
     "playwright",
+    "playwright-bdd",
+    "cucumber",
+    "gherkin",
     "qa",
     "automation",
     "page-object-model",
     "test-runner",
-    "allure"
+    "test-generator",
+    "allure",
+    "e2e",
+    "claude",
+    "claude-code",
+    "ai-testing"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Arslan Tufail",
+  "license": "MIT",
+  "homepage": "https://github.com/Arslanars/agentic-qa#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arslanars/agentic-qa.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Arslanars/agentic-qa/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "commonjs",
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@playwright/test": "^1.60.0",
-    "allure-playwright": "^3.9.0",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "marked": "^18.0.5"
   },
+  "peerDependencies": {
+    "@playwright/test": ">=1.40.0",
+    "allure-playwright": ">=3.0.0",
+    "playwright-bdd": ">=9.0.0"
+  },
+  "peerDependenciesMeta": {
+    "allure-playwright": { "optional": true }
+  },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.1",
     "allure-commandline": "^2.41.0",
+    "allure-playwright": "^3.9.0",
     "playwright-bdd": "^9.2.0",
     "typescript": "^6.0.3"
   }
