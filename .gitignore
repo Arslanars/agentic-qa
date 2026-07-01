@@ -25,3 +25,8 @@ node_modules/
 # is regenerated automatically as runs happen.)
 /reports/history.jsonl
 /reports/test-history.jsonl
+
+# Scheduled Runs — personal cron-like schedules stored per-machine, and the
+# log output from each fired run. Both are user-local state.
+/.claude/schedules.json
+/reports/scheduled-runs/

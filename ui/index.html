@@ -949,11 +949,35 @@
     }
     .gallery.hidden { display: none; }
     .gallery-head {
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; gap: 10px;
       margin-bottom: 10px;
       font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
       text-transform: uppercase; color: var(--text-faint);
     }
+    .gallery-head > span:first-child { flex-shrink: 0; }
+    .gallery-head #gallery-count { flex: 1; }
+    .gallery-close {
+      flex-shrink: 0;
+      background: transparent;
+      border: none;
+      color: var(--text-faint);
+      cursor: pointer;
+      width: 24px; height: 24px;
+      border-radius: 6px;
+      font-size: 20px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s ease, color 0.12s ease, transform 0.1s ease;
+    }
+    .gallery-close:hover {
+      background: var(--bg-2);
+      color: var(--text);
+      transform: scale(1.08);
+    }
+    .gallery-close:active { transform: scale(0.95); }
+    .gallery-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .gallery-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1457,6 +1481,18 @@
     .pr-impact-close:hover { color: var(--text); }
     .pr-impact-body { padding: 10px 14px; font-size: 12.5px; }
     .pr-impact-body .pri-meta { color: var(--text-faint); font-size: 11.5px; margin-bottom: 8px; }
+    .pr-impact-body .pri-tested {
+      padding: 8px 12px; margin-bottom: 10px;
+      background: var(--success-soft);
+      border-left: 3px solid var(--success);
+      border-radius: 4px;
+      font-size: 12.5px; color: var(--text);
+    }
+    .pr-impact-body .pri-tested b { color: var(--success); }
+    .pr-impact-body .pri-check { color: var(--success); font-weight: 700; margin-right: 4px; }
+    .pr-impact-body .pri-tested-hint {
+      margin-top: 4px; font-size: 11px; color: var(--text-faint); font-style: italic;
+    }
     .pr-impact-body .pri-empty { color: var(--text-faint); font-style: italic; padding: 8px 0; }
     .pr-impact-body .pri-feature {
       display: flex; align-items: flex-start; gap: 10px;
@@ -1494,7 +1530,22 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       background: var(--bg-1);
-      overflow: hidden;
+      /* Cap height so the panel doesn't push all other content off-screen;
+         inner content scrolls and the header stays pinned. */
+      max-height: 65vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-gutter: stable;
+    }
+    /* Custom, subtle scrollbar so it doesn't look like a boxy Windows one. */
+    .critique-panel::-webkit-scrollbar { width: 8px; }
+    .critique-panel::-webkit-scrollbar-track { background: transparent; }
+    .critique-panel::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--text-faint) 40%, transparent);
+      border-radius: 4px;
+    }
+    .critique-panel::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--text-faint) 60%, transparent);
     }
     .critique-panel .head {
       display: flex; align-items: center; gap: 8px;
@@ -1502,6 +1553,10 @@
       background: var(--bg-2);
       border-bottom: 1px solid var(--border);
       font-size: 12px; font-weight: 600; color: var(--text-dim);
+      /* Pin the summary + close button while the issue list scrolls. */
+      position: sticky;
+      top: 0;
+      z-index: 2;
     }
     .critique-panel .head .summary { flex: 1; }
     .critique-panel .head .close {
@@ -1761,6 +1816,349 @@
       max-height: 100px; overflow-y: auto;
     }
 
+    /* Manage-tags button in coverage header + count badge on schedules */
+    .coverage-tags-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 12px;
+      background: transparent;
+      color: var(--text-dim);
+      border: none;
+      border-left: 1px solid var(--border);
+      cursor: pointer;
+      font-size: 11.5px;
+      font-weight: 600;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    .coverage-tags-btn:hover { background: var(--bg-2); color: var(--text); }
+    .coverage-tags-btn svg { width: 12px; height: 12px; }
+    .sched-count-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 16px; height: 16px;
+      padding: 0 5px; margin-left: 6px;
+      background: var(--accent); color: white;
+      border-radius: 999px;
+      font-size: 10px; font-weight: 700;
+      line-height: 1;
+    }
+    .sched-count-badge[hidden] { display: none !important; }
+
+    /* Tag-filter field (in Run Configuration) */
+    .tag-filter-field { margin: 8px 0 6px; }
+    .tag-filter-label {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11.5px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .tag-filter-label svg { color: var(--accent); }
+    #tag-filter {
+      width: 100%;
+      padding: 7px 10px;
+      background: var(--bg-1); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-size: 12px;
+    }
+    #tag-filter:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+    .tag-filter-hint { font-size: 10.5px; color: var(--text-faint); margin-top: 4px; font-style: italic; }
+
+    /* Tags Manager modal */
+    .tags-preset-row {
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+      padding: 10px 12px;
+      background: var(--accent-soft, #eef2ff);
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    .tag-preset-chip {
+      padding: 3px 10px;
+      background: white; color: var(--accent);
+      border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+      border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+      cursor: pointer;
+      font-family: ui-monospace, monospace;
+      transition: transform 0.1s ease, background 0.1s ease;
+    }
+    .tag-preset-chip:hover { transform: translateY(-1px); background: var(--accent); color: white; }
+    .tags-scenario-list {
+      display: flex; flex-direction: column; gap: 8px;
+      max-height: 480px; overflow-y: auto;
+    }
+    .tags-scenario {
+      padding: 10px 12px;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .tags-scenario-name {
+      font-size: 12.5px; font-weight: 600; color: var(--text);
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+    .tags-current {
+      display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+    }
+    .tag-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px;
+      background: var(--accent);
+      color: white;
+      border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+      font-family: ui-monospace, monospace;
+    }
+    .tag-chip .tag-x {
+      cursor: pointer;
+      opacity: 0.7;
+      padding: 0 2px;
+      font-size: 14px; line-height: 1;
+      user-select: none;
+    }
+    .tag-chip .tag-x:hover { opacity: 1; }
+    .tag-chip.smoke { background: #10b981; }
+    .tag-chip.regression { background: #6366f1; }
+    .tag-chip.critical { background: #ef4444; }
+    .tag-chip.slow { background: #f59e0b; }
+    .tag-chip.wip { background: #a1a1aa; }
+    .tag-chip.flaky { background: #06b6d4; }
+    .tag-chip.destructive { background: #dc2626; }
+    .tag-add-btn {
+      padding: 2px 8px;
+      background: transparent;
+      color: var(--text-faint);
+      border: 1px dashed var(--border);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .tag-add-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .tag-add-input {
+      display: inline-block;
+      width: 100px;
+      padding: 2px 8px;
+      background: white;
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+    }
+    .tag-add-input:focus { outline: none; }
+
+    /* Schedules modal */
+    .sched-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .sched-empty { padding: 20px; color: var(--text-faint); text-align: center; font-style: italic; font-size: 12.5px; }
+    .sched-card {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      padding: 12px 14px;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      align-items: center;
+    }
+    .sched-card.disabled { opacity: 0.5; }
+    .sched-info { min-width: 0; }
+    .sched-name { font-weight: 600; font-size: 13.5px; color: var(--text); margin-bottom: 3px; }
+    .sched-meta { font-size: 11.5px; color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 8px; }
+    .sched-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+    .sched-meta .badge {
+      padding: 1px 7px; border-radius: 999px;
+      background: var(--accent-soft, var(--bg-2));
+      color: var(--accent);
+      font-family: ui-monospace, monospace;
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+    .sched-next {
+      font-size: 11px; color: var(--text-faint);
+      font-family: ui-monospace, monospace;
+    }
+    .sched-actions { display: flex; gap: 6px; align-items: center; }
+    .sched-toggle {
+      appearance: none;
+      width: 34px; height: 20px;
+      background: var(--border);
+      border: none; border-radius: 999px;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.2s ease;
+    }
+    .sched-toggle::before {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 16px; height: 16px;
+      background: white; border-radius: 50%;
+      transition: transform 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .sched-toggle:checked { background: var(--accent); }
+    .sched-toggle:checked::before { transform: translateX(14px); }
+    .sched-delete-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-faint);
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 16px; line-height: 1;
+    }
+    .sched-delete-btn:hover { color: var(--danger); background: var(--danger-soft, #fee); }
+
+    /* Modern confirm modal — used for delete-schedule + any destructive action. */
+    .confirm-modal {
+      display: none;
+      position: fixed; inset: 0;
+      z-index: 2000;
+      align-items: center; justify-content: center;
+      padding: 20px;
+      background: color-mix(in srgb, black 45%, transparent);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      animation: cm-fade-in 0.15s ease;
+    }
+    .confirm-modal.show { display: flex; }
+    @keyframes cm-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes cm-slide-up {
+      from { opacity: 0; transform: translateY(16px) scale(0.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .confirm-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card, var(--bg-1));
+      border-radius: 14px;
+      padding: 28px 26px 22px;
+      box-shadow:
+        0 20px 40px -8px rgba(0,0,0,0.25),
+        0 8px 20px -6px rgba(0,0,0,0.15);
+      text-align: center;
+      animation: cm-slide-up 0.22s cubic-bezier(0.2, 0.9, 0.35, 1.1);
+    }
+    .confirm-icon {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: var(--danger-soft, #fee2e2);
+      color: var(--danger);
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    .confirm-icon svg { width: 26px; height: 26px; }
+    .confirm-icon::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      background: var(--danger-soft, #fee2e2);
+      opacity: 0.5;
+      z-index: -1;
+      animation: cm-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes cm-pulse {
+      0%, 100% { transform: scale(1); opacity: 0.5; }
+      50%      { transform: scale(1.12); opacity: 0.25; }
+    }
+    .confirm-title {
+      margin: 0 0 8px;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.1px;
+    }
+    .confirm-body {
+      margin: 0 0 12px;
+      font-size: 13.5px;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .confirm-detail {
+      display: inline-block;
+      margin: 0 0 18px;
+      padding: 6px 12px;
+      background: var(--bg-2);
+      border-radius: 6px;
+      font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+      font-size: 12px;
+      color: var(--text);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .confirm-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+    .confirm-actions .btn {
+      min-width: 110px;
+      padding: 9px 20px;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+    .btn.danger {
+      background: var(--danger);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    }
+    .btn.danger:hover {
+      background: color-mix(in srgb, var(--danger) 85%, black);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px color-mix(in srgb, var(--danger) 40%, transparent);
+    }
+    .btn.danger:active { transform: translateY(0); }
+    .btn.danger:focus-visible {
+      outline: 2px solid var(--danger);
+      outline-offset: 2px;
+    }
+
+    .sched-form-wrap {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px dashed var(--border);
+    }
+    .sched-form-title {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .sched-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .sched-mode-tabs { display: flex; gap: 4px; background: var(--bg-2); padding: 3px; border-radius: 8px; }
+    .sched-mode-tab {
+      flex: 1; padding: 6px 12px;
+      background: transparent; border: none;
+      border-radius: 6px;
+      font-family: inherit; font-size: 12px; font-weight: 500;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .sched-mode-tab.active {
+      background: var(--card, white); color: var(--text);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      font-weight: 600;
+    }
+    .sched-mode-body { margin-top: 10px; }
+    .sched-inline {
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .sched-inline input {
+      padding: 5px 8px;
+      border: 1px solid var(--border); border-radius: 4px;
+      font-family: ui-monospace, monospace; font-size: 13px;
+      background: var(--bg-1); color: var(--text);
+    }
+
     /* Save-mode chip next to "Story Title" label — flips between
        "New story" (default) and "Updating <slug>" (when slug matches
        an existing feature). Tells the user before clicking what claude
@@ -1998,6 +2396,14 @@
           </svg>
           All browsers
         </button>
+        <button id="topbar-schedules" type="button" class="verb" aria-label="Open scheduled runs" title="Set up recurring test runs (every N minutes, daily, or weekly)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          Schedules
+          <span id="sched-count-badge" class="sched-count-badge" hidden>0</span>
+        </button>
         <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme">
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="4"/>
@@ -2075,11 +2481,25 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
                   <span id="coverage-gaps-cta-text">Close 0 gaps</span>
                 </button>
+                <button id="manage-tags-btn" type="button" class="coverage-tags-btn" aria-label="Manage tags on scenarios" title="Add or remove Gherkin tags (@smoke, @regression, …) on any scenario">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                  <span>Tags</span>
+                </button>
               </div>
               <div class="coverage-progress" aria-hidden="true">
                 <div id="coverage-progress-fill" class="coverage-progress-fill empty"></div>
               </div>
               <div id="coverage-details" class="coverage-details" hidden></div>
+            </div>
+            <div class="field tag-filter-field">
+              <label for="tag-filter">
+                <span class="tag-filter-label">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                  Tag filter <span style="color:var(--text-faint);font-weight:normal;">(optional)</span>
+                </span>
+              </label>
+              <input id="tag-filter" type="text" placeholder="e.g. @smoke  or  @smoke and not @slow" spellcheck="false" autocomplete="off" />
+              <div class="tag-filter-hint">Runs only scenarios matching the filter. Playwright grep syntax supports boolean expressions.</div>
             </div>
             <label class="check">
               <input id="headed" type="checkbox" checked />
@@ -2239,6 +2659,7 @@
           <div class="gallery-head">
             <span>Screenshots from latest run</span>
             <span id="gallery-count" style="text-transform: none; letter-spacing: 0; font-weight: 500;"></span>
+            <button type="button" id="gallery-close" class="gallery-close" aria-label="Hide screenshot gallery" title="Hide the gallery — it will reappear next time you run tests">×</button>
           </div>
           <div id="gallery-grid" class="gallery-grid"></div>
         </div>
@@ -2364,6 +2785,147 @@
       <div class="spacer"></div>
       <button type="button" class="btn ghost" id="rec-cancel">Cancel</button>
       <button type="button" class="btn primary" id="rec-action"></button>
+    </div>
+  </div>
+
+  <!-- Tags Manager modal -->
+  <div id="tags-modal" class="rec-modal" role="dialog" aria-modal="true" aria-labelledby="tags-title">
+    <div class="rec-head">
+      <h3 id="tags-title">Manage scenario tags</h3>
+      <button type="button" class="close" id="tags-close" aria-label="Close">×</button>
+    </div>
+    <div class="rec-body">
+      <div id="tags-feature-info" style="font-size:12px;color:var(--text-faint);margin-bottom:12px;"></div>
+      <div id="tags-preset-row" class="tags-preset-row">
+        <span style="font-size:11px;color:var(--text-faint);margin-right:6px;">Quick add:</span>
+      </div>
+      <div id="tags-scenario-list" class="tags-scenario-list"></div>
+    </div>
+    <div class="rec-foot">
+      <div class="spacer"></div>
+      <button type="button" class="btn ghost" id="tags-done">Done</button>
+    </div>
+  </div>
+
+  <!-- Schedules modal -->
+  <div id="sched-modal" class="rec-modal" role="dialog" aria-modal="true" aria-labelledby="sched-title">
+    <div class="rec-head">
+      <h3 id="sched-title">Scheduled runs</h3>
+      <button type="button" class="close" id="sched-close" aria-label="Close">×</button>
+    </div>
+    <div class="rec-body">
+      <div id="sched-list" class="sched-list"></div>
+      <div id="sched-empty" class="sched-empty" hidden>No schedules yet. Create one below to run tests automatically.</div>
+
+      <div class="sched-form-wrap">
+        <div class="sched-form-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>Add new schedule</span>
+        </div>
+        <div class="sched-form">
+          <div class="field">
+            <label for="sched-name">Name</label>
+            <input id="sched-name" type="text" placeholder="Nightly smoke" maxlength="80" />
+          </div>
+          <div class="sched-form-row">
+            <div class="field">
+              <label for="sched-feature">Feature</label>
+              <select id="sched-feature"><option value="">(all)</option></select>
+            </div>
+            <div class="field">
+              <label for="sched-project">Browser</label>
+              <select id="sched-project">
+                <option value="">chromium (default)</option>
+                <option value="chromium">chromium</option>
+                <option value="firefox">firefox</option>
+                <option value="webkit">webkit</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="sched-tag-filter">Tag filter <span style="color:var(--text-faint);font-weight:normal;">(optional)</span></label>
+            <input id="sched-tag-filter" type="text" placeholder="e.g. @smoke" spellcheck="false" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label>Frequency</label>
+            <div class="sched-mode-tabs" role="tablist">
+              <button type="button" class="sched-mode-tab active" data-mode="interval">Every N min</button>
+              <button type="button" class="sched-mode-tab" data-mode="daily">Daily at time</button>
+              <button type="button" class="sched-mode-tab" data-mode="weekly">Weekly at time</button>
+            </div>
+          </div>
+          <div id="sched-mode-interval" class="sched-mode-body">
+            <div class="field">
+              <label for="sched-interval">Every</label>
+              <div class="sched-inline">
+                <input id="sched-interval" type="number" min="1" max="10080" value="60" style="width:100px;" />
+                <span>minutes</span>
+              </div>
+            </div>
+          </div>
+          <div id="sched-mode-daily" class="sched-mode-body" hidden>
+            <div class="field">
+              <label for="sched-hour">At</label>
+              <div class="sched-inline">
+                <input id="sched-hour" type="number" min="0" max="23" value="2" style="width:60px;" />
+                <span>:</span>
+                <input id="sched-minute" type="number" min="0" max="59" value="0" style="width:60px;" />
+                <span style="color:var(--text-faint);font-size:11px;">(24-hour)</span>
+              </div>
+            </div>
+          </div>
+          <div id="sched-mode-weekly" class="sched-mode-body" hidden>
+            <div class="sched-form-row">
+              <div class="field">
+                <label for="sched-dow">Day</label>
+                <select id="sched-dow">
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                  <option value="0">Sunday</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="sched-hour-w">At</label>
+                <div class="sched-inline">
+                  <input id="sched-hour-w" type="number" min="0" max="23" value="9" style="width:60px;" />
+                  <span>:</span>
+                  <input id="sched-minute-w" type="number" min="0" max="59" value="0" style="width:60px;" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="rec-foot">
+      <div class="spacer"></div>
+      <button type="button" class="btn ghost" id="sched-cancel">Close</button>
+      <button type="button" class="btn primary" id="sched-add">Add schedule</button>
+    </div>
+  </div>
+
+  <!-- Modern confirm dialog (used by delete-schedule and any future destructive action) -->
+  <div id="confirm-modal" class="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+    <div class="confirm-card">
+      <div class="confirm-icon" id="confirm-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          <path d="M10 11v6M14 11v6"/>
+          <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </div>
+      <h3 id="confirm-title" class="confirm-title">Delete this schedule?</h3>
+      <p id="confirm-body" class="confirm-body">This will permanently remove the schedule. Any pending runs will be cancelled.</p>
+      <div id="confirm-detail" class="confirm-detail" hidden></div>
+      <div class="confirm-actions">
+        <button type="button" class="btn ghost" id="confirm-cancel">Cancel</button>
+        <button type="button" class="btn danger" id="confirm-ok">Delete</button>
+      </div>
     </div>
   </div>
 
@@ -3591,6 +4153,17 @@
       }
     }
 
+    // Dismiss-flag for the screenshot gallery. Set by the × close button; the
+     // next test run auto-clears it so the gallery reappears with fresh shots.
+    let galleryDismissed = false;
+    // Close button: dismiss the gallery until the next run. The flag is reset
+     // in clearDashboard() so the next Run Tests / All browsers click brings it
+     // back automatically with new shots.
+    document.getElementById('gallery-close')?.addEventListener('click', () => {
+      galleryDismissed = true;
+      document.getElementById('gallery')?.classList.add('hidden');
+    });
+
     async function refreshGallery() {
       const grid = $('gallery-grid');
       const gallery = $('gallery');
@@ -3599,7 +4172,7 @@
         const resp = await fetch('/api/screenshots');
         const shots = await resp.json();
         galleryShots = shots;
-        if (!shots.length) {
+        if (!shots.length || galleryDismissed) {
           gallery.classList.add('hidden');
           return;
         }
@@ -4433,11 +5006,435 @@ INSTRUCTIONS FOR CLAUDE:
       }
     }
 
+    // ---- Test Tags Manager ---------------------------------------------------
+    // Opens a modal that lists every scenario in the current feature with its
+    // Gherkin tags as removable chips + a quick-add button. Presets are the
+    // canonical BDD tag set (@smoke @regression @critical @slow @wip @flaky).
+    const TAG_PRESETS = ['@smoke', '@regression', '@critical', '@slow', '@wip', '@flaky'];
+    let tagsCurrentFeature = null;
+    let tagsCurrentData = null;
+
+    async function openTagsModal() {
+      const feature = lastCoverageFeature || $('feature').value;
+      if (!feature) { showToast('Pick a feature first', 'error'); return; }
+      tagsCurrentFeature = feature;
+      const modal = document.getElementById('tags-modal');
+      const backdrop = document.querySelector('.rec-backdrop') || document.getElementById('rec-backdrop');
+      modal.classList.add('show');
+      if (backdrop) backdrop.classList.add('show');
+      $('tags-scenario-list').innerHTML = '<div style="padding:20px;color:var(--text-faint);text-align:center;">Loading…</div>';
+      try {
+        const r = await fetch(`/api/tags?feature=${encodeURIComponent(feature)}`);
+        const data = await r.json();
+        if (!r.ok) { showToast(data.error || 'Failed to load tags', 'error'); return; }
+        tagsCurrentData = data;
+        renderTagsModal();
+      } catch (err) {
+        showToast('Failed: ' + err.message, 'error');
+      }
+    }
+
+    function renderTagsModal() {
+      if (!tagsCurrentData) return;
+      $('tags-feature-info').textContent = `${tagsCurrentData.feature} · ${tagsCurrentData.scenarios.length} scenarios`;
+      // Presets row
+      const presetRow = $('tags-preset-row');
+      presetRow.innerHTML = '<span style="font-size:11px;color:var(--text-faint);margin-right:6px;">Quick add:</span>';
+      TAG_PRESETS.forEach((tag) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'tag-preset-chip';
+        chip.textContent = tag;
+        chip.title = `Add ${tag} to all scenarios (click a scenario's + button instead to add to just one)`;
+        presetRow.appendChild(chip);
+      });
+      // Scenario list
+      const list = $('tags-scenario-list');
+      list.innerHTML = '';
+      for (const sc of tagsCurrentData.scenarios) {
+        const card = document.createElement('div');
+        card.className = 'tags-scenario';
+        const name = document.createElement('div');
+        name.className = 'tags-scenario-name';
+        name.textContent = sc.name;
+        card.appendChild(name);
+        const chipRow = document.createElement('div');
+        chipRow.className = 'tags-current';
+        chipRow.dataset.scenario = sc.name;
+        // Render existing tags as chips
+        for (const tag of sc.tags) {
+          chipRow.appendChild(makeTagChip(tag, sc.name));
+        }
+        // "+ Add" button
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'tag-add-btn';
+        addBtn.textContent = '+ Add tag';
+        addBtn.addEventListener('click', () => showTagInput(chipRow, addBtn, sc.name));
+        chipRow.appendChild(addBtn);
+        card.appendChild(chipRow);
+        list.appendChild(card);
+      }
+    }
+
+    function makeTagChip(tag, scenarioName) {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      // Colored variants for known tags
+      const bareName = tag.replace(/^@/, '').toLowerCase();
+      if (['smoke', 'regression', 'critical', 'slow', 'wip', 'flaky', 'destructive'].includes(bareName)) {
+        chip.classList.add(bareName);
+      }
+      const label = document.createElement('span');
+      label.textContent = tag;
+      chip.appendChild(label);
+      const x = document.createElement('span');
+      x.className = 'tag-x';
+      x.textContent = '×';
+      x.title = `Remove ${tag}`;
+      x.addEventListener('click', () => removeTag(tag, scenarioName));
+      chip.appendChild(x);
+      return chip;
+    }
+
+    function showTagInput(chipRow, addBtn, scenarioName) {
+      addBtn.style.display = 'none';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'tag-add-input';
+      input.placeholder = '@name';
+      chipRow.appendChild(input);
+      input.focus();
+      let done = false;
+      const finish = (submit) => {
+        if (done) return;
+        done = true;
+        let val = input.value.trim();
+        if (input.parentNode) input.parentNode.removeChild(input);
+        addBtn.style.display = '';
+        if (!submit || !val) return;
+        if (!val.startsWith('@')) val = '@' + val;
+        if (!/^@[A-Za-z0-9_.-]+$/.test(val)) { showToast('Tag must match @[A-Za-z0-9_.-]+', 'error'); return; }
+        addTag(val, scenarioName);
+      };
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { finish(false); }
+      });
+      input.addEventListener('blur', () => finish(true));
+    }
+
+    async function addTag(tag, scenarioName) {
+      await mutateTags(scenarioName, (current) => {
+        if (current.includes(tag)) return current;
+        return [...current, tag];
+      });
+    }
+    async function removeTag(tag, scenarioName) {
+      await mutateTags(scenarioName, (current) => current.filter((t) => t !== tag));
+    }
+    async function mutateTags(scenarioName, mutator) {
+      if (!tagsCurrentData) return;
+      const sc = tagsCurrentData.scenarios.find((s) => s.name === scenarioName);
+      if (!sc) return;
+      const newTags = mutator(sc.tags.slice());
+      try {
+        const r = await fetch('/api/tags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feature: tagsCurrentFeature, scenarioName, tags: newTags }),
+        });
+        const data = await r.json();
+        if (!r.ok) { showToast(data.error || 'Failed to update tags', 'error'); return; }
+        sc.tags = newTags;
+        renderTagsModal();
+      } catch (err) { showToast('Failed: ' + err.message, 'error'); }
+    }
+
+    function closeTagsModal() {
+      const modal = document.getElementById('tags-modal');
+      modal.classList.remove('show');
+      const backdrop = document.querySelector('.rec-backdrop') || document.getElementById('rec-backdrop');
+      if (backdrop && !document.getElementById('rec-modal').classList.contains('show') && !document.getElementById('sched-modal').classList.contains('show')) {
+        backdrop.classList.remove('show');
+      }
+      tagsCurrentFeature = null;
+      tagsCurrentData = null;
+    }
+
+    $('manage-tags-btn')?.addEventListener('click', openTagsModal);
+    $('tags-close')?.addEventListener('click', closeTagsModal);
+    $('tags-done')?.addEventListener('click', closeTagsModal);
+
+    // ---- Scheduled Runs ------------------------------------------------------
+    // Polls /api/schedules; renders as cards with humanized frequency + next-run
+    // countdown. Form supports interval / daily / weekly modes.
+    let schedRefreshTimer = null;
+    let schedCountdownTimer = null;
+    let currentSchedMode = 'interval';
+
+    async function refreshSchedulesBadge() {
+      try {
+        const r = await fetch('/api/schedules');
+        if (!r.ok) return;
+        const data = await r.json();
+        const badge = $('sched-count-badge');
+        const enabled = data.schedules.filter((s) => s.enabled).length;
+        if (enabled > 0) { badge.textContent = enabled; badge.hidden = false; }
+        else { badge.hidden = true; }
+      } catch { /* ignore */ }
+    }
+
+    async function openSchedulesModal() {
+      const modal = document.getElementById('sched-modal');
+      modal.classList.add('show');
+      const backdrop = document.querySelector('.rec-backdrop');
+      if (backdrop) backdrop.classList.add('show');
+      // Populate feature dropdown
+      const featureSel = $('sched-feature');
+      featureSel.innerHTML = '<option value="">(all)</option>';
+      Array.from($('feature').options).filter((o) => o.value).forEach((o) => {
+        const cl = document.createElement('option');
+        cl.value = o.value; cl.textContent = o.textContent;
+        featureSel.appendChild(cl);
+      });
+      await refreshSchedulesList();
+      schedRefreshTimer = setInterval(refreshSchedulesList, 15_000);
+      schedCountdownTimer = setInterval(updateSchedCountdowns, 1000);
+    }
+    function closeSchedulesModal() {
+      const modal = document.getElementById('sched-modal');
+      modal.classList.remove('show');
+      const backdrop = document.querySelector('.rec-backdrop');
+      if (backdrop && !document.getElementById('rec-modal').classList.contains('show') && !document.getElementById('tags-modal').classList.contains('show')) {
+        backdrop.classList.remove('show');
+      }
+      if (schedRefreshTimer) { clearInterval(schedRefreshTimer); schedRefreshTimer = null; }
+      if (schedCountdownTimer) { clearInterval(schedCountdownTimer); schedCountdownTimer = null; }
+    }
+
+    async function refreshSchedulesList() {
+      try {
+        const r = await fetch('/api/schedules');
+        if (!r.ok) return;
+        const data = await r.json();
+        const list = $('sched-list');
+        list.innerHTML = '';
+        if (data.schedules.length === 0) {
+          $('sched-empty').hidden = false;
+        } else {
+          $('sched-empty').hidden = true;
+          for (const s of data.schedules) list.appendChild(renderSchedCard(s));
+        }
+        refreshSchedulesBadge();
+      } catch { /* ignore */ }
+    }
+
+    function renderSchedCard(s) {
+      const card = document.createElement('div');
+      card.className = 'sched-card' + (s.enabled ? '' : ' disabled');
+      card.dataset.id = s.id;
+      card.dataset.nextRun = s.nextRun || '';
+      const info = document.createElement('div');
+      info.className = 'sched-info';
+      const name = document.createElement('div');
+      name.className = 'sched-name';
+      name.textContent = s.name;
+      info.appendChild(name);
+      const meta = document.createElement('div');
+      meta.className = 'sched-meta';
+      meta.innerHTML = `<span class="badge">${escapeHtml(s.humanFrequency)}</span>` +
+        (s.feature ? `<span>📁 ${escapeHtml(s.feature)}</span>` : '<span>📁 all features</span>') +
+        (s.project ? `<span>🌐 ${escapeHtml(s.project)}</span>` : '') +
+        (s.tagFilter ? `<span>🏷 <code>${escapeHtml(s.tagFilter)}</code></span>` : '') +
+        (s.lastRun ? `<span title="Last run">${(s.lastRunExitCode === 0 ? '✓' : '✗')} last: ${new Date(s.lastRun).toLocaleString()}</span>` : '');
+      info.appendChild(meta);
+      const nextRun = document.createElement('div');
+      nextRun.className = 'sched-next';
+      nextRun.dataset.role = 'countdown';
+      info.appendChild(nextRun);
+      card.appendChild(info);
+      const actions = document.createElement('div');
+      actions.className = 'sched-actions';
+      const toggle = document.createElement('input');
+      toggle.type = 'checkbox';
+      toggle.className = 'sched-toggle';
+      toggle.checked = !!s.enabled;
+      toggle.title = s.enabled ? 'Disable' : 'Enable';
+      toggle.addEventListener('change', () => toggleSchedule(s, toggle.checked));
+      actions.appendChild(toggle);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'sched-delete-btn';
+      del.innerHTML = '×';
+      del.title = 'Delete';
+      del.addEventListener('click', () => deleteSchedule(s));
+      actions.appendChild(del);
+      card.appendChild(actions);
+      updateSchedCountdown(card);
+      return card;
+    }
+
+    function updateSchedCountdowns() {
+      document.querySelectorAll('.sched-card').forEach(updateSchedCountdown);
+    }
+    function updateSchedCountdown(card) {
+      const el = card.querySelector('[data-role="countdown"]');
+      if (!el) return;
+      const nextRun = Number(card.dataset.nextRun || 0);
+      if (!nextRun) { el.textContent = ''; return; }
+      const diff = nextRun - Date.now();
+      if (diff <= 0) { el.textContent = 'due now — will fire shortly'; return; }
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      if (mins >= 60) {
+        const h = Math.floor(mins / 60);
+        el.textContent = `Next run in ${h}h ${mins % 60}m`;
+      } else {
+        el.textContent = `Next run in ${mins}m ${String(secs).padStart(2, '0')}s`;
+      }
+    }
+
+    async function toggleSchedule(s, enabled) {
+      const body = { ...s, enabled };
+      delete body.humanFrequency;
+      try {
+        await fetch('/api/schedules', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        refreshSchedulesList();
+      } catch (err) { showToast('Toggle failed: ' + err.message, 'error'); }
+    }
+
+    // Reusable modern confirm modal. Returns a promise that resolves to true (OK)
+    // or false (cancel/backdrop/ESC). Replaces window.confirm() for destructive
+    // actions so the styling matches the rest of the app.
+    function openConfirmModal({ title, body, detail, confirmLabel = 'Delete', cancelLabel = 'Cancel' } = {}) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('confirm-modal');
+        if (!modal) return resolve(true);
+        if (title) document.getElementById('confirm-title').textContent = title;
+        if (body) document.getElementById('confirm-body').textContent = body;
+        const detailEl = document.getElementById('confirm-detail');
+        if (detail) { detailEl.textContent = detail; detailEl.hidden = false; }
+        else { detailEl.hidden = true; detailEl.textContent = ''; }
+        const okBtn = document.getElementById('confirm-ok');
+        const cancelBtn = document.getElementById('confirm-cancel');
+        okBtn.textContent = confirmLabel;
+        cancelBtn.textContent = cancelLabel;
+        modal.classList.add('show');
+        // Focus the danger button after animation so keyboard-users can Enter to confirm
+        // — but not immediately (feels aggressive). Give the fade-in ~150ms first.
+        setTimeout(() => okBtn.focus(), 160);
+
+        const cleanup = (result) => {
+          modal.classList.remove('show');
+          okBtn.removeEventListener('click', onOk);
+          cancelBtn.removeEventListener('click', onCancel);
+          modal.removeEventListener('click', onBackdrop);
+          document.removeEventListener('keydown', onKey);
+          resolve(result);
+        };
+        const onOk = () => cleanup(true);
+        const onCancel = () => cleanup(false);
+        const onBackdrop = (e) => { if (e.target === modal) cleanup(false); };
+        const onKey = (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
+          else if (e.key === 'Enter' && document.activeElement === okBtn) { e.preventDefault(); cleanup(true); }
+        };
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        modal.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onKey);
+      });
+    }
+
+    async function deleteSchedule(s) {
+      const ok = await openConfirmModal({
+        title: 'Delete this schedule?',
+        body: 'This will permanently remove the schedule. Any pending runs will be cancelled.',
+        detail: s.name,
+        confirmLabel: 'Delete schedule',
+      });
+      if (!ok) return;
+      try {
+        const r = await fetch(`/api/schedules/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
+        if (r.ok) { showToast('Schedule deleted'); refreshSchedulesList(); }
+        else { const d = await r.json().catch(() => ({})); showToast(d.error || 'Delete failed', 'error'); }
+      } catch (err) { showToast('Delete failed: ' + err.message, 'error'); }
+    }
+
+    async function addSchedule() {
+      const name = $('sched-name').value.trim();
+      if (!name) { showToast('Name is required', 'error'); return; }
+      const body = {
+        name,
+        feature: $('sched-feature').value || undefined,
+        project: $('sched-project').value || undefined,
+        tagFilter: $('sched-tag-filter').value.trim() || undefined,
+        mode: currentSchedMode,
+        enabled: true,
+      };
+      if (currentSchedMode === 'interval') {
+        body.intervalMinutes = Number($('sched-interval').value) || 60;
+      } else if (currentSchedMode === 'daily') {
+        body.hour = Number($('sched-hour').value);
+        body.minute = Number($('sched-minute').value);
+      } else if (currentSchedMode === 'weekly') {
+        body.hour = Number($('sched-hour-w').value);
+        body.minute = Number($('sched-minute-w').value);
+        body.dayOfWeek = Number($('sched-dow').value);
+      }
+      try {
+        const r = await fetch('/api/schedules', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
+        if (!r.ok) { showToast(data.error || 'Add failed', 'error'); return; }
+        showToast(`Schedule "${name}" added`);
+        $('sched-name').value = '';
+        $('sched-tag-filter').value = '';
+        refreshSchedulesList();
+      } catch (err) { showToast('Add failed: ' + err.message, 'error'); }
+    }
+
+    function switchSchedMode(mode) {
+      currentSchedMode = mode;
+      document.querySelectorAll('.sched-mode-tab').forEach((t) => t.classList.toggle('active', t.dataset.mode === mode));
+      document.getElementById('sched-mode-interval').hidden = mode !== 'interval';
+      document.getElementById('sched-mode-daily').hidden = mode !== 'daily';
+      document.getElementById('sched-mode-weekly').hidden = mode !== 'weekly';
+    }
+
+    $('topbar-schedules')?.addEventListener('click', openSchedulesModal);
+    $('sched-close')?.addEventListener('click', closeSchedulesModal);
+    $('sched-cancel')?.addEventListener('click', closeSchedulesModal);
+    $('sched-add')?.addEventListener('click', addSchedule);
+    document.querySelectorAll('.sched-mode-tab').forEach((t) => {
+      t.addEventListener('click', () => switchSchedMode(t.dataset.mode));
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (document.getElementById('tags-modal').classList.contains('show')) closeTagsModal();
+        if (document.getElementById('sched-modal').classList.contains('show')) closeSchedulesModal();
+      }
+    });
+    refreshSchedulesBadge();
+    setInterval(refreshSchedulesBadge, 60_000);
+
     // ---- PR Impact Radar -----------------------------------------------------
     // Uses `git diff` server-side to figure out which features are likely
     // affected by the current PR (committed + uncommitted). Powers the pill
     // in the status bar + the details panel + a "Run impacted" fast path.
     let lastPrImpact = null;
+    // Signature of the last impacted-feature set we tested + when. Cleared
+    // whenever the git diff changes (i.e., after a commit/revert).
+    let lastTestedImpact = null; // { signature, at, pass, fail }
+    function impactSignature(list) {
+      return (list || []).map((f) => f.name).sort().join('|');
+    }
     async function refreshPrImpact() {
       const pill = $('pill-pr-impact');
       if (!pill) return;
@@ -4446,20 +5443,30 @@ INSTRUCTIONS FOR CLAUDE:
         if (!resp.ok) { pill.hidden = true; return; }
         const data = await resp.json();
         lastPrImpact = data;
+        // Clear the "tested" cache if the git diff changed shape.
+        if (lastTestedImpact && lastTestedImpact.signature !== impactSignature(data.impactedFeatures)) {
+          lastTestedImpact = null;
+        }
         if (!data.isGitRepo) { pill.hidden = true; return; }
         const n = (data.impactedFeatures || []).length;
         if (n === 0 && data.changedFiles.length === 0) { pill.hidden = true; return; }
         pill.hidden = false;
+        // Tested indicator: green ✓ prefix if we've already run these features against this exact diff.
+        const testedPrefix = (lastTestedImpact && n > 0) ? '✓ ' : '📡 ';
         if (n === 0) {
           pill.textContent = `📡 0 impacted`;
           pill.classList.add('zero');
           pill.title = `${data.changedFiles.length} file(s) changed but no features affected`;
         } else {
-          pill.textContent = `📡 ${n} impacted`;
+          pill.textContent = `${testedPrefix}${n} impacted`;
           pill.classList.remove('zero');
           const preview = data.impactedFeatures.slice(0, 3).map((f) => f.name).join(', ');
-          pill.title = `PR touches ${data.changedFiles.length} file(s) → ${n} feature(s) potentially impacted: ${preview}${n > 3 ? `, +${n - 3} more` : ''}`;
+          const testedSuffix = lastTestedImpact ? ` · Tested ${Math.round((Date.now() - lastTestedImpact.at) / 60_000)} min ago (${lastTestedImpact.pass} pass, ${lastTestedImpact.fail} fail)` : '';
+          pill.title = `PR touches ${data.changedFiles.length} file(s) → ${n} feature(s) potentially impacted: ${preview}${n > 3 ? `, +${n - 3} more` : ''}${testedSuffix}\n\nCount reflects git diff vs main — it only changes when you commit or revert.`;
         }
+        // Re-render open panel if visible
+        const panel = $('pr-impact-panel');
+        if (panel && !panel.hidden) renderPrImpactPanel();
       } catch {
         pill.hidden = true;
       }
@@ -4476,6 +5483,13 @@ INSTRUCTIONS FOR CLAUDE:
       const impacted = data.impactedFeatures || [];
       const meta = `<div class="pri-meta">${data.changedFiles.length} file(s) changed (${data.committedCount} committed, ${data.uncommittedCount} uncommitted) · ${impacted.length} feature(s) potentially affected</div>`;
       let html = meta;
+      // "Tested against this diff" banner — green success bar, only shows when
+      // we've already run against the current impacted set.
+      if (lastTestedImpact && impacted.length > 0) {
+        const ago = Math.max(0, Math.round((Date.now() - lastTestedImpact.at) / 60_000));
+        const agoText = ago === 0 ? 'just now' : `${ago} min ago`;
+        html += `<div class="pri-tested"><span class="pri-check">✓</span> <b>Tested against this diff</b> · ${agoText} · <span style="color:var(--success);">${lastTestedImpact.pass} pass</span>${lastTestedImpact.fail ? ` · <span style="color:var(--danger);">${lastTestedImpact.fail} fail</span>` : ''}<div class="pri-tested-hint">The "N impacted" count reflects your git diff — it only decreases when you commit or revert changed files.</div></div>`;
+      }
       if (impacted.length === 0) {
         html += `<div class="pri-empty">No features look impacted by these changes. Safe to skip a full run.</div>`;
         runBtn.hidden = true;
@@ -4507,19 +5521,13 @@ INSTRUCTIONS FOR CLAUDE:
 
     async function runImpactedFeatures() {
       if (!lastPrImpact || !lastPrImpact.impactedFeatures?.length) return;
-      // Fire the first impacted feature (existing run logic runs one feature at a time).
-      // For a multi-feature run, we'd wire a special mode server-side — for now,
-      // this jumps to the first impacted feature and triggers the standard Run.
       const featureNames = lastPrImpact.impactedFeatures.map((f) => f.name);
-      const featureSelect = $('feature');
-      if (!featureSelect) return;
-      const first = featureNames[0];
-      if ([...featureSelect.options].some((o) => o.value === first)) {
-        featureSelect.value = first;
-        featureSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        showToast(`Set feature to "${first}" (${featureNames.length > 1 ? `${featureNames.length} impacted — run each in turn` : 'the only impacted feature'}). Click Run Tests.`);
-        $('pr-impact-panel').hidden = true;
-      }
+      $('pr-impact-panel').hidden = true;
+      showToast(`Running ${featureNames.length} impacted feature${featureNames.length === 1 ? '' : 's'}…`);
+      // Kick off a real run that includes ALL impacted features in one Playwright
+      // invocation. runTests()'s featuresList branch passes them as a JSON array
+      // to /api/run — the backend maps each to `.features-gen/features/<name>/`.
+      runTests({ features: featureNames });
     }
 
     // Wire up
@@ -4837,7 +5845,9 @@ INSTRUCTIONS FOR CLAUDE:
       if (wf) wf.innerHTML = '';
       // Step timeline → reset (new run, fresh slate)
       resetStepTimeline();
-      // Gallery → hide + empty
+      // Gallery → hide + empty + reset dismissed flag so it reappears
+      // automatically when the fresh run produces new screenshots.
+      galleryDismissed = false;
       const gallery = $('gallery');
       const galleryGrid = $('gallery-grid');
       const galleryCount = $('gallery-count');
@@ -4861,7 +5871,10 @@ INSTRUCTIONS FOR CLAUDE:
     // Extract the run logic into a callable so the Re-run Failed button can
     // reuse it without going through the form's click handler.
     async function runTests(opts = {}) {
-      const feature = (opts.lastFailed) ? null : $('feature').value;
+      // opts.features: string[] runs multiple features in a single Playwright call
+      // (used by "Run N impacted features" in the PR Impact panel).
+      const featuresList = Array.isArray(opts.features) && opts.features.length ? opts.features : null;
+      const feature = featuresList ? null : ((opts.lastFailed) ? null : $('feature').value);
       // Matrix mode: omit project so /api/run runs across all configured
       // projects (chromium + firefox + webkit) in one pass.
       const matrix = !!opts.matrix;
@@ -4870,10 +5883,13 @@ INSTRUCTIONS FOR CLAUDE:
       const lastFailed = !!opts.lastFailed;
 
       clearDashboard({
-        logMsg: lastFailed ? 'Re-running failed tests…' : (matrix ? 'Running across all browsers…' : 'Starting…'),
+        logMsg: lastFailed ? 'Re-running failed tests…' :
+                featuresList ? `Running ${featuresList.length} impacted feature${featuresList.length === 1 ? '' : 's'}…` :
+                (matrix ? 'Running across all browsers…' : 'Starting…'),
       });
       setStatus('running',
         lastFailed ? 'Re-running last-failed tests…' :
+        featuresList ? `running ${featuresList.length} impacted feature${featuresList.length === 1 ? '' : 's'}: ${featuresList.join(', ')}…` :
         matrix ? `running ${feature || 'all features'} across chromium + firefox + webkit${headed ? ' (headed)' : ''}…` :
                  `running ${feature || 'all features'} on ${project}${headed ? ' (headed)' : ''}…`);
       setRunInFlight(true);
@@ -4915,11 +5931,12 @@ INSTRUCTIONS FOR CLAUDE:
       }
 
       let allOutput = '';
+      const tagFilter = ($('tag-filter')?.value || '').trim() || undefined;
       try {
         const resp = await fetch('/api/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ feature, project, headed, lastFailed }),
+          body: JSON.stringify({ feature, features: featuresList || undefined, project, headed, lastFailed, tagFilter }),
         });
         if (resp.status === 409) {
           setStatus('idle', 'A run is already in progress.');
@@ -4967,6 +5984,16 @@ INSTRUCTIONS FOR CLAUDE:
         if (exitCode === 0) { setStatus('pass', 'All tests passed.'); showToast('All tests passed'); }
         else if (exitCode != null) { setStatus('fail', `Run finished with exit code ${exitCode}.`); showToast(`Exit code ${exitCode}`, 'error'); }
         else setStatus('idle', 'Run ended.');
+        // If this was a run against the impacted features, remember it so the
+        // PR Impact panel can show a "✓ Tested against this diff" indicator.
+        if (featuresList && lastPrImpact) {
+          lastTestedImpact = {
+            signature: impactSignature(lastPrImpact.impactedFeatures),
+            at: Date.now(),
+            pass: parseInt(summary.passed || '0', 10) || 0,
+            fail: parseInt(summary.failed || '0', 10) || 0,
+          };
+        }
       } catch (err) {
         setStatus('fail', String(err && err.message));
         showToast('Run failed', 'error');

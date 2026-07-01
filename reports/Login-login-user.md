@@ -2,57 +2,29 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-07-01 12:14:01
-**Browser:** chromium + firefox + webkit
-**Status:** ✅ PASS (42/42)
-**Duration:** 442.8 s
+**Last run:** 2026-07-01 16:40:20
+**Browser:** chromium
+**Status:** ✅ PASS (14/14)
+**Duration:** 212.4 s
 
 ## Results
 
-| Spec | Test | Browser | Status | Duration | Error |
-|------|------|---------|--------|---------:|-------|
-| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `chromium` | ✅ PASS | 23.1 s | — |
-| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `firefox` | ✅ PASS | 4.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `webkit` | ✅ PASS | 5.0 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | `chromium` | ✅ PASS | 22.8 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | `firefox` | ✅ PASS | 4.5 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | `webkit` | ✅ PASS | 4.3 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | `chromium` | ✅ PASS | 22.6 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | `firefox` | ✅ PASS | 5.0 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | `webkit` | ✅ PASS | 3.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | `chromium` | ✅ PASS | 31.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | `firefox` | ✅ PASS | 14.6 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | `webkit` | ✅ PASS | 12.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | `chromium` | ✅ PASS | 30.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | `firefox` | ✅ PASS | 15.1 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | `webkit` | ✅ PASS | 12.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | `chromium` | ✅ PASS | 30.6 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | `firefox` | ✅ PASS | 14.3 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | `webkit` | ✅ PASS | 12.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | `chromium` | ✅ PASS | 30.7 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | `firefox` | ✅ PASS | 15.0 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | `webkit` | ✅ PASS | 13.8 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | `chromium` | ✅ PASS | 33.2 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | `firefox` | ✅ PASS | 15.6 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | `webkit` | ✅ PASS | 12.3 s | — |
-| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | `chromium` | ✅ PASS | 2.2 s | — |
-| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | `firefox` | ✅ PASS | 3.1 s | — |
-| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | `webkit` | ✅ PASS | 2.3 s | — |
-| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | `chromium` | ✅ PASS | 3.2 s | — |
-| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | `firefox` | ✅ PASS | 3.7 s | — |
-| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | `webkit` | ✅ PASS | 3.9 s | — |
-| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | `chromium` | ✅ PASS | 3.3 s | — |
-| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | `firefox` | ✅ PASS | 4.0 s | — |
-| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | `webkit` | ✅ PASS | 3.7 s | — |
-| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | `chromium` | ✅ PASS | 2.2 s | — |
-| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | `firefox` | ✅ PASS | 3.3 s | — |
-| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | `webkit` | ✅ PASS | 2.6 s | — |
-| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | `chromium` | ✅ PASS | 2.6 s | — |
-| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | `firefox` | ✅ PASS | 2.8 s | — |
-| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | `webkit` | ✅ PASS | 2.7 s | — |
-| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | `chromium` | ✅ PASS | 2.2 s | — |
-| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | `firefox` | ✅ PASS | 3.2 s | — |
-| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | `webkit` | ✅ PASS | 2.5 s | — |
+| Spec | Test | Status | Duration | Error |
+|------|------|--------|---------:|-------|
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | ✅ PASS | 16.9 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | ✅ PASS | 14.7 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | ✅ PASS | 17.8 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | ✅ PASS | 31.2 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | ✅ PASS | 29.0 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | ✅ PASS | 26.6 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | ✅ PASS | 28.4 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | ✅ PASS | 29.7 s | — |
+| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | ✅ PASS | 2.0 s | — |
+| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | ✅ PASS | 2.1 s | — |
+| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | ✅ PASS | 4.7 s | — |
+| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 2.9 s | — |
+| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | ✅ PASS | 2.6 s | — |
+| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 3.8 s | — |
 
 ## Artifacts
 

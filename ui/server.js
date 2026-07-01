@@ -528,9 +528,17 @@ Be strict but fair — flag only real testability problems, not stylistic nits. 
     clearTimeout(timer);
     activeGenerate = null;
     if (code !== 0) {
+      // Claude CLI exiting non-zero with empty stderr is a classic transient
+      // failure signature (network blip, brief quota check, session refresh).
+      // Give the user an actionable message instead of the cryptic "exited 1".
+      const trimmedErr = stderr.trim();
+      const transient = code === 1 && trimmedErr.length === 0 && stdout.trim().length === 0;
       return res.status(502).json({
-        error: `claude exited ${code}`,
+        error: transient
+          ? 'Claude CLI returned nothing (transient failure). Try again — it usually works on retry.'
+          : `claude exited ${code}`,
         stderr: stderr.slice(0, 2000),
+        transient,
       });
     }
     // Extract the JSON object from claude's response. Claude usually returns
@@ -1893,6 +1901,318 @@ app.get('/api/pr-impact', (req, res) => {
   });
 });
 
+// ------------------- Test Tags Manager --------------------------------------
+// Gherkin tags live on the line(s) directly above a Scenario keyword. Format:
+//   @smoke @critical
+//   Scenario: AC1-POS-01 — happy path
+// We parse these into a per-scenario tag list and support rewriting them.
+
+function parseFeatureFileTags(content) {
+  // Returns [{ name, tags: [], lineIndex, tagLineIndex|null }]
+  const lines = content.split(/\r?\n/);
+  const scenarios = [];
+  let pendingTags = null;
+  let pendingTagLineIdx = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // Blank line resets pending tags (Gherkin tag block must be contiguous with the scenario).
+    if (trimmed === '') { continue; }
+    // A tag line is one that consists entirely of @-prefixed tokens.
+    if (/^(\s*@[A-Za-z0-9_.-]+\s*)+$/.test(line) && trimmed.startsWith('@')) {
+      pendingTags = trimmed.split(/\s+/).filter((t) => t.startsWith('@'));
+      pendingTagLineIdx = i;
+      continue;
+    }
+    const scMatch = trimmed.match(/^Scenario(?:\s+Outline)?:\s*(.+)$/);
+    if (scMatch) {
+      scenarios.push({
+        name: scMatch[1].trim(),
+        tags: pendingTags || [],
+        lineIndex: i,
+        tagLineIndex: pendingTags ? pendingTagLineIdx : null,
+      });
+      pendingTags = null;
+      pendingTagLineIdx = null;
+    } else if (/^(Feature|Background|Rule|Given|When|Then|And|But|Examples|\|)/.test(trimmed)) {
+      // Any other Gherkin keyword resets pending tags (tag block must be adjacent).
+      pendingTags = null;
+      pendingTagLineIdx = null;
+    }
+  }
+  return scenarios;
+}
+
+// GET /api/tags?feature=X — list all scenarios + their current tags
+app.get('/api/tags', (req, res) => {
+  const feature = String(req.query.feature || '').trim();
+  if (!feature || !isSafeName(feature)) {
+    return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  }
+  const featureDir = path.join(ROOT, 'features', feature);
+  if (!fs.existsSync(featureDir)) {
+    return res.status(404).json({ error: `features/${feature}/ does not exist` });
+  }
+  const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+  if (!featureFile) return res.json({ feature, scenarios: [] });
+  let content;
+  try { content = fs.readFileSync(path.join(featureDir, featureFile), 'utf8'); }
+  catch (err) { return res.status(500).json({ error: String(err.message) }); }
+  const scenarios = parseFeatureFileTags(content).map((s) => ({ name: s.name, tags: s.tags }));
+  // Collate the union of tags across the file so the UI can offer them as
+  // quick-pick suggestions (common existing tags).
+  const knownTags = [...new Set(scenarios.flatMap((s) => s.tags))].sort();
+  res.json({ feature, featureFile: `features/${feature}/${featureFile}`, scenarios, knownTags });
+});
+
+// POST /api/tags — replace the tag line above a scenario. Body:
+//   { feature, scenarioName, tags: ["@smoke", ...] }
+// Passing an empty tags array removes the tag line.
+app.post('/api/tags', (req, res) => {
+  const { feature, scenarioName, tags } = req.body || {};
+  if (!feature || !isSafeName(feature)) {
+    return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  }
+  if (!scenarioName || typeof scenarioName !== 'string') {
+    return res.status(400).json({ error: 'scenarioName is required' });
+  }
+  if (!Array.isArray(tags)) {
+    return res.status(400).json({ error: 'tags must be an array of strings' });
+  }
+  const cleanTags = tags.map((t) => String(t).trim())
+    .filter((t) => /^@[A-Za-z0-9_.-]+$/.test(t));
+  if (cleanTags.length !== tags.length) {
+    return res.status(400).json({ error: 'each tag must match ^@[A-Za-z0-9_.-]+$' });
+  }
+  if (cleanTags.length > 15) {
+    return res.status(400).json({ error: 'max 15 tags per scenario' });
+  }
+  const featureDir = path.join(ROOT, 'features', feature);
+  if (!fs.existsSync(featureDir)) {
+    return res.status(404).json({ error: `features/${feature}/ does not exist` });
+  }
+  const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+  if (!featureFile) return res.status(404).json({ error: 'no .feature file found' });
+  const filePath = path.join(featureDir, featureFile);
+  let content;
+  try { content = fs.readFileSync(filePath, 'utf8'); }
+  catch (err) { return res.status(500).json({ error: String(err.message) }); }
+  const scenarios = parseFeatureFileTags(content);
+  const target = scenarios.find((s) => s.name === scenarioName);
+  if (!target) return res.status(404).json({ error: `scenario "${scenarioName}" not found` });
+  const lines = content.split(/\r?\n/);
+  // Figure out the indent used on the scenario line so the tag line matches.
+  const indent = (lines[target.lineIndex].match(/^(\s*)/) || ['', ''])[1];
+  const newTagLine = cleanTags.length ? `${indent}${cleanTags.join(' ')}` : null;
+  if (target.tagLineIndex !== null) {
+    // There's an existing tag line — replace or remove it.
+    if (newTagLine === null) {
+      lines.splice(target.tagLineIndex, 1);
+    } else {
+      lines[target.tagLineIndex] = newTagLine;
+    }
+  } else if (newTagLine !== null) {
+    // No existing tag line — insert directly above the scenario keyword.
+    lines.splice(target.lineIndex, 0, newTagLine);
+  }
+  const out = lines.join(content.includes('\r\n') ? '\r\n' : '\n');
+  try { fs.writeFileSync(filePath, out, 'utf8'); }
+  catch (err) { return res.status(500).json({ error: String(err.message) }); }
+  res.json({ ok: true, feature, scenarioName, tags: cleanTags, file: `features/${feature}/${featureFile}` });
+});
+
+// ------------------- Scheduled Runs -----------------------------------------
+// Lightweight cron replacement — supports interval / daily / weekly modes.
+// State persists to .claude/schedules.json. A single scheduler tick runs every
+// SCHEDULE_TICK_MS to check for due schedules. When a schedule fires, we spawn
+// the same `npx playwright test` process that /api/run uses, but write its
+// output to reports/scheduled-runs/<id>.log instead of a streaming client.
+
+const SCHEDULES_DIR = path.join(ROOT, '.claude');
+const SCHEDULES_FILE = path.join(SCHEDULES_DIR, 'schedules.json');
+const SCHEDULE_LOGS_DIR = path.join(ROOT, 'reports', 'scheduled-runs');
+const SCHEDULE_TICK_MS = 30_000;
+
+function loadSchedules() {
+  try {
+    if (!fs.existsSync(SCHEDULES_FILE)) return [];
+    return JSON.parse(fs.readFileSync(SCHEDULES_FILE, 'utf8'));
+  } catch { return []; }
+}
+function saveSchedules(list) {
+  try {
+    if (!fs.existsSync(SCHEDULES_DIR)) fs.mkdirSync(SCHEDULES_DIR, { recursive: true });
+    fs.writeFileSync(SCHEDULES_FILE, JSON.stringify(list, null, 2), 'utf8');
+  } catch (err) { console.error('saveSchedules failed:', err.message); }
+}
+function computeNextRun(schedule, fromTs) {
+  const from = fromTs || Date.now();
+  if (schedule.mode === 'interval') {
+    const mins = Math.max(1, Number(schedule.intervalMinutes) || 60);
+    return from + mins * 60_000;
+  }
+  const d = new Date(from);
+  const h = Math.max(0, Math.min(23, Number(schedule.hour) || 0));
+  const m = Math.max(0, Math.min(59, Number(schedule.minute) || 0));
+  if (schedule.mode === 'daily') {
+    const next = new Date(d);
+    next.setHours(h, m, 0, 0);
+    if (next.getTime() <= from) next.setDate(next.getDate() + 1);
+    return next.getTime();
+  }
+  if (schedule.mode === 'weekly') {
+    const dow = Math.max(0, Math.min(6, Number(schedule.dayOfWeek) || 0));
+    const next = new Date(d);
+    next.setHours(h, m, 0, 0);
+    let diff = (dow - next.getDay() + 7) % 7;
+    if (diff === 0 && next.getTime() <= from) diff = 7;
+    next.setDate(next.getDate() + diff);
+    return next.getTime();
+  }
+  return from + 3600_000;
+}
+function humanFrequency(s) {
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  if (s.mode === 'interval') return `Every ${s.intervalMinutes} min`;
+  const hh = String(s.hour).padStart(2, '0'), mm = String(s.minute).padStart(2, '0');
+  if (s.mode === 'daily') return `Daily at ${hh}:${mm}`;
+  if (s.mode === 'weekly') return `Every ${DAYS[s.dayOfWeek]} at ${hh}:${mm}`;
+  return 'Unknown';
+}
+
+function fireScheduledRun(schedule) {
+  if (!fs.existsSync(SCHEDULE_LOGS_DIR)) fs.mkdirSync(SCHEDULE_LOGS_DIR, { recursive: true });
+  const logPath = path.join(SCHEDULE_LOGS_DIR, `${schedule.id}-${Date.now()}.log`);
+  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  logStream.write(`\n=== Scheduled run: ${schedule.name} @ ${new Date().toISOString()} ===\n`);
+  const args = ['playwright', 'test'];
+  if (schedule.feature) args.push(`.features-gen/features/${schedule.feature}/`);
+  if (schedule.project) args.push(`--project=${schedule.project}`);
+  if (schedule.tagFilter) args.push(`--grep=${schedule.tagFilter}`);
+  args.push('--grep-invert=@destructive');
+  // Headless by default for scheduled runs (no user watching).
+  const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  // Compile BDD first, then run.
+  const bdd = spawn(npx, ['bddgen'], { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+  bdd.stdout.on('data', (d) => logStream.write(d));
+  bdd.stderr.on('data', (d) => logStream.write(d));
+  bdd.on('close', () => {
+    const proc = spawn(npx, args, { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+    proc.stdout.on('data', (d) => logStream.write(d));
+    proc.stderr.on('data', (d) => logStream.write(d));
+    proc.on('close', (code) => {
+      logStream.write(`\n=== exit code ${code} ===\n`);
+      logStream.end();
+      const list = loadSchedules();
+      const s = list.find((x) => x.id === schedule.id);
+      if (s) {
+        s.lastRun = Date.now();
+        s.lastRunExitCode = code;
+        s.nextRun = computeNextRun(s, s.lastRun);
+        saveSchedules(list);
+      }
+    });
+    proc.on('error', () => { logStream.write('\n=== spawn error ===\n'); logStream.end(); });
+  });
+}
+
+setInterval(() => {
+  try {
+    const list = loadSchedules();
+    if (!list.length) return;
+    const now = Date.now();
+    let mutated = false;
+    for (const s of list) {
+      if (!s.enabled) continue;
+      if (!s.nextRun) { s.nextRun = computeNextRun(s, now); mutated = true; }
+      if (s.nextRun <= now) {
+        fireScheduledRun(s);
+        // Push nextRun forward immediately so we don't double-fire in the same tick.
+        s.nextRun = computeNextRun(s, now);
+        mutated = true;
+      }
+    }
+    if (mutated) saveSchedules(list);
+  } catch (err) { console.error('scheduler tick:', err.message); }
+}, SCHEDULE_TICK_MS);
+
+app.get('/api/schedules', (_req, res) => {
+  const list = loadSchedules();
+  const enriched = list.map((s) => ({
+    ...s,
+    humanFrequency: humanFrequency(s),
+  }));
+  res.json({ schedules: enriched, tickMs: SCHEDULE_TICK_MS });
+});
+
+app.post('/api/schedules', (req, res) => {
+  const { id, name, feature, project, tagFilter, mode, intervalMinutes, hour, minute, dayOfWeek, enabled } = req.body || {};
+  if (!name || typeof name !== 'string' || name.length > 80) {
+    return res.status(400).json({ error: 'name required (max 80 chars)' });
+  }
+  if (feature && !isSafeName(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  if (project && !isSafeName(project)) return res.status(400).json({ error: `project must match ${SAFE_NAME_RE}` });
+  if (tagFilter && typeof tagFilter !== 'string') return res.status(400).json({ error: 'tagFilter must be a string' });
+  if (tagFilter && tagFilter.length > 200) return res.status(400).json({ error: 'tagFilter too long' });
+  if (tagFilter && !/^[@A-Za-z0-9_.\s\-()!&|]+$/.test(tagFilter)) {
+    return res.status(400).json({ error: 'tagFilter contains invalid characters (allowed: letters, digits, @, _, -, ., spaces, boolean ops)' });
+  }
+  if (!['interval', 'daily', 'weekly'].includes(mode)) {
+    return res.status(400).json({ error: 'mode must be interval / daily / weekly' });
+  }
+  if (mode === 'interval') {
+    const n = Number(intervalMinutes);
+    if (!Number.isFinite(n) || n < 1 || n > 10080) return res.status(400).json({ error: 'intervalMinutes must be 1..10080' });
+  }
+  if (mode === 'daily' || mode === 'weekly') {
+    const h = Number(hour), m = Number(minute);
+    if (!Number.isInteger(h) || h < 0 || h > 23) return res.status(400).json({ error: 'hour must be 0..23' });
+    if (!Number.isInteger(m) || m < 0 || m > 59) return res.status(400).json({ error: 'minute must be 0..59' });
+  }
+  if (mode === 'weekly') {
+    const d = Number(dayOfWeek);
+    if (!Number.isInteger(d) || d < 0 || d > 6) return res.status(400).json({ error: 'dayOfWeek must be 0..6 (Sun..Sat)' });
+  }
+  const list = loadSchedules();
+  const record = {
+    id: id || `sch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: name.trim(),
+    feature: feature || '',
+    project: project || '',
+    tagFilter: tagFilter || '',
+    mode,
+    intervalMinutes: mode === 'interval' ? Number(intervalMinutes) : undefined,
+    hour: (mode === 'daily' || mode === 'weekly') ? Number(hour) : undefined,
+    minute: (mode === 'daily' || mode === 'weekly') ? Number(minute) : undefined,
+    dayOfWeek: mode === 'weekly' ? Number(dayOfWeek) : undefined,
+    enabled: enabled !== false,
+    createdAt: Date.now(),
+  };
+  record.nextRun = computeNextRun(record, Date.now());
+  const existingIdx = list.findIndex((s) => s.id === record.id);
+  if (existingIdx >= 0) {
+    // Preserve lastRun/exitCode on update
+    record.lastRun = list[existingIdx].lastRun;
+    record.lastRunExitCode = list[existingIdx].lastRunExitCode;
+    record.createdAt = list[existingIdx].createdAt;
+    list[existingIdx] = record;
+  } else {
+    list.push(record);
+  }
+  saveSchedules(list);
+  res.json({ ok: true, schedule: { ...record, humanFrequency: humanFrequency(record) } });
+});
+
+app.delete('/api/schedules/:id', (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^sch_[a-z0-9_]+$/.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
+  const list = loadSchedules();
+  const filtered = list.filter((s) => s.id !== id);
+  if (filtered.length === list.length) return res.status(404).json({ error: 'schedule not found' });
+  saveSchedules(filtered);
+  res.json({ ok: true, deleted: id });
+});
+
 // Coverage-gap detector: cross-reference the ACs in a story with the
 // scenarios in its .feature file. The project's convention is that scenario
 // names start with `AC<n>-` (AC1-POS-01, AC2-NEG-03, etc.) — so AC<n> is
@@ -2135,11 +2455,30 @@ app.get('/api/last-failures', (_req, res) => {
 // Run Playwright with NDJSON streaming so the browser can read the log live.
 // Flow: clear allure → run → rebuild allure → done.
 app.post('/api/run', async (req, res) => {
-  const { feature, project, headed, lastFailed } = req.body || {};
+  const { feature, features, project, headed, lastFailed, tagFilter } = req.body || {};
 
   // Validate input. Empty/undefined feature = run all features (no path arg);
   // any provided feature/project must match the safe-name regex AND, for
   // feature, refer to a real folder under features/ or tests/.
+  // `features` (array) is used by "Run N impacted features" — validate each entry.
+  let featuresArr = null;
+  if (features !== undefined && features !== null && !Array.isArray(features)) {
+    return res.status(400).json({ error: 'features must be an array of feature names' });
+  }
+  if (Array.isArray(features) && features.length > 0) {
+    if (features.length > 50) return res.status(400).json({ error: 'features array too long (max 50)' });
+    for (const f of features) {
+      if (typeof f !== 'string' || !isSafeName(f)) {
+        return res.status(400).json({ error: `each features entry must match ${SAFE_NAME_RE} (got "${f}")` });
+      }
+      const inFeatures = fs.existsSync(path.join(ROOT, 'features', f));
+      const inTests = fs.existsSync(path.join(CFG_PATHS.tests, f));
+      if (!inFeatures && !inTests) {
+        return res.status(404).json({ error: `feature "${f}" does not exist under features/ or tests/` });
+      }
+    }
+    featuresArr = features;
+  }
   if (feature !== undefined && feature !== null && feature !== '') {
     if (!isSafeName(feature)) {
       return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE} (got "${feature}")` });
@@ -2167,11 +2506,23 @@ app.post('/api/run', async (req, res) => {
   // Playwright doesn't combine it with a path filter.
   if (lastFailed) {
     args.push('--last-failed');
+  } else if (featuresArr) {
+    // Multiple features (e.g. "Run N impacted features") — Playwright accepts
+    // several positional test-dir args in one invocation.
+    for (const f of featuresArr) args.push(`.features-gen/features/${f}/`);
   } else if (feature) {
     // Specific feature picked → filter the BDD compiled tests by feature dir.
     args.push(`.features-gen/features/${feature}/`);
   }
   if (project) args.push(`--project=${project}`);
+  // Optional tag filter (Playwright supports boolean expressions like "@smoke and not @slow").
+  if (tagFilter && typeof tagFilter === 'string' && tagFilter.trim()) {
+    const clean = tagFilter.trim();
+    if (clean.length > 200 || !/^[@A-Za-z0-9_.\s\-()!&|]+$/.test(clean)) {
+      return res.status(400).json({ error: 'tagFilter contains invalid characters or is too long' });
+    }
+    args.push(`--grep=${clean}`);
+  }
   // Default-skip @destructive tag (e.g. signup AC1/AC2 that creates real
   // tenants on prod). Override with `?destructive=1` in the request.
   if (!req.body?.destructive) args.push('--grep-invert=@destructive');
