@@ -86,7 +86,24 @@ claude --version          # verify the CLI is reachable (optional but recommende
 npm run ui                # → http://127.0.0.1:3001
 ```
 
-Also see the shipped user guide: `docs/USER_GUIDE.html` (open in browser) or `docs/USER_GUIDE.pdf`.
+### Install into an existing Playwright project (npm)
+
+```bash
+# in your Playwright project's root
+npm install --save-dev @arslanars/agentic-qa
+npx agentic-qa init      # scaffolds framework files (idempotent, non-destructive)
+npm run qa:ui            # opens http://localhost:3001
+```
+
+`init` copies templates (BasePage, config, gitignore additions), creates empty story/spec/report dirs, and adds `qa`, `qa:ui`, `qa:run` scripts to your `package.json`. See `INTEGRATE.md` (bundled with the package) for the full integration walkthrough.
+
+### Peer dependencies (installed alongside)
+
+The framework relies on Playwright + BDD tooling that consumers should own directly. Install if missing:
+
+```bash
+npm install --save-dev @playwright/test playwright-bdd allure-playwright
+```
 
 ### Without a Claude subscription
 
@@ -242,7 +259,6 @@ Full validators — safe-name regex on user input, `X-Accel-Buffering: no` for s
 ├── .github/workflows/
 │   └── playwright.yml           # CI: runs the suite on push/PR
 ├── .vscode/mcp.json             # VSCode MCP server config
-├── docs/                        # User guide (HTML + PDF)
 ├── user-stories/                # INPUT: one .md per user story
 │   └── _TEMPLATE.md
 ├── specs/                       # Test plans (markdown) — output of the planner

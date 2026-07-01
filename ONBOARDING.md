@@ -143,7 +143,7 @@ This uses your Claude Code subscription — no separate API key needed.
 3. Create `features/<slug>/<name>.steps.ts` — wire each step phrase to code; reuse the same POM as classic specs.
 4. Reload UI; the dropdown shows `<slug> (… .feature)`. ▶ Run.
 
-Full BDD authoring guide: [features/README.md](features/README.md). When chromium is picked in the UI, both classic and Gherkin scenarios run together.
+Full BDD authoring guide: [features/README.md on GitHub](https://github.com/Arslanars/agentic-qa/blob/main/features/README.md). When chromium is picked in the UI, both classic and Gherkin scenarios run together.
 
 ### Path D: Full hand-author from template
 

@@ -7,7 +7,7 @@ This folder holds **page objects** — one TypeScript class per page or major UI
 | Rule | Why |
 |------|-----|
 | One class per page → `pages/<feature>/<PageName>Page.ts` | Mirrors `tests/<feature>/` layout — easy to find. |
-| All page classes extend [`BasePage`](BasePage.ts) | Shared navigation, screenshotting, and assertions. |
+| All page classes extend `BasePage` (scaffolded into `pages/BasePage.ts` by `npx agentic-qa init`) | Shared navigation, screenshotting, and assertions. |
 | Locators are `readonly Locator` properties initialized in the constructor | One source of truth per selector. |
 | Action methods are named after user intent (`login()`, `addToCart()`), not selectors | Tests read like specifications. |
 | Navigation actions return the next page object | `await loginPage.submit()` → `DashboardPage`. |
