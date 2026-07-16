@@ -14,6 +14,11 @@ const fs = require('fs');
 const { renderReport } = require('./report-renderer');
 const { writeRunReports } = require('./report-writer');
 const { writeTestCasesExcel } = require('./excel-writer');
+// Security / performance / API-test engines (dependency-free; also usable
+// headless via bin/qa-scan.js). Wired to the endpoints below + UI panels.
+const security = require('../lib/security');
+const perfEngine = require('../lib/perf/lighthouse');
+const apiTesting = require('../lib/api-testing/runner');
 
 const app = express();
 const PORT = process.env.UI_PORT ? Number(process.env.UI_PORT) : 3001;
@@ -2743,6 +2748,142 @@ app.get('/api/report-status', (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
+});
+
+// ---- Security scanner ------------------------------------------------------
+// Validate a target is a real http(s) URL before we make requests to it.
+function isHttpUrl(s) {
+  try { const u = new URL(String(s)); return u.protocol === 'http:' || u.protocol === 'https:'; }
+  catch { return false; }
+}
+
+// POST /api/security-scan — streams progress as NDJSON, ends with the full
+// result ({type:'result'}) and a {type:'done'}. Reuses the lib/security engine.
+app.post('/api/security-scan', async (req, res) => {
+  const { target, passive, active, probeFiles, zap } = req.body || {};
+  if (!isHttpUrl(target)) return res.status(400).json({ error: 'target must be a valid http(s) URL' });
+
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  write({ type: 'start', target });
+  try {
+    const result = await security.runSecurityScan(target, {
+      passive: passive !== false,
+      active: active !== false,
+      probeFiles: !!probeFiles,
+      zap: !!zap,
+      reportsDir: CFG_PATHS.reports,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({ type: 'result', result });
+    write({ type: 'done', exitCode: 0 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[security] scan failed: ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
+});
+
+// GET /api/security-report — the last persisted scan (reports/security/latest.json).
+app.get('/api/security-report', (_req, res) => {
+  try {
+    const p = path.join(CFG_PATHS.reports, 'security', 'latest.json');
+    if (!fs.existsSync(p)) return res.json({ exists: false });
+    res.json({ exists: true, result: JSON.parse(fs.readFileSync(p, 'utf8')) });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// POST /api/security-review — Claude turns the latest findings into a
+// prioritized remediation plan. Reuses the shared streamClaudeWithPrompt path.
+app.post('/api/security-review', async (req, res) => {
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+  let result = req.body && req.body.result;
+  if (!result) {
+    const p = path.join(CFG_PATHS.reports, 'security', 'latest.json');
+    if (fs.existsSync(p)) { try { result = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) {} }
+  }
+  if (!result || !Array.isArray(result.findings)) {
+    return res.status(400).json({ error: 'no scan findings available — run a scan first' });
+  }
+  await streamClaudeWithPrompt(res, security.buildReviewPrompt(result));
+});
+
+// ---- API testing -----------------------------------------------------------
+app.get('/api/api-test/suites', (_req, res) => {
+  try { res.json({ suites: apiTesting.listSuites(ROOT) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/api-test/run', async (req, res) => {
+  const { file } = req.body || {};
+  // Suite filename must be a plain <name>.json under api-tests/ — no traversal.
+  if (!file || typeof file !== 'string' || file.includes('/') || file.includes('\\') || file.includes('..') || !/^[A-Za-z0-9._-]+\.json$/.test(file)) {
+    return res.status(400).json({ error: 'file must be a .json suite name under api-tests/' });
+  }
+  if (!fs.existsSync(path.join(ROOT, 'api-tests', file))) {
+    return res.status(404).json({ error: `suite not found: api-tests/${file}` });
+  }
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  try {
+    const suite = apiTesting.loadSuite(ROOT, file);
+    const summary = await apiTesting.runSuite(suite, {
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+      now: () => Date.now(),
+    });
+    write({ type: 'result', summary });
+    write({ type: 'done', exitCode: summary.failed > 0 ? 1 : 0 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[api] ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
+});
+
+// ---- Performance budgets ---------------------------------------------------
+app.get('/api/perf/budgets', (_req, res) => {
+  try { res.json({ budget: perfEngine.loadBudget(ROOT) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/perf/budgets', (req, res) => {
+  try { res.json({ budget: perfEngine.saveBudget(ROOT, (req.body && req.body.budget) || {}) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/perf/run', async (req, res) => {
+  const { target } = req.body || {};
+  if (!isHttpUrl(target)) return res.status(400).json({ error: 'target must be a valid http(s) URL' });
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  try {
+    const result = await perfEngine.runPerf(target, {
+      rootDir: ROOT,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({ type: 'result', result });
+    write({ type: 'done', exitCode: result.passed ? 0 : 1 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[perf] ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
 });
 
 app.listen(PORT, HOST, () => {

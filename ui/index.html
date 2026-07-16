@@ -1164,6 +1164,57 @@
       0%   { left: -40%; }
       100% { left: 100%; }
     }
+
+    /* ---- Security scanner + API/Perf panels ---- */
+    .sec-grade-badge {
+      display: inline-grid; place-items: center; min-width: 18px; height: 18px;
+      padding: 0 5px; border-radius: 6px; font-size: 11px; font-weight: 800; color: #fff; margin-left: 2px;
+    }
+    .sec-hint { color: var(--warn, #b45309); font-weight: 500; }
+    .sec-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; padding: 10px; border-radius: 10px; background: var(--bg-2); }
+    .sec-grade { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; font-size: 22px; font-weight: 800; color: #fff; }
+    .sec-grade-A, .sec-grade-B { background: #16a34a; }
+    .sec-grade-C { background: #f59e0b; }
+    .sec-grade-D { background: #ea580c; }
+    .sec-grade-F { background: #dc2626; }
+    .sec-count { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .sec-count.zero { opacity: 0.45; font-weight: 500; }
+    .sev-critical { background: #b91c1c; color: #fff; }
+    .sev-high     { background: #fee2e2; color: #b91c1c; }
+    .sev-medium   { background: #fef3c7; color: #b45309; }
+    .sev-low      { background: #e5e7eb; color: #374151; }
+    .sev-info     { background: #e5e7eb; color: #4b5563; }
+    .sec-findings { margin-top: 8px; }
+    .sec-card { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: var(--bg-1); }
+    .sec-border-critical { border-left-color: #b91c1c; }
+    .sec-border-high     { border-left-color: #dc2626; }
+    .sec-border-medium   { border-left-color: #f59e0b; }
+    .sec-border-low      { border-left-color: #9ca3af; }
+    .sec-border-info     { border-left-color: #cbd5e1; }
+    .sec-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+    .sec-sev { padding: 2px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em; }
+    .sec-title { font-weight: 600; color: var(--text); flex: 1; }
+    .sec-cat { font-size: 11px; color: var(--text-faint); }
+    .sec-ev, .sec-fix { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+    .sec-url { font-size: 11px; color: var(--text-faint); font-family: var(--mono, monospace); margin-top: 3px; word-break: break-all; }
+    .sec-empty { color: var(--success); font-weight: 600; padding: 12px 0; }
+    .apiperf-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .apiperf-tab { flex: 1; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2); color: var(--text-dim); font-weight: 600; cursor: pointer; font-size: 13px; }
+    .apiperf-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .apiperf-results { margin-top: 6px; }
+    .perf-status { color: var(--text-dim); font-size: 12px; margin: 6px 0 8px; }
+    .perf-row, .api-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; flex-wrap: wrap; }
+    .perf-metric, .api-name { flex: 1; font-weight: 600; color: var(--text); }
+    .perf-val, .api-meta { font-variant-numeric: tabular-nums; font-size: 12.5px; }
+    .perf-row.ok .perf-val, .api-row.ok .api-mark { color: var(--success); font-weight: 700; }
+    .perf-row.bad .perf-val, .api-row.bad .api-mark { color: var(--danger); font-weight: 700; }
+    .api-mark { font-weight: 800; }
+    .api-check-fail { flex-basis: 100%; font-size: 11.5px; color: var(--danger); margin-top: 2px; }
+    /* The `hidden` attribute must beat the explicit display these classes set,
+       otherwise toggling .hidden in JS (run buttons, status pills, grade badge)
+       has no effect. */
+    .btn[hidden], .rec-status-pill[hidden], .sec-grade-badge[hidden] { display: none !important; }
+
     .rec-code, .rec-scenario {
       background: #18181b; color: #d4d4d8;
       border-radius: 6px;
@@ -2436,6 +2487,19 @@
           Schedules
           <span id="sched-count-badge" class="sched-count-badge" hidden>0</span>
         </button>
+        <button id="topbar-security" type="button" class="verb" aria-label="Open the security scanner" title="Scan a target URL for common web-security issues (headers, cookies, TLS, XSS, SQLi, open redirect, …)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          Security
+          <span id="sec-grade-badge" class="sec-grade-badge" hidden></span>
+        </button>
+        <button id="topbar-apiperf" type="button" class="verb" aria-label="Open API and performance testing" title="Run request-level API test suites and grade real Web Vitals against a budget">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          API &amp; Perf
+        </button>
         <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme">
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="4"/>
@@ -2943,6 +3007,72 @@
       <div class="spacer"></div>
       <button type="button" class="btn ghost" id="sched-cancel">Close</button>
       <button type="button" class="btn primary" id="sched-add">Add schedule</button>
+    </div>
+  </div>
+
+  <!-- Security scanner modal -->
+  <div id="sec-modal" class="rec-modal" role="dialog" aria-modal="true" aria-labelledby="sec-title">
+    <div class="rec-head">
+      <h3 id="sec-title">Security scan</h3>
+      <button type="button" class="close" id="sec-close" aria-label="Close">×</button>
+    </div>
+    <div class="rec-body">
+      <p>Scan a target URL for common web-security issues. Only run this against systems you are <b>authorized</b> to test.</p>
+      <div class="field">
+        <label for="sec-target">Target URL</label>
+        <input id="sec-target" type="url" placeholder="https://staging.example.com" spellcheck="false" autocomplete="off" />
+      </div>
+      <label class="check"><input id="sec-passive" type="checkbox" checked /><span>Passive (headers, cookies, TLS, CORS)</span></label>
+      <label class="check"><input id="sec-active" type="checkbox" checked /><span>Active probes (XSS reflection, SQLi, open redirect, methods)</span></label>
+      <label class="check"><input id="sec-files" type="checkbox" /><span>Probe for exposed files (.env, .git) <span class="sec-hint">— more intrusive</span></span></label>
+      <label class="check"><input id="sec-zap" type="checkbox" /><span>OWASP ZAP baseline (requires Docker)</span></label>
+      <div id="sec-summary" class="sec-summary" hidden></div>
+      <div id="sec-findings" class="sec-findings"></div>
+      <pre id="sec-review-out" class="rec-code" style="max-height:220px; white-space:pre-wrap;" hidden></pre>
+    </div>
+    <div class="rec-foot">
+      <span id="sec-status" class="rec-status-pill working" hidden>Scanning…</span>
+      <span class="spacer"></span>
+      <button id="sec-review" type="button" class="btn ghost" disabled title="Ask Claude to turn the findings into a prioritized remediation plan">AI review</button>
+      <button id="sec-close-2" type="button" class="btn ghost">Close</button>
+      <button id="sec-run" type="button" class="btn primary">Run scan</button>
+    </div>
+  </div>
+
+  <!-- API & Performance modal -->
+  <div id="perf-modal" class="rec-modal" role="dialog" aria-modal="true" aria-labelledby="perf-title">
+    <div class="rec-head">
+      <h3 id="perf-title">API &amp; Performance</h3>
+      <button type="button" class="close" id="perf-close" aria-label="Close">×</button>
+    </div>
+    <div class="rec-body">
+      <div class="apiperf-tabs">
+        <button type="button" class="apiperf-tab active" data-tab="api">API tests</button>
+        <button type="button" class="apiperf-tab" data-tab="perf">Performance</button>
+      </div>
+      <div id="apiperf-api">
+        <p>Run request-level API suites from <code>api-tests/*.json</code> (copy <code>_TEMPLATE.json</code>). Each request checks status, latency, headers, and JSON dot-paths.</p>
+        <div class="field">
+          <label for="api-suite">Suite</label>
+          <select id="api-suite"></select>
+        </div>
+        <div id="api-results" class="apiperf-results"></div>
+      </div>
+      <div id="apiperf-perf" hidden>
+        <p>Load the target in Chromium and grade real Web Vitals against a budget (<code>perf/budgets.json</code>).</p>
+        <div class="field">
+          <label for="perf-target">Target URL</label>
+          <input id="perf-target" type="url" placeholder="https://staging.example.com" spellcheck="false" autocomplete="off" />
+        </div>
+        <div id="perf-results" class="apiperf-results"></div>
+      </div>
+    </div>
+    <div class="rec-foot">
+      <span id="apiperf-status" class="rec-status-pill working" hidden>Working…</span>
+      <span class="spacer"></span>
+      <button id="perf-close-2" type="button" class="btn ghost">Close</button>
+      <button id="api-run" type="button" class="btn primary">Run API suite</button>
+      <button id="perf-run" type="button" class="btn primary" hidden>Run perf</button>
     </div>
   </div>
 
@@ -6543,6 +6673,186 @@ INSTRUCTIONS FOR CLAUDE:
         if (mql.addEventListener) mql.addEventListener('change', handler);
         else if (mql.addListener) mql.addListener(handler); // Safari < 14
       }
+    })();
+
+    // ---- Security scanner + API & Performance panels -----------------------
+    // Wires the topbar buttons + modals to the /api/security-* , /api/api-test/*
+    // and /api/perf/* endpoints. Self-contained IIFE so it can't clash with
+    // the rest of the script's names.
+    (function () {
+      const byId = (id) => document.getElementById(id);
+      const backdrop = () => byId('rec-backdrop');
+      const MODALS = ['rec-modal', 'sched-modal', 'tags-modal', 'sec-modal', 'perf-modal'];
+      const anyOtherOpen = (except) => MODALS.some((m) => m !== except && byId(m)?.classList.contains('show'));
+      const openModal = (id) => { const m = byId(id); if (!m) return; m.classList.add('show'); backdrop()?.classList.add('show'); };
+      const closeModal = (id) => { const m = byId(id); if (!m) return; m.classList.remove('show'); if (!anyOtherOpen(id)) backdrop()?.classList.remove('show'); };
+      const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      const toast = (m, k) => { if (typeof showToast === 'function') showToast(m, k); };
+      const SEV = ['critical', 'high', 'medium', 'low', 'info'];
+
+      // Stream an NDJSON response, calling onMsg for each parsed object.
+      async function streamNdjson(resp, onMsg) {
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) { if (!line) continue; let msg; try { msg = JSON.parse(line); } catch { continue; } onMsg(msg); }
+        }
+      }
+
+      // ===== Security =====
+      let lastSecResult = null;
+      function renderSecSummary(score) {
+        const el = byId('sec-summary');
+        el.hidden = false;
+        el.innerHTML = `<span class="sec-grade sec-grade-${esc(score.grade)}">${esc(score.grade)}</span>` +
+          SEV.map((s) => `<span class="sec-count sev-${s}${score.counts[s] ? '' : ' zero'}">${score.counts[s]} ${s}</span>`).join('');
+        const badge = byId('sec-grade-badge');
+        if (badge) { badge.hidden = false; badge.textContent = score.grade; badge.style.background = ({ A: '#16a34a', B: '#16a34a', C: '#f59e0b', D: '#ea580c', F: '#dc2626' }[score.grade]) || '#6b7280'; }
+      }
+      function renderSecFindings(findings) {
+        const el = byId('sec-findings');
+        if (!findings.length) { el.innerHTML = '<div class="sec-empty">No findings. 🎉</div>'; return; }
+        el.innerHTML = findings.map((f) => `
+          <div class="sec-card sec-border-${esc(f.severity)}">
+            <div class="sec-card-head">
+              <span class="sec-sev sev-${esc(f.severity)}">${esc((f.severity || '').toUpperCase())}</span>
+              <span class="sec-title">${esc(f.title)}</span>
+              <span class="sec-cat">${esc(f.category)}</span>
+            </div>
+            ${f.evidence ? `<div class="sec-ev"><b>Evidence:</b> ${esc(f.evidence)}</div>` : ''}
+            ${f.remediation ? `<div class="sec-fix"><b>Fix:</b> ${esc(f.remediation)}</div>` : ''}
+            ${f.url ? `<div class="sec-url">${esc(f.url)}</div>` : ''}
+          </div>`).join('');
+      }
+      async function runSecurityScan() {
+        const target = byId('sec-target').value.trim();
+        if (!target) { toast('Enter a target URL', 'error'); return; }
+        const btn = byId('sec-run'); const status = byId('sec-status');
+        btn.disabled = true; status.hidden = false; status.textContent = 'Scanning…';
+        byId('sec-findings').innerHTML = ''; byId('sec-summary').hidden = true;
+        byId('sec-review-out').hidden = true; byId('sec-review-out').textContent = '';
+        try {
+          const resp = await fetch('/api/security-scan', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target, passive: byId('sec-passive').checked, active: byId('sec-active').checked, probeFiles: byId('sec-files').checked, zap: byId('sec-zap').checked }) });
+          if (!resp.ok) { const d = await resp.json().catch(() => ({})); toast(d.error || `HTTP ${resp.status}`, 'error'); status.hidden = true; btn.disabled = false; return; }
+          await streamNdjson(resp, (msg) => {
+            if (msg.type === 'log') status.textContent = (msg.text || '').trim() || 'Scanning…';
+            else if (msg.type === 'result') { lastSecResult = msg.result; renderSecSummary(msg.result.score); renderSecFindings(msg.result.findings); }
+          });
+          status.hidden = true;
+          byId('sec-review').disabled = !(lastSecResult && lastSecResult.findings.length);
+        } catch (err) { toast('Scan failed: ' + (err?.message || err), 'error'); status.hidden = true; }
+        finally { btn.disabled = false; }
+      }
+      async function runSecurityReview() {
+        if (!lastSecResult) { toast('Run a scan first', 'error'); return; }
+        const status = byId('sec-status'); const out = byId('sec-review-out');
+        out.hidden = false; out.textContent = ''; status.hidden = false; status.textContent = 'Claude reviewing…';
+        try {
+          const resp = await fetch('/api/security-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ result: lastSecResult }) });
+          if (resp.status === 501) { toast('Claude CLI not detected', 'error'); out.textContent = 'Claude CLI not available — install it to use AI review.'; status.hidden = true; return; }
+          if (!resp.ok) { const d = await resp.json().catch(() => ({})); toast(d.error || `HTTP ${resp.status}`, 'error'); status.hidden = true; return; }
+          await streamNdjson(resp, (msg) => { if (msg.type === 'log' && msg.stream === 'stdout') { out.textContent += msg.text; out.scrollTop = out.scrollHeight; } });
+          status.hidden = true;
+        } catch (err) { toast('Review failed', 'error'); status.hidden = true; }
+      }
+
+      // ===== API & Performance =====
+      function switchTab(tab) {
+        document.querySelectorAll('.apiperf-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
+        byId('apiperf-api').hidden = tab !== 'api';
+        byId('apiperf-perf').hidden = tab !== 'perf';
+        byId('api-run').hidden = tab !== 'api';
+        byId('perf-run').hidden = tab !== 'perf';
+      }
+      async function loadApiSuites() {
+        const sel = byId('api-suite');
+        try {
+          const r = await fetch('/api/api-test/suites'); const d = await r.json();
+          sel.innerHTML = '';
+          if (!d.suites || !d.suites.length) { sel.innerHTML = '<option value="">(no suites — copy api-tests/_TEMPLATE.json)</option>'; byId('api-run').disabled = true; return; }
+          byId('api-run').disabled = false;
+          for (const s of d.suites) { const o = document.createElement('option'); o.value = s.file; o.textContent = `${s.name} (${s.requests} request${s.requests === 1 ? '' : 's'})`; sel.appendChild(o); }
+        } catch { sel.innerHTML = '<option value="">(failed to load)</option>'; }
+      }
+      async function runApiSuite() {
+        const file = byId('api-suite').value;
+        if (!file) { toast('No suite selected', 'error'); return; }
+        const btn = byId('api-run'); const out = byId('api-results'); const status = byId('apiperf-status');
+        btn.disabled = true; status.hidden = false; status.textContent = 'Running…'; out.innerHTML = '';
+        try {
+          const resp = await fetch('/api/api-test/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) });
+          if (!resp.ok) { const d = await resp.json().catch(() => ({})); toast(d.error || `HTTP ${resp.status}`, 'error'); status.hidden = true; btn.disabled = false; return; }
+          let summary = null;
+          await streamNdjson(resp, (msg) => { if (msg.type === 'result') summary = msg.summary; });
+          if (summary) renderApiResults(summary);
+          status.hidden = true;
+        } catch (err) { toast('API run failed', 'error'); status.hidden = true; }
+        finally { btn.disabled = false; }
+      }
+      function renderApiResults(summary) {
+        byId('api-results').innerHTML = `<div class="perf-status">${summary.passed}/${summary.total} request(s) passed</div>` +
+          summary.results.map((r) => `
+            <div class="api-row ${r.passed ? 'ok' : 'bad'}">
+              <span class="api-mark">${r.passed ? '✓' : '✗'}</span>
+              <span class="api-name">${esc(r.name)}</span>
+              <span class="api-meta">${esc(r.status)} · ${esc(r.latencyMs)}ms · ${r.checks.filter((c) => c.ok).length}/${r.checks.length}</span>
+              ${r.checks.filter((c) => !c.ok).map((c) => `<div class="api-check-fail">✗ ${esc(c.label)} — ${esc(c.detail)}</div>`).join('')}
+            </div>`).join('');
+      }
+      async function runPerf() {
+        const target = byId('perf-target').value.trim();
+        if (!target) { toast('Enter a target URL', 'error'); return; }
+        const btn = byId('perf-run'); const out = byId('perf-results'); const status = byId('apiperf-status');
+        btn.disabled = true; status.hidden = false; status.textContent = 'Measuring…'; out.innerHTML = '';
+        try {
+          const resp = await fetch('/api/perf/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }) });
+          if (!resp.ok) { const d = await resp.json().catch(() => ({})); toast(d.error || `HTTP ${resp.status}`, 'error'); status.hidden = true; btn.disabled = false; return; }
+          let result = null;
+          await streamNdjson(resp, (msg) => { if (msg.type === 'result') result = msg.result; });
+          if (result) renderPerf(result);
+          status.hidden = true;
+        } catch (err) { toast('Perf run failed', 'error'); status.hidden = true; }
+        finally { btn.disabled = false; }
+      }
+      function renderPerf(result) {
+        byId('perf-results').innerHTML = `<div class="perf-status">${result.passed ? '✓ within budget' : '✗ budget exceeded'}</div>` +
+          result.rows.map((r) => `
+            <div class="perf-row ${r.ok ? 'ok' : 'bad'}">
+              <span class="perf-metric">${esc(r.metric)}</span>
+              <span class="perf-val">${esc(r.value)} / ${esc(r.budget)} ${r.ok ? '✓' : '✗'}</span>
+            </div>`).join('');
+      }
+
+      // ===== Wire up =====
+      byId('topbar-security')?.addEventListener('click', () => {
+        openModal('sec-modal');
+        const t = byId('sec-target'); const u = byId('url');
+        if (t && !t.value && u && u.value) t.value = u.value;
+      });
+      byId('sec-close')?.addEventListener('click', () => closeModal('sec-modal'));
+      byId('sec-close-2')?.addEventListener('click', () => closeModal('sec-modal'));
+      byId('sec-run')?.addEventListener('click', runSecurityScan);
+      byId('sec-review')?.addEventListener('click', runSecurityReview);
+
+      byId('topbar-apiperf')?.addEventListener('click', () => { openModal('perf-modal'); switchTab('api'); loadApiSuites(); });
+      byId('perf-close')?.addEventListener('click', () => closeModal('perf-modal'));
+      byId('perf-close-2')?.addEventListener('click', () => closeModal('perf-modal'));
+      document.querySelectorAll('.apiperf-tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+      byId('api-run')?.addEventListener('click', runApiSuite);
+      byId('perf-run')?.addEventListener('click', runPerf);
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (byId('sec-modal')?.classList.contains('show')) closeModal('sec-modal');
+        if (byId('perf-modal')?.classList.contains('show')) closeModal('perf-modal');
+      });
     })();
   </script>
 </body>
