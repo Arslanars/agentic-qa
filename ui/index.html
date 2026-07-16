@@ -2633,6 +2633,42 @@
     /* Modal accents (Security / API&Perf / Schedules / Recorder) keep the neon focus */
     :root[data-theme="dark"] .rec-modal { border-color: var(--border-strong); box-shadow: 0 0 0 1px rgba(53, 224, 161, 0.08), var(--shadow-lg); }
     :root[data-theme="dark"] .apiperf-tab.active { background: linear-gradient(135deg, #35e0a1, #16b877); color: #04120b; border-color: rgba(53, 224, 161, 0.5); }
+
+    /* =====================================================================
+       FIT SIDEBAR IN ONE VIEW — no internal scrollbar. The Story-input card
+       holds the slack; its Acceptance-Criteria textarea flexes to fill the
+       leftover height, so the whole left panel always fits the page.
+       Presentation only — no JS/markup logic touched.
+       ===================================================================== */
+    .left-scroll {
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      gap: 7px; padding: 11px;
+    }
+    /* GROW-ONLY model: nothing ever shrinks (flex-shrink:0), so no card can
+       collapse or overlap. On tall screens the Story card + its AC textarea
+       grow to fill the panel ("cover in one page") with no scrollbar. On
+       short viewports we re-enable scrolling (media query below) so the Run
+       button is never clipped. */
+    .left-scroll > * { flex: 0 0 auto; }
+    .left-scroll .field { margin-bottom: 5px; }
+    .left-scroll .section-label { margin: 1px 0 6px; }
+    .left-scroll .field label { margin-bottom: 3px; }
+    .left-scroll .field textarea { min-height: 42px; }
+    .left-scroll #creds { min-height: 32px !important; }
+    .left-scroll .check { padding: 6px 10px; }
+    .left-scroll .tag-filter-hint { font-size: 10.5px; margin-top: 3px; line-height: 1.3; }
+    .left-scroll > .section + .section { margin-top: 0; }
+    :root[data-theme="dark"] .panel.left .section { padding: 9px 13px 10px; }
+    .left-scroll > .section:first-child { flex: 1 0 auto; display: flex; flex-direction: column; }
+    .left-scroll > .section:first-child > * { flex: 0 0 auto; }
+    .left-scroll > .section:first-child .field:has(#ac) { flex: 1 0 auto; display: flex; flex-direction: column; margin-bottom: 5px; }
+    .left-scroll > .section:first-child .field:has(#ac) textarea { flex: 1 0 auto; min-height: 42px; }
+    /* Safety: short viewports (< ~1000px tall) keep a scrollbar so nothing
+       important ever clips; taller screens fit in one page with no scroll. */
+    @media (max-height: 1000px) { .left-scroll { overflow: auto; } }
+    /* Keep the collapsible generation-prompt from forcing overflow. */
+    .left-scroll > details.express { flex: 0 0 auto; }
   </style>
 </head>
 <body>
