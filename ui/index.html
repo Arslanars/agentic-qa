@@ -2438,6 +2438,201 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: padding-box; border: 2px solid transparent; }
+    /* =====================================================================
+       NEON-TERMINAL SKIN — appended override, dark mode only.
+       Pure presentation: recolors design tokens and adds glows/animations.
+       Touches no JS, IDs, or event handlers; remove this block to revert.
+       ===================================================================== */
+    :root[data-theme="dark"] {
+      --mono: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+      /* Surfaces — deep navy-black canvas, lifted panels */
+      --bg-0: #070b12;
+      --bg-1: #0c1119;
+      --bg-2: #121a28;
+      --surface: #0c1119;
+      --surface-hover: #16202f;
+      --border: #1b2636;
+      --border-strong: #2b3b52;
+      --field-border: #26374d;
+      --field-border-hover: #3a5068;
+      --text: #e8eef6;
+      --text-dim: #a6b6c9;
+      --text-faint: #64788f;
+      /* Brand — neon teal-green */
+      --accent: #35e0a1;
+      --accent-hover: #62f0b8;
+      --accent-soft: rgba(53, 224, 161, 0.12);
+      --accent-ring: rgba(53, 224, 161, 0.35);
+      --accent-glow: rgba(34, 211, 153, 0.45);
+      --accent-fill: #16b877;
+      --accent-fill-hover: #1fd589;
+      --on-accent: #04120b;
+      --on-fill: #04120b;
+      --grad: linear-gradient(135deg, #35e0a1 0%, #17c26d 100%);
+      --pulse-ring: rgba(53, 224, 161, 0.35);
+      /* Status */
+      --success: #35e0a1;  --success-soft: rgba(53, 224, 161, 0.14);
+      --info: #9d8bff;     --info-soft: rgba(157, 139, 255, 0.16);
+      --warn: #fbbf24;     --warn-soft: rgba(251, 191, 36, 0.16);
+      --danger: #ff6b6b;   --danger-soft: rgba(255, 107, 107, 0.14);
+    }
+
+    /* Page canvas — subtle corner glows */
+    :root[data-theme="dark"] body {
+      background:
+        radial-gradient(1100px 520px at 80% -10%, rgba(53, 224, 161, 0.07), transparent 60%),
+        radial-gradient(900px 480px at 5% 110%, rgba(157, 139, 255, 0.05), transparent 60%),
+        var(--bg-0);
+    }
+
+    /* Brand title / tagline — technical, uppercase */
+    :root[data-theme="dark"] .brand .subtitle,
+    :root[data-theme="dark"] .topbar .subtitle,
+    :root[data-theme="dark"] .brand small {
+      font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--accent); font-size: 10.5px;
+    }
+
+    /* Left-panel sections become bordered, glowing cards + auto 01/02/03 numbers */
+    :root[data-theme="dark"] .panel.left { counter-reset: qa-sec; }
+    :root[data-theme="dark"] .panel.left .section {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 40%), var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 15px 16px 18px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 8px 24px rgba(0, 0, 0, 0.25);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    :root[data-theme="dark"] .panel.left .section:hover {
+      border-color: rgba(53, 224, 161, 0.28);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(53, 224, 161, 0.10), 0 10px 30px rgba(0, 0, 0, 0.30);
+    }
+    :root[data-theme="dark"] .panel.left .section + .section { margin-top: 14px; }
+    :root[data-theme="dark"] .panel.left .section-label {
+      font-family: var(--mono); color: #7fe9c0; letter-spacing: 0.16em; gap: 10px; font-size: 10.5px;
+    }
+    :root[data-theme="dark"] .panel.left .section-label::before {
+      counter-increment: qa-sec;
+      content: counter(qa-sec, decimal-leading-zero);
+      width: auto; height: auto; border-radius: 6px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(53, 224, 161, 0.35);
+      color: var(--accent);
+      font-weight: 800; font-size: 10px; line-height: 1;
+      padding: 3px 6px;
+      box-shadow: 0 0 10px rgba(53, 224, 161, 0.15);
+    }
+    /* Field labels — uppercase mono */
+    :root[data-theme="dark"] .field label {
+      font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.1em;
+      font-size: 10px; font-weight: 600; color: var(--text-faint);
+    }
+
+    /* Inputs — neon focus */
+    :root[data-theme="dark"] .field input,
+    :root[data-theme="dark"] .field textarea,
+    :root[data-theme="dark"] #tag-filter {
+      background: #0a0f18; border-color: var(--field-border);
+    }
+    :root[data-theme="dark"] .field input:focus,
+    :root[data-theme="dark"] .field textarea:focus,
+    :root[data-theme="dark"] .field select:focus,
+    :root[data-theme="dark"] #tag-filter:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-ring), 0 0 18px rgba(53, 224, 161, 0.12);
+    }
+
+    /* Checkboxes → toggle switches (CSS only; the checkbox still toggles) */
+    :root[data-theme="dark"] .check { background: var(--bg-2); border-color: var(--border); }
+    :root[data-theme="dark"] .check:hover { border-color: rgba(53, 224, 161, 0.3); background: var(--surface-hover); }
+    :root[data-theme="dark"] .check input[type="checkbox"] {
+      appearance: none; -webkit-appearance: none;
+      position: relative; width: 34px; height: 18px; margin: 0; flex: none;
+      border-radius: 999px; background: #0a0f18; border: 1px solid var(--border-strong);
+      cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease;
+    }
+    :root[data-theme="dark"] .check input[type="checkbox"]::after {
+      content: ""; position: absolute; top: 1px; left: 1px; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--text-faint);
+      transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    }
+    :root[data-theme="dark"] .check input[type="checkbox"]:checked { background: var(--accent-soft); border-color: var(--accent); }
+    :root[data-theme="dark"] .check input[type="checkbox"]:checked::after {
+      transform: translateX(16px); background: var(--accent); box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    /* Primary buttons — neon green gradient + glow */
+    :root[data-theme="dark"] .btn.primary,
+    :root[data-theme="dark"] #run {
+      background: linear-gradient(135deg, #35e0a1 0%, #16b877 100%);
+      color: #04120b; border: 1px solid rgba(53, 224, 161, 0.55); font-weight: 700;
+      box-shadow: 0 0 0 1px rgba(53, 224, 161, 0.20), 0 10px 26px rgba(34, 211, 153, 0.28);
+      transition: filter 0.15s ease, box-shadow 0.2s ease, transform 0.1s ease;
+    }
+    :root[data-theme="dark"] .btn.primary:hover:not(:disabled),
+    :root[data-theme="dark"] #run:hover:not(:disabled) {
+      filter: brightness(1.06); transform: translateY(-1px);
+      box-shadow: 0 0 0 1px rgba(53, 224, 161, 0.45), 0 14px 34px rgba(34, 211, 153, 0.45);
+    }
+    :root[data-theme="dark"] .btn.primary svg { color: #04120b; }
+    /* Topbar Run verb — pulsing neon pill */
+    :root[data-theme="dark"] .verb.run {
+      background: linear-gradient(135deg, #35e0a1, #16b877); color: #04120b;
+      border-color: rgba(53, 224, 161, 0.55); font-weight: 700;
+      animation: neon-pulse 2.6s ease-in-out infinite;
+    }
+    :root[data-theme="dark"] .verb.run:hover:not(:disabled) { filter: brightness(1.06); }
+    :root[data-theme="dark"] .verb.run kbd { background: rgba(4, 18, 11, 0.25); color: #04120b; border-color: rgba(4, 18, 11, 0.3); }
+    @keyframes neon-pulse {
+      0%, 100% { box-shadow: 0 0 14px rgba(34, 211, 153, 0.30); }
+      50%      { box-shadow: 0 0 24px rgba(34, 211, 153, 0.55); }
+    }
+    /* Secondary verbs + ghost buttons — glassy hover */
+    :root[data-theme="dark"] .topbar-actions .verb:not(.run):hover:not(:disabled) {
+      border-color: rgba(53, 224, 161, 0.35); color: var(--accent);
+    }
+    :root[data-theme="dark"] .btn.ghost:hover:not(:disabled) { border-color: rgba(53, 224, 161, 0.3); }
+
+    /* Status bar + badges */
+    :root[data-theme="dark"] .status-bar { background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent), var(--bg-1); }
+    :root[data-theme="dark"] .badge { font-family: var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    :root[data-theme="dark"] .badge.idle .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+    :root[data-theme="dark"] .badge.running { background: var(--accent-soft); color: var(--accent); }
+    :root[data-theme="dark"] .badge.running .dot { background: var(--accent); }
+
+    /* Stat pills → neon tiles */
+    :root[data-theme="dark"] .pill {
+      font-family: var(--mono); letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 6px 12px; border-radius: 10px; border: 1px solid var(--border);
+    }
+    :root[data-theme="dark"] .pill.pass  { background: var(--success-soft); color: var(--success); border-color: rgba(53, 224, 161, 0.35); box-shadow: 0 0 16px rgba(53, 224, 161, 0.12); }
+    :root[data-theme="dark"] .pill.fail  { background: var(--danger-soft);  color: var(--danger);  border-color: rgba(255, 107, 107, 0.35); }
+    :root[data-theme="dark"] .pill.flaky { background: var(--warn-soft);    color: var(--warn);    border-color: rgba(251, 191, 36, 0.35); }
+    :root[data-theme="dark"] .pill.pr-impact { background: var(--info-soft); color: var(--info); border-color: rgba(157, 139, 255, 0.35); }
+    :root[data-theme="dark"] .pill.pr-impact.verified { background: var(--success-soft); color: var(--success); border-color: rgba(53, 224, 161, 0.4); }
+
+    /* Run-history sparkline — rounded neon blocks */
+    :root[data-theme="dark"] .history-spark rect.bar { rx: 2px; ry: 2px; }
+    :root[data-theme="dark"] .history-spark rect.bar.pass { filter: drop-shadow(0 0 3px rgba(53, 224, 161, 0.5)); }
+
+    /* Output stream — deep terminal */
+    :root[data-theme="dark"] .log { background: #05080e; border-color: var(--border); }
+    :root[data-theme="dark"] .log-head { background: #070b12; border-bottom-color: var(--border); }
+    :root[data-theme="dark"] .log.empty { color: var(--accent); }
+    :root[data-theme="dark"] .log .empty-art { filter: drop-shadow(0 0 10px var(--accent-glow)); }
+
+    /* Report chips + missing-steps / triage accents */
+    :root[data-theme="dark"] .report-link { background: var(--bg-2); border-color: var(--border); font-family: var(--mono); font-size: 11px; }
+    :root[data-theme="dark"] .report-link:hover { border-color: var(--accent); box-shadow: 0 0 14px rgba(53, 224, 161, 0.14); }
+    :root[data-theme="dark"] .report-link svg { color: var(--accent); }
+
+    /* Logo tile glow */
+    :root[data-theme="dark"] .brand .logo,
+    :root[data-theme="dark"] .topbar .logo { box-shadow: 0 0 20px rgba(34, 211, 153, 0.35); }
+
+    /* Modal accents (Security / API&Perf / Schedules / Recorder) keep the neon focus */
+    :root[data-theme="dark"] .rec-modal { border-color: var(--border-strong); box-shadow: 0 0 0 1px rgba(53, 224, 161, 0.08), var(--shadow-lg); }
+    :root[data-theme="dark"] .apiperf-tab.active { background: linear-gradient(135deg, #35e0a1, #16b877); color: #04120b; border-color: rgba(53, 224, 161, 0.5); }
   </style>
 </head>
 <body>
@@ -2605,7 +2800,10 @@
               <input id="run-destructive" type="checkbox" />
               <span>Include <code>@destructive</code> tests <span style="color:var(--text-faint);font-weight:normal;">— real, persistent actions</span></span>
             </label>
+          </div>
 
+          <div class="section">
+            <h2 class="section-label">Launch</h2>
             <div class="actions">
               <button id="run" class="btn primary">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
