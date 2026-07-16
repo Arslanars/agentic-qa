@@ -834,6 +834,18 @@ function recordRunHistory({ feature, project, lastFailed } = {}) {
 // (which is one line per run) so the schemas stay flat and append-only.
 // Stored under reports/ for the same reason as run history.
 const TEST_HISTORY_MAX = 5000; // ~200 runs × 25 tests; keeps the file small
+// Playwright's JSON reporter sometimes prefixes a test's title chain with the
+// spec FILE PATH as a suite title (e.g. ".features-gen/features/x/x.feature:7").
+// Strip any path-like segment so a test's history key stays stable across runs —
+// otherwise the same test fragments into several keys and reads as flaky.
+function cleanTestTitle(ft) {
+  return String(ft || '')
+    .split('›')
+    .map((s) => s.trim())
+    .filter((s) => s && !/[\\/]/.test(s) && !/\.(feature|spec\.[jt]s|[jt]s)(?::\d+)?$/i.test(s))
+    .join(' › ');
+}
+
 function recordTestHistory({ feature, project } = {}) {
   const jsonPath = path.join(CFG_PATHS.testResults, 'results.json');
   if (!fs.existsSync(jsonPath)) return;
@@ -848,7 +860,7 @@ function recordTestHistory({ feature, project } = {}) {
         if (!last) continue;
         let status = last.status;
         if (test.status === 'flaky') status = 'flaky';
-        const fullTitle = [...titles, spec.title].filter(Boolean).join(' › ');
+        const fullTitle = cleanTestTitle([...titles, spec.title].filter(Boolean).join(' › '));
         const featureFromFile = (suite.file || spec.file || '')
           .replace(/\\/g, '/')
           .replace(/^(?:.*\/)?\.?features-gen\/features\//, '')
@@ -2384,7 +2396,9 @@ app.get('/api/flaky-tests', (req, res) => {
     // Group by (feature, project, fullTitle) — the unique key for a test instance
     const groups = new Map();
     for (const e of entries) {
-      const key = `${e.feature}|${e.project}|${e.fullTitle}`;
+      // Normalize the title so history recorded with a path-y fullTitle (older
+      // runs) groups with the clean-title runs for the same test.
+      const key = `${e.feature}|${e.project}|${cleanTestTitle(e.fullTitle)}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(e);
     }
@@ -2409,12 +2423,20 @@ app.get('/api/flaky-tests', (req, res) => {
       const passRate = passes / window.length;
       const flakyStatusCount = window.filter((r) => r.status === 'flaky').length;
 
-      // Real flaky tests: at least minFlips status flips AND pass-rate not 0 or 1.
-      // OR: Playwright already marked it flaky at least once.
-      if ((flips >= minFlips && passRate > 0 && passRate < 1) || flakyStatusCount > 0) {
+      // Recency gate: a test that flipped historically but has been green for
+      // its last few runs has stabilized — it's not *currently* flaky. Only
+      // surface tests with at least one non-pass in the recent window, so the
+      // count reflects live instability rather than long-healed history.
+      const recentWindow = Math.min(8, window.length);
+      const recentlyUnstable = window.slice(-recentWindow).some((r) => r.status !== 'passed');
+
+      // Real flaky tests: at least minFlips status flips AND pass-rate not 0 or 1,
+      // OR Playwright already marked it flaky at least once — AND it's been
+      // unstable recently (not stabilized).
+      if (recentlyUnstable && ((flips >= minFlips && passRate > 0 && passRate < 1) || flakyStatusCount > 0)) {
         const last = runs[runs.length - 1];
         flaky.push({
-          fullTitle: last.fullTitle,
+          fullTitle: cleanTestTitle(last.fullTitle) || last.fullTitle,
           spec: last.spec,
           feature: last.feature,
           project: last.project,
@@ -2486,7 +2508,7 @@ app.get('/api/last-failures', (_req, res) => {
             last.status;
           failures.push({
             title: spec.title,
-            fullTitle: [...titles, spec.title].filter(Boolean).join(' › '),
+            fullTitle: cleanTestTitle([...titles, spec.title].filter(Boolean).join(' › ')),
             file: (suite.file || spec.file || '').replace(/\\/g, '/'),
             line: spec.line,
             project: test.projectName,

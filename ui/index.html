@@ -5831,9 +5831,20 @@ INSTRUCTIONS FOR CLAUDE:
     // affected by the current PR (committed + uncommitted). Powers the pill
     // in the status bar + the details panel + a "Run impacted" fast path.
     let lastPrImpact = null;
-    // Signature of the last impacted-feature set we tested + when. Cleared
-    // whenever the git diff changes (i.e., after a commit/revert).
-    let lastTestedImpact = null; // { signature, at, pass, fail }
+    // Signature of the last impacted-feature set we tested + when. Persisted in
+    // localStorage so a page refresh keeps the green "✓ verified" state — it
+    // only clears when the git diff actually changes (commit/revert).
+    const TESTED_IMPACT_KEY = 'qa-tested-impact';
+    let lastTestedImpact = (() => {
+      try { return JSON.parse(localStorage.getItem(TESTED_IMPACT_KEY) || 'null'); } catch { return null; }
+    })(); // { signature, at, pass, fail }
+    function saveTestedImpact(v) {
+      lastTestedImpact = v;
+      try {
+        if (v) localStorage.setItem(TESTED_IMPACT_KEY, JSON.stringify(v));
+        else localStorage.removeItem(TESTED_IMPACT_KEY);
+      } catch (_) { /* storage disabled — in-memory only */ }
+    }
     function impactSignature(list) {
       return (list || []).map((f) => f.name).sort().join('|');
     }
@@ -5847,7 +5858,7 @@ INSTRUCTIONS FOR CLAUDE:
         lastPrImpact = data;
         // Clear the "tested" cache if the git diff changed shape.
         if (lastTestedImpact && lastTestedImpact.signature !== impactSignature(data.impactedFeatures)) {
-          lastTestedImpact = null;
+          saveTestedImpact(null);
         }
         if (!data.isGitRepo) { pill.hidden = true; return; }
         const n = (data.impactedFeatures || []).length;
@@ -6438,12 +6449,12 @@ INSTRUCTIONS FOR CLAUDE:
               ? true
               : (!!feature && impactedNames.length === 1 && impactedNames[0] === feature);
           if (coveredAll) {
-            lastTestedImpact = {
+            saveTestedImpact({
               signature: impactSignature(lastPrImpact.impactedFeatures),
               at: Date.now(),
               pass: parseInt(summary.passed || '0', 10) || 0,
               fail: parseInt(summary.failed || '0', 10) || 0,
-            };
+            });
           }
         }
       } catch (err) {
