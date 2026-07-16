@@ -2459,6 +2459,23 @@ app.get('/api/flaky-tests', (req, res) => {
   }
 });
 
+// Reset local run/flaky history — clears the accumulated per-test history
+// (flaky detection) and the per-run summaries (status-bar sparkline). Both are
+// gitignored, per-machine, and rebuild automatically on the next run. Used by
+// the "reset history" action on the flaky pill.
+app.post('/api/reset-history', (_req, res) => {
+  const removed = [];
+  for (const f of ['test-history.jsonl', 'history.jsonl']) {
+    const p = path.join(CFG_PATHS.reports, f);
+    try {
+      if (fs.existsSync(p)) { fs.rmSync(p); removed.push(f); }
+    } catch (err) {
+      return res.status(500).json({ error: `could not remove ${f}: ${err.message}`, removed });
+    }
+  }
+  res.json({ ok: true, removed });
+});
+
 // Return the last N run summaries (default 30) for the status-bar sparkline.
 // Each entry: { ts, total, passed, failed, broken, skipped, flaky, duration, feature, project }
 app.get('/api/history', (req, res) => {

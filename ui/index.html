@@ -5401,12 +5401,36 @@ INSTRUCTIONS FOR CLAUDE:
           const top = tests.slice(0, 3).map((t) =>
             `${t.spec || t.fullTitle.split(' › ').slice(-1)[0]} (${Math.round(t.passRate * 100)}% over ${t.totalRuns})`
           ).join(' · ');
-          pill.title = `Flaky tests in last 20 runs:\n${top}${tests.length > 3 ? `\n…and ${tests.length - 3} more` : ''}`;
+          pill.title = `Flaky tests in last 20 runs:\n${top}${tests.length > 3 ? `\n…and ${tests.length - 3} more` : ''}\n\nClick to reset history.`;
         }
       } catch {
         $('pill-flaky').hidden = true;
       }
     }
+
+    // Click the flaky pill → offer to reset the local run/flaky history so the
+    // accumulated dev-time noise clears and the count starts fresh. Confirmed
+    // first (destructive), then re-reads flaky + sparkline (both empty after).
+    $('pill-flaky')?.addEventListener('click', async () => {
+      const n = flakyTestsByKey.size;
+      const preview = [...flakyTestsByKey.values()].slice(0, 4)
+        .map((t) => `• ${t.spec || t.fullTitle.split(' › ').slice(-1)[0]}`).join('\n');
+      const ok = await openConfirmModal({
+        title: 'Reset test history?',
+        body: `${n} test${n === 1 ? '' : 's'} are flagged flaky from recent runs${preview ? `:\n${preview}${n > 4 ? `\n…and ${n - 4} more` : ''}` : ''}.\n\nResetting clears the accumulated per-test flaky history and the run-trend sparkline.`,
+        detail: 'Both rebuild automatically on your next run. Only local history files (reports/*.jsonl) are affected.',
+        confirmLabel: 'Reset history',
+        cancelLabel: 'Cancel',
+      });
+      if (!ok) return;
+      try {
+        const r = await fetch('/api/reset-history', { method: 'POST' });
+        if (!r.ok) { showToast('Reset failed', 'error'); return; }
+        showToast('History reset — starts fresh on your next run');
+        await refreshFlaky();
+        if (typeof refreshHistory === 'function') refreshHistory();
+      } catch (_) { showToast('Reset failed', 'error'); }
+    });
 
     // ---- Test Tags Manager ---------------------------------------------------
     // Opens a modal that lists every scenario in the current feature with its
