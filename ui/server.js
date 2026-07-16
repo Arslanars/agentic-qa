@@ -1874,6 +1874,34 @@ app.get('/api/pr-impact', (req, res) => {
     impact.get(feature).add(reason);
   };
 
+  // A package.json change only counts as cross-cutting (i.e. flags EVERY
+  // feature) when it actually changes dependencies. Version bumps, script
+  // edits, and npm metadata shouldn't blanket-flag the whole suite — otherwise
+  // "impacted" degrades to "all features" on any branch that touched
+  // package.json, and "Run impacted" runs everything. Compared by parsing the
+  // dependency maps at `base` vs. now; memoized so we do it at most once.
+  let _pkgDepsCache = null;
+  function pkgDepsChanged() {
+    if (_pkgDepsCache !== null) return _pkgDepsCache;
+    try {
+      const cur = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+      let baseJson;
+      try {
+        baseJson = JSON.parse(execSync(`git show ${base}:package.json`, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+      } catch {
+        _pkgDepsCache = true; return true; // can't read base copy → assume it matters
+      }
+      const deps = (p) => JSON.stringify({
+        d: p.dependencies || {}, dd: p.devDependencies || {},
+        pd: p.peerDependencies || {}, od: p.optionalDependencies || {},
+      });
+      _pkgDepsCache = deps(cur) !== deps(baseJson);
+    } catch {
+      _pkgDepsCache = true; // on any error, be conservative
+    }
+    return _pkgDepsCache;
+  }
+
   for (const file of allChanged) {
     const norm = file.replace(/\\/g, '/');
     const fMatch = norm.match(/^features\/([^/]+)\//);
@@ -1909,6 +1937,9 @@ app.get('/api/pr-impact', (req, res) => {
     }
     const cfgMatch = norm.match(/^(playwright\.config\.js|package\.json|features\/_shared\/|utils\/)/);
     if (cfgMatch) {
+      // Skip a package.json change that didn't touch dependencies — it isn't
+      // genuinely cross-cutting, so it shouldn't mark every feature impacted.
+      if (cfgMatch[1] === 'package.json' && !pkgDepsChanged()) continue;
       for (const f of features) addImpact(f, `Global: ${cfgMatch[1]} changed`);
     }
   }
