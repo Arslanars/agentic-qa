@@ -30,3 +30,7 @@ node_modules/
 # log output from each fired run. Both are user-local state.
 /.claude/schedules.json
 /reports/scheduled-runs/
+
+# Security scan + performance run outputs — ephemeral, regenerated per scan.
+/reports/security/
+/reports/perf/

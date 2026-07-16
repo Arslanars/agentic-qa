@@ -1139,6 +1139,31 @@
       0%, 100% { opacity: 0.9; transform: scale(1); }
       50%      { opacity: 0.5; transform: scale(0.85); }
     }
+    /* "working" pill — an info-coloured pulsing dot for long Claude ops
+       (convert / scaffold), distinct from .live's red RECORDING dot. */
+    .rec-status-pill.working::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--info);
+      animation: rec-pulse 1.1s ease-in-out infinite;
+    }
+    .rec-elapsed { margin-left: 6px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+    /* Indeterminate progress bar — constant motion so a long Claude call
+       (where the log can go quiet while the model "thinks") still visibly
+       reads as working. */
+    .rec-progress {
+      position: relative; height: 4px; border-radius: 999px;
+      background: var(--info-soft); overflow: hidden; margin: 12px 0 10px;
+    }
+    .rec-progress::before {
+      content: ''; position: absolute; top: 0; left: -40%; height: 100%; width: 40%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, transparent, var(--info), transparent);
+      animation: rec-indeterminate 1.15s ease-in-out infinite;
+    }
+    @keyframes rec-indeterminate {
+      0%   { left: -40%; }
+      100% { left: 100%; }
+    }
     .rec-code, .rec-scenario {
       background: #18181b; color: #d4d4d8;
       border-radius: 6px;
@@ -1457,6 +1482,13 @@
       background: var(--success-soft); color: var(--success);
       border-color: color-mix(in srgb, var(--success) 25%, transparent);
     }
+    /* Verified: impacted features were run + passed against the current diff. */
+    .pill.pr-impact.verified {
+      background: color-mix(in srgb, var(--success) 18%, var(--bg-2));
+      color: var(--success);
+      border-color: color-mix(in srgb, var(--success) 40%, transparent);
+    }
+    .pill.pr-impact.verified:hover { background: color-mix(in srgb, var(--success) 26%, var(--bg-2)); }
     /* PR Impact panel — drops down from the status bar */
     .pr-impact-panel {
       margin: 8px 0 4px;
@@ -2505,6 +2537,10 @@
               <input id="headed" type="checkbox" checked />
               <span>Headed (visible browser window)</span>
             </label>
+            <label class="check" title="Scenarios tagged @destructive perform real, persistent actions — e.g. submitting real vendor orders or creating real accounts. They're skipped by default. Enable only against a safe test environment; you'll be asked to confirm before each destructive run.">
+              <input id="run-destructive" type="checkbox" />
+              <span>Include <code>@destructive</code> tests <span style="color:var(--text-faint);font-weight:normal;">— real, persistent actions</span></span>
+            </label>
 
             <div class="actions">
               <button id="run" class="btn primary">
@@ -2744,8 +2780,9 @@
 
       <!-- STATE: converting -->
       <div id="rec-state-converting" data-state="converting" hidden>
-        <p><span class="rec-status-pill">Converting via Claude…</span></p>
+        <p><span class="rec-status-pill working">Converting via Claude…<span id="rec-convert-elapsed" class="rec-elapsed"></span></span></p>
         <p style="color: var(--text-faint); font-size: 11.5px;">This usually takes 10-30s. The prompt includes your existing step definitions so the new scenario reuses your project's step library where possible.</p>
+        <div class="rec-progress" aria-hidden="true"></div>
       </div>
 
       <!-- STATE: proposed -->
@@ -2757,8 +2794,9 @@
 
       <!-- STATE: scaffolding -->
       <div id="rec-state-scaffolding" data-state="scaffolding" hidden>
-        <p><span class="rec-status-pill">Auto-implementing step definitions via Claude…</span></p>
+        <p><span class="rec-status-pill working">Auto-implementing step definitions via Claude…<span id="rec-scaffold-elapsed" class="rec-elapsed"></span></span></p>
         <p style="color: var(--text-faint); font-size: 11.5px;">Reading your existing POM + step style, generating implementations for any new step phrases.</p>
+        <div class="rec-progress" aria-hidden="true"></div>
         <pre id="rec-scaffold-log" class="rec-code" style="max-height:180px;"></pre>
       </div>
 
@@ -5451,18 +5489,28 @@ INSTRUCTIONS FOR CLAUDE:
         const n = (data.impactedFeatures || []).length;
         if (n === 0 && data.changedFiles.length === 0) { pill.hidden = true; return; }
         pill.hidden = false;
-        // Tested indicator: green ✓ prefix if we've already run these features against this exact diff.
-        const testedPrefix = (lastTestedImpact && n > 0) ? '✓ ' : '📡 ';
+        // "Verified" = we've run + passed the whole impacted set against this
+        // exact diff. It flips the pill green (see .verified CSS) so a passing
+        // check is unmistakable — not just a swapped leading emoji.
+        const isVerified = !!(lastTestedImpact && n > 0);
         if (n === 0) {
           pill.textContent = `📡 0 impacted`;
           pill.classList.add('zero');
+          pill.classList.remove('verified');
           pill.title = `${data.changedFiles.length} file(s) changed but no features affected`;
         } else {
-          pill.textContent = `${testedPrefix}${n} impacted`;
           pill.classList.remove('zero');
+          pill.classList.toggle('verified', isVerified);
           const preview = data.impactedFeatures.slice(0, 3).map((f) => f.name).join(', ');
-          const testedSuffix = lastTestedImpact ? ` · Tested ${Math.round((Date.now() - lastTestedImpact.at) / 60_000)} min ago (${lastTestedImpact.pass} pass, ${lastTestedImpact.fail} fail)` : '';
-          pill.title = `PR touches ${data.changedFiles.length} file(s) → ${n} feature(s) potentially impacted: ${preview}${n > 3 ? `, +${n - 3} more` : ''}${testedSuffix}\n\nCount reflects git diff vs main — it only changes when you commit or revert.`;
+          if (isVerified) {
+            const agoMin = Math.round((Date.now() - lastTestedImpact.at) / 60_000);
+            const agoText = agoMin <= 0 ? 'just now' : `${agoMin} min ago`;
+            pill.textContent = `✓ ${n} verified`;
+            pill.title = `All ${n} impacted feature(s) passed against this diff — tested ${agoText} (${lastTestedImpact.pass} pass${lastTestedImpact.fail ? `, ${lastTestedImpact.fail} fail` : ''}).\n\nThe number still reflects your git diff vs ${data.base}; it clears when you commit or revert the changed files.`;
+          } else {
+            pill.textContent = `📡 ${n} impacted`;
+            pill.title = `PR touches ${data.changedFiles.length} file(s) → ${n} feature(s) potentially impacted: ${preview}${n > 3 ? `, +${n - 3} more` : ''}\n\nRun them (click to open) — the pill flips to green “✓ verified” once they all pass. Count reflects git diff vs ${data.base}; it only changes when you commit or revert.`;
+          }
         }
         // Re-render open panel if visible
         const panel = $('pr-impact-panel');
@@ -5881,6 +5929,19 @@ INSTRUCTIONS FOR CLAUDE:
       const project = matrix ? '' : $('project').value;
       const headed = $('headed').checked;
       const lastFailed = !!opts.lastFailed;
+      const destructive = !!$('run-destructive')?.checked;
+
+      // Destructive scenarios submit real, persistent data — always confirm.
+      if (destructive) {
+        const ok = await openConfirmModal({
+          title: 'Run @destructive tests?',
+          body: 'This run includes scenarios tagged @destructive, which perform real, persistent actions — for example submitting real vendor orders or creating real accounts.',
+          detail: 'Only proceed against a safe test environment. Retries are disabled for this run so nothing can be double-submitted.',
+          confirmLabel: 'Run destructive tests',
+          cancelLabel: 'Cancel',
+        });
+        if (!ok) return;
+      }
 
       clearDashboard({
         logMsg: lastFailed ? 'Re-running failed tests…' :
@@ -5936,7 +5997,7 @@ INSTRUCTIONS FOR CLAUDE:
         const resp = await fetch('/api/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ feature, features: featuresList || undefined, project, headed, lastFailed, tagFilter }),
+          body: JSON.stringify({ feature, features: featuresList || undefined, project, headed, lastFailed, tagFilter, destructive }),
         });
         if (resp.status === 409) {
           setStatus('idle', 'A run is already in progress.');
@@ -5981,18 +6042,45 @@ INSTRUCTIONS FOR CLAUDE:
         // Reveal the stat-pills container whenever ANY pill has content —
         // not just on success — so an all-fail run still shows the failure count.
         if (hasPassed || hasFailed || summary.time) { statPills.hidden = false; }
-        if (exitCode === 0) { setStatus('pass', 'All tests passed.'); showToast('All tests passed'); }
+        // Playwright exits non-zero with "No tests found" when the path/filter
+        // matched nothing — most often because every scenario in the picked
+        // feature is @destructive (and therefore skipped by default). Translate
+        // that into an actionable message instead of a scary "exit code 1".
+        const noTestsFound = !hasPassed && !hasFailed && /No tests found/i.test(allOutput);
+        if (noTestsFound) {
+          const hint = !destructive
+            ? 'No runnable tests matched. If this feature is tagged @destructive, tick “Include @destructive tests” below to run it. (A tag filter can also exclude everything.)'
+            : 'No tests matched the current selection or tag filter.';
+          setStatus('idle', hint);
+          appendMeta('[ui] ' + hint);
+          showToast('No tests found — nothing to run', 'error');
+        }
+        else if (exitCode === 0) { setStatus('pass', 'All tests passed.'); showToast('All tests passed'); }
         else if (exitCode != null) { setStatus('fail', `Run finished with exit code ${exitCode}.`); showToast(`Exit code ${exitCode}`, 'error'); }
         else setStatus('idle', 'Run ended.');
-        // If this was a run against the impacted features, remember it so the
-        // PR Impact panel can show a "✓ Tested against this diff" indicator.
-        if (featuresList && lastPrImpact) {
-          lastTestedImpact = {
-            signature: impactSignature(lastPrImpact.impactedFeatures),
-            at: Date.now(),
-            pass: parseInt(summary.passed || '0', 10) || 0,
-            fail: parseInt(summary.failed || '0', 10) || 0,
-          };
+        // Flip the PR Impact pill to green "verified" once a run has COVERED
+        // and PASSED all currently-impacted features. This fires for any run
+        // path that covers the impacted set — not just the "Run impacted
+        // features" button (that narrow trigger was why passing runs kept
+        // showing a stale "N impacted"):
+        //   • impacted-features button → featuresList holds the impacted names
+        //   • all-features run         → feature === '' with no featuresList
+        //   • single-feature run       → only when that feature IS the whole set
+        const impactedNames = (lastPrImpact?.impactedFeatures || []).map((f) => f.name);
+        if (impactedNames.length && lastPrImpact && exitCode === 0 && !hasFailed) {
+          const coveredAll = featuresList
+            ? impactedNames.every((nm) => featuresList.includes(nm))
+            : (!lastFailed && (feature === '' || feature == null))
+              ? true
+              : (!!feature && impactedNames.length === 1 && impactedNames[0] === feature);
+          if (coveredAll) {
+            lastTestedImpact = {
+              signature: impactSignature(lastPrImpact.impactedFeatures),
+              at: Date.now(),
+              pass: parseInt(summary.passed || '0', 10) || 0,
+              fail: parseInt(summary.failed || '0', 10) || 0,
+            };
+          }
         }
       } catch (err) {
         setStatus('fail', String(err && err.message));
@@ -6089,12 +6177,38 @@ INSTRUCTIONS FOR CLAUDE:
       let pollTimer = null;
       let recordingFeature = null;
 
+      // Live elapsed-time ticker for the long Claude states (converting /
+      // scaffolding). The progress bar animates on its own via CSS; this adds
+      // a ticking "· 12s" counter so there's always visible motion even when
+      // Claude's output stream goes quiet mid-call.
+      let recWorkTimer = null;
+      function stopRecWorkTimer() {
+        if (recWorkTimer) { clearInterval(recWorkTimer); recWorkTimer = null; }
+      }
+      function startRecWorkTimer(elId) {
+        stopRecWorkTimer();
+        const el = document.getElementById(elId);
+        if (!el) return;
+        const t0 = Date.now();
+        const tick = () => {
+          const s = Math.floor((Date.now() - t0) / 1000);
+          el.textContent = s < 60 ? `· ${s}s` : `· ${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+        };
+        tick();
+        recWorkTimer = setInterval(tick, 1000);
+      }
+
       function showState(next) {
         state = next;
         for (const s of allStates) {
           const panel = document.getElementById(`rec-state-${s}`);
           if (panel) panel.hidden = (s !== state);
         }
+        // Drive the elapsed-time ticker for the two long Claude phases; any
+        // other transition (review / cancel / error) stops it.
+        if (state === 'converting') startRecWorkTimer('rec-convert-elapsed');
+        else if (state === 'scaffolding') startRecWorkTimer('rec-scaffold-elapsed');
+        else stopRecWorkTimer();
         // Action button label + enabled
         if (state === 'setup')        { actionBtn.textContent = '▶ Start Recording'; actionBtn.disabled = false; }
         else if (state === 'recording'){ actionBtn.textContent = '■ Stop Recording'; actionBtn.disabled = false; }
@@ -6225,6 +6339,15 @@ INSTRUCTIONS FOR CLAUDE:
           const data = await resp.json().catch(() => ({}));
           if (!resp.ok) {
             showToast(data.error || `HTTP ${resp.status}`, 'error');
+            // The toast is one short line; write the full reason (Claude's
+            // stderr / raw reply) into the output log so the failure is
+            // actually diagnosable instead of a bare "claude exited 1".
+            const detail = [
+              data.error && ('Convert to Gherkin failed: ' + data.error),
+              data.stderr && ('claude stderr: ' + data.stderr),
+              data.rawPreview && ('claude output: ' + data.rawPreview),
+            ].filter(Boolean).join('\n');
+            if (detail && typeof appendMeta === 'function') appendMeta(detail);
             showState('captured');
             return;
           }

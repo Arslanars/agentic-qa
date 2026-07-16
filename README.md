@@ -70,6 +70,11 @@ The dashed arrows show cross-cutting features that plug into the same run pipeli
 | **Log search** — Ctrl+F inside the log with next/prev navigation | Log toolbar |
 | **Light / dark theme** — system-aware, persisted via localStorage | Sun/moon toggle top-right |
 | **Playwright HTML + Allure** reports auto-rebuilt after each run | Report links in footer |
+| **Security scanner** — passive (headers/cookies/TLS/CORS) + active probes (XSS, SQLi, open redirect, risky methods), optional OWASP ZAP, risk grade A–F | `🛡 Security` button in the topbar |
+| **AI security review** — Claude reads the findings and writes a prioritized remediation plan + manual-test gaps | `AI review` in the Security modal |
+| **API testing** — request-level suites (`api-tests/*.json`) with status/latency/header/JSON assertions + variable capture between requests | `🚀 API & Perf` → API tests |
+| **Performance budgets** — real Web Vitals (TTFB/FCP/LCP) graded against `perf/budgets.json`, pass/fail per metric | `🚀 API & Perf` → Performance |
+| **Headless CI gates** — run security/perf/API from the shell with non-zero exit on failure | `npm run qa:security \| qa:perf \| qa:api` |
 
 ---
 
@@ -107,7 +112,7 @@ npm install --save-dev @playwright/test playwright-bdd allure-playwright
 
 ### Without a Claude subscription
 
-Everything non-AI still works: running tests, reports, screenshots, history, flaky detection, PR Impact Radar, coverage detection (read-only), Test Tags Manager, Scheduled Runs. AI-authored features (`Save & Generate`, `Critique Story`, `Draft scenario`, `Heal`, `Explain`, `Voice`, auto-scaffold missing steps) return `501` and show *"Claude CLI not detected"* in the UI.
+Everything non-AI still works: running tests, reports, screenshots, history, flaky detection, PR Impact Radar, coverage detection (read-only), Test Tags Manager, Scheduled Runs, the **Security scanner**, **API tests**, and **Performance budgets**. AI-authored features (`Save & Generate`, `Critique Story`, `Draft scenario`, `Heal`, `Explain`, `Voice`, auto-scaffold missing steps, **AI security review**) return `501` and show *"Claude CLI not detected"* in the UI.
 
 ---
 
@@ -163,6 +168,31 @@ When a run detects undefined step phrases (via `Missing step definitions: N` log
 
 ### Liquid Step Timeline
 A custom Playwright reporter (`ui/live-step-reporter.js`) emits per-step lifecycle events as `[LIVE_STEP]<json>` on stdout. The UI parses them and renders each Given/When/Then as a horizontal beam that fills green during the step, red on error. Real-time.
+
+### Security scanner (🛡 Security)
+Click **🛡 Security** in the topbar, enter a target URL, and pick phases:
+
+- **Passive** — grades response headers (CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy), cookie flags (`HttpOnly`/`Secure`/`SameSite`), TLS cert validity/expiry, CORS misconfig, and version disclosure. Never mutates target state — safe against production.
+- **Active probes** — safe, read-only checks for the common OWASP classes: reflected-input (possible XSS), SQL-error signatures, open redirects, and dangerous HTTP methods. Opt-in exposed-file probing (`.env`, `.git`) for authorized deeper scans.
+- **OWASP ZAP baseline** (optional) — runs the official ZAP image via Docker; skipped gracefully if Docker isn't present.
+
+Findings are grouped by OWASP Top-10 category, colour-coded by severity, and rolled into an **A–F risk grade** (shown live on the topbar badge). Reports persist to `reports/security/latest.{json,md}`. Click **AI review** and Claude turns the raw findings into an executive summary, a prioritized remediation plan, and the manual tests the automated scan can't cover (auth/session logic, IDOR, stored XSS, CSRF).
+
+> ⚠️ Only scan systems you are authorized to test.
+
+### API & Performance testing (🚀 API & Perf)
+**API tests** — drop request-level suites under `api-tests/*.json` (see `api-tests/_TEMPLATE.json`). Each request asserts status, max latency, headers, and JSON dot-paths (`$.token`, `$.user.role`), and can `capture` values (e.g. an auth token) into variables reused by later requests. `{{VAR}}` placeholders resolve from the suite's variables, captured values, or `process.env` — so secrets stay out of the file.
+
+**Performance** — loads the target in the Chromium Playwright already installed, reads real Web Vitals (TTFB / FCP / LCP) plus navigation timing and transfer weight, and grades each metric against `perf/budgets.json` (falls back to sensible defaults). Every metric shows a pass/fail against its budget.
+
+### Headless / CI use
+All three engines run from the shell and exit non-zero on failure, so they slot straight into a CI step:
+
+```bash
+npm run qa:security -- https://staging.example.com   # fails on any critical/high finding
+npm run qa:perf     -- https://staging.example.com   # fails if any metric exceeds budget
+npm run qa:api      -- auth.json                      # fails if any assertion fails
+```
 
 ---
 
@@ -243,6 +273,13 @@ The Express server exposes these — all local, all called by the UI. Useful for
 | `/api/screenshots` | GET | Screenshot gallery data |
 | `/api/report-status` | GET | Which reports are available |
 | `/api/allure-generate` | POST | Rebuild the Allure HTML |
+| `/api/security-scan` | POST (NDJSON) | Run passive + active (+ optional ZAP) security scan |
+| `/api/security-report` | GET | Last persisted scan result |
+| `/api/security-review` | POST (NDJSON) | Claude AI review of the latest findings |
+| `/api/api-test/suites` | GET | List API test suites under `api-tests/` |
+| `/api/api-test/run` | POST (NDJSON) | Run an API suite (file or inline) |
+| `/api/perf/budget` | GET / POST | Read / write performance budget |
+| `/api/perf/run` | POST (NDJSON) | Measure Web Vitals against the budget |
 
 Full validators — safe-name regex on user input, `X-Accel-Buffering: no` for streaming, `activeGenerate` concurrency guard on all Claude endpoints.
 
@@ -259,6 +296,13 @@ Full validators — safe-name regex on user input, `X-Accel-Buffering: no` for s
 ├── .github/workflows/
 │   └── playwright.yml           # CI: runs the suite on push/PR
 ├── .vscode/mcp.json             # VSCode MCP server config
+├── api-tests/                   # API test suites (JSON) for the API testing panel
+│   └── _TEMPLATE.json
+├── perf/                        # perf budgets (budgets.json) — created on first save
+├── lib/
+│   ├── security/                # Security scanner: scanner.js + zap.js + orchestrator
+│   ├── api-testing/runner.js    # Request-level API test runner
+│   └── perf/lighthouse.js       # Web-Vitals collector + budget grading
 ├── user-stories/                # INPUT: one .md per user story
 │   └── _TEMPLATE.md
 ├── specs/                       # Test plans (markdown) — output of the planner
@@ -277,6 +321,8 @@ Full validators — safe-name regex on user input, `X-Accel-Buffering: no` for s
 │   ├── history.jsonl            # Per-run summaries (gitignored)
 │   ├── test-history.jsonl       # Per-test flakiness data (gitignored)
 │   ├── scheduled-runs/          # Logs from scheduled fires (gitignored)
+│   ├── security/                # Security scan output — latest.{json,md} (gitignored)
+│   ├── perf/                    # Performance run output — latest.json (gitignored)
 │   └── Test-Cases.xlsx          # Master spreadsheet
 ├── test-results/                # Playwright runtime artifacts (gitignored)
 ├── ui/

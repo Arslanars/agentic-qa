@@ -2,25 +2,25 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-07-01 16:40:20
+**Last run:** 2026-07-16 17:04:54
 **Browser:** chromium
 **Status:** ✅ PASS (10/10)
-**Duration:** 31.6 s
+**Duration:** 28.5 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 3.8 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 3.0 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | ✅ PASS | 2.1 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | ✅ PASS | 2.7 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 2.6 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 2.6 s | — |
-| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | ✅ PASS | 4.1 s | — |
-| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | ✅ PASS | 3.0 s | — |
-| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 4.0 s | — |
-| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 3.7 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 2.4 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 2.3 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | ✅ PASS | 1.9 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | ✅ PASS | 2.4 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 3.0 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 7.4 s | — |
+| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | ✅ PASS | 1.9 s | — |
+| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | ✅ PASS | 2.8 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 1.9 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 2.6 s | — |
 
 ## Artifacts
 

@@ -1,0 +1,41 @@
+{
+  "feature": "order-flow",
+  "storyId": "Order-01",
+  "storyTitle": "Order Flow",
+  "applicationUrl": "https://moontower.aiimone.com/login",
+  "destructive": true,
+  "testCases": [
+    {
+      "id": "Order-01-ORDER-01",
+      "scenario": "Order-01: Send all vendor orders from the tablet POS and review a sent order",
+      "testCase": "Log in, build orders in the tablet POS, send all vendor orders, then review an order in the Orders List",
+      "preCondition": "Browser open at /login; account 'testing@yopmail.com' exists; tablet POS ordering available for Main Location; vendors have items with PAR levels so an order can be built",
+      "testSteps": [
+        "Navigate to https://moontower.aiimone.com/login",
+        "Sign in with testing@yopmail.com / 12345678",
+        "Confirm redirect to the location-picker (/select-location)",
+        "Select the 'Main Location' location (→ /inventory-vendors)",
+        "Click 'Quick Inventory' then 'Inventory' in the sidebar",
+        "Enable tablet view (Tablet Preview toggle → 'Exit tablet' appears)",
+        "Open the tablet 'Orders' tab",
+        "Click 'Continue to Vendors → (N)'",
+        "Click 'Review All Orders →' (heading 'Review order before sending')",
+        "Click 'Send N orders' (DESTRUCTIVE — submits real vendor orders)",
+        "Verify each vendor row shows 'Sent ✓' (real confirmation)",
+        "Toggle the 'GORDON' vendor (opens its editor) and click 'Cancel'",
+        "Exit tablet view",
+        "Open sidebar 'Orders' → 'Orders List' (/order-history)",
+        "View order number 2 and inspect its details"
+      ],
+      "testData": "Email: testing@yopmail.com\nPassword: 12345678\nExpected confirmation: 5 vendors show 'Sent ✓'\nProduct sought in order details: Sprite",
+      "expectedResult": "Orders are submitted (5 vendors → 'Sent ✓'); the Orders List shows the new Submitted orders; the opened order's details list its product lines",
+      "postCondition": "5 new 'Submitted' vendor orders exist in /order-history",
+      "linkedSpec": ".features-gen/features/order-flow/order-flow.feature.spec.js",
+      "linkedTestTitle": "ORDER-01 — send all vendor orders from the tablet POS and review them",
+      "knownDiscrepancies": [
+        "Confirmation: the literal toast 'Sent 5 orders across 5' is not rendered by the live app; the real confirmation is 5x 'Sent ✓'.",
+        "Order details: 'Sprite' is in the SYSCO order, not order #2 (US FOODS); a freshly-sent batch's list order is non-deterministic, so 'order number 2 → Sprite' is unreliable."
+      ]
+    }
+  ]
+}

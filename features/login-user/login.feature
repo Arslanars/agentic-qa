@@ -97,3 +97,9 @@ Feature: Login User
   Scenario: NAV-03 — "← Back" link navigates to the homepage
     When I click the "← Back" link
     Then the URL should match the homepage
+
+Scenario: Attempt to sign in with a malformed email and no password
+  Given I am on the Moontower login page
+  When I sign in with email "asdasdasd" and password ""
+  Then the email field should report a typeMismatch validity error
+  And I should remain on the login page

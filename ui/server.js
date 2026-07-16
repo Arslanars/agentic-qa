@@ -527,33 +527,30 @@ Be strict but fair — flag only real testability problems, not stylistic nits. 
   proc.on('close', (code) => {
     clearTimeout(timer);
     activeGenerate = null;
-    if (code !== 0) {
-      // Claude CLI exiting non-zero with empty stderr is a classic transient
-      // failure signature (network blip, brief quota check, session refresh).
-      // Give the user an actionable message instead of the cryptic "exited 1".
-      const trimmedErr = stderr.trim();
-      const transient = code === 1 && trimmedErr.length === 0 && stdout.trim().length === 0;
-      return res.status(502).json({
-        error: transient
-          ? 'Claude CLI returned nothing (transient failure). Try again — it usually works on retry.'
-          : `claude exited ${code}`,
-        stderr: stderr.slice(0, 2000),
-        transient,
-      });
-    }
-    // Extract the JSON object from claude's response. Claude usually returns
-    // pure JSON when asked but occasionally wraps in ```json fences or adds a
-    // brief preamble; this scan finds the first balanced {…} block.
+    // Extract the JSON object from claude's response FIRST — the CLI often
+    // prints valid JSON to stdout yet still exits non-zero (post-run warning /
+    // telemetry / broken pipe), so a good result shouldn't be discarded over
+    // the exit code. Claude usually returns pure JSON but occasionally wraps in
+    // ```json fences or adds a preamble; this scan finds the first balanced {…}.
     const parsed = extractJsonObject(stdout);
-    if (!parsed) {
-      return res.status(502).json({
-        error: 'could not parse JSON from claude response',
-        rawPreview: stdout.slice(0, 500),
+    if (parsed) {
+      return res.json({
+        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+        summary: parsed.summary || '',
       });
     }
-    res.json({
-      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-      summary: parsed.summary || '',
+    // No usable output — Claude CLI exiting non-zero with empty stderr AND empty
+    // stdout is a classic transient signature (network blip, quota check,
+    // session refresh). Give an actionable message instead of a cryptic code.
+    const trimmedErr = stderr.trim();
+    const transient = code === 1 && trimmedErr.length === 0 && stdout.trim().length === 0;
+    return res.status(502).json({
+      error: transient
+        ? 'Claude CLI returned nothing (transient failure). Try again — it usually works on retry.'
+        : `claude exited ${code}${trimmedErr ? ': ' + trimmedErr.slice(0, 400) : ' — could not parse a response'}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
+      transient,
     });
   });
   proc.on('error', (err) => {
@@ -1025,18 +1022,21 @@ If every step you use already exists in the steps file, return "newSteps": [].`;
     clearTimeout(timer);
     activeGenerate = null;
     if (res.writableEnded || res.destroyed) return;
-    if (code !== 0) {
-      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse first — the CLI can print a valid scenario and still exit non-zero.
     const parsed = extractJsonObject(stdout);
-    if (!parsed || !parsed.scenario) {
-      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    if (parsed && parsed.scenario) {
+      return res.json({
+        scenario: String(parsed.scenario).slice(0, 5000),
+        name: String(parsed.name || '').slice(0, 200),
+        newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+        featureFile: existingFeatureFile ? `features/${feature}/${existingFeatureFile}` : `features/${feature}/`,
+      });
     }
-    res.json({
-      scenario: String(parsed.scenario).slice(0, 5000),
-      name: String(parsed.name || '').slice(0, 200),
-      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
-      featureFile: existingFeatureFile ? `features/${feature}/${existingFeatureFile}` : `features/${feature}/`,
+    const errText = stderr.trim();
+    return res.status(502).json({
+      error: `Draft failed — claude exited ${code}. ${errText ? errText.slice(0, 500) : 'Claude produced no usable scenario. Check that the CLI is signed in, then try again.'}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
     });
   });
   proc.on('error', (err) => {
@@ -1223,12 +1223,18 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
     clearTimeout(timer);
     activeGenerate = null;
     if (res.writableEnded || res.destroyed) return;
-    if (code !== 0) {
-      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse first — the CLI can emit valid JSON yet still exit non-zero, so the
+    // exit code only matters when there's no usable output to parse.
     const parsed = extractJsonObject(stdout);
     if (!parsed) {
-      return res.status(502).json({ error: 'claude returned non-JSON', rawPreview: stdout.slice(0, 500) });
+      const errText = stderr.trim();
+      return res.status(502).json({
+        error: code !== 0
+          ? `Explain failed — claude exited ${code}. ${errText ? errText.slice(0, 500) : 'No output — check the CLI is signed in, then try again.'}`
+          : 'claude returned non-JSON',
+        stderr: stderr.slice(0, 2000),
+        rawPreview: stdout.slice(0, 500),
+      });
     }
     // Accept a couple of likely key drifts — claude sometimes renames keys
     // when the prompt is dense.
@@ -1732,17 +1738,36 @@ If every step you used already exists in the steps file, return newSteps: [].`;
   proc.on('close', (exitCode) => {
     clearTimeout(timer);
     activeGenerate = null;
-    if (exitCode !== 0) {
-      return res.status(502).json({ error: `claude exited ${exitCode}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse the model output FIRST, regardless of exit code. The Claude CLI
+    // frequently prints a valid answer to stdout and STILL exits non-zero
+    // (a post-run telemetry/update warning, a broken stdout pipe on Windows,
+    // etc.). Bailing on exitCode before parsing threw away good scenarios and
+    // surfaced a bare "claude exited 1" — that was the recorder→Gherkin bug.
     const parsed = extractJsonObject(stdout);
-    if (!parsed || !parsed.scenario) {
-      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    if (parsed && parsed.scenario) {
+      if (exitCode !== 0 && stderr.trim()) {
+        console.warn(`[recorder/convert] claude exited ${exitCode} but produced a usable scenario; stderr: ${stderr.trim().slice(0, 300)}`);
+      }
+      return res.json({
+        scenario: parsed.scenario,
+        name: parsed.name || '',
+        newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+      });
     }
-    res.json({
-      scenario: parsed.scenario,
-      name: parsed.name || '',
-      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+    // No usable output — surface the actual reason instead of a bare exit code.
+    const errText = stderr.trim();
+    if (errText) console.error('[recorder/convert] claude stderr:', errText);
+    // Exit 1 with no stderr and no stdout is almost always an un-authenticated
+    // CLI or an exhausted usage limit — give the user an actionable hint.
+    const hint = errText
+      ? errText.slice(0, 600)
+      : (stdout.trim()
+        ? 'Claude replied but not in the expected JSON format — try Convert again.'
+        : 'Claude produced no output. The CLI is likely not signed in (open a terminal, run `claude`, and log in) or a usage limit was hit.');
+    return res.status(502).json({
+      error: `Convert failed — claude exited ${exitCode}. ${hint}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
     });
   });
   proc.on('error', (err) => {
@@ -2524,8 +2549,17 @@ app.post('/api/run', async (req, res) => {
     args.push(`--grep=${clean}`);
   }
   // Default-skip @destructive tag (e.g. signup AC1/AC2 that creates real
-  // tenants on prod). Override with `?destructive=1` in the request.
-  if (!req.body?.destructive) args.push('--grep-invert=@destructive');
+  // tenants on prod, or order-flow that submits real vendor orders). Override
+  // with `destructive: true` in the request body (the UI's "Include
+  // @destructive tests" checkbox).
+  if (!req.body?.destructive) {
+    args.push('--grep-invert=@destructive');
+  } else {
+    // Destructive scenarios submit real, persistent data. Force retries=0 so a
+    // transient failure can never re-run and double-submit (e.g. send the same
+    // orders twice) — matches the safety note in the destructive .feature files.
+    args.push('--retries=0');
+  }
   if (headed !== false) {
     args.push('--headed');
     // In headed mode, force a single worker so the user can actually watch
