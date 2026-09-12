@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig, devices } from '@playwright/test';
 import { defineBddConfig } from 'playwright-bdd';
+import { ALL_PROJECTS } from './ui/projects.js';
 
 /**
  * playwright-bdd compiles every .feature file into a Playwright spec at
@@ -57,25 +58,54 @@ export default defineConfig({
     trace: 'on-first-retry',
 
     /* Always capture a screenshot at the end of each test, plus on failure.
-       The UI surfaces these as a gallery so you can verify validations visually. */
-    screenshot: 'on',
+       The UI surfaces these as a gallery so you can verify validations visually.
+
+       `style` is CSS injected only for the duration of the capture — it does not
+       affect the page the test sees. It exists here because screenshots are `on`
+       and the suite types real passwords into login/signup forms in ~36 places;
+       without it every one of those shots recorded the password legibly, and
+       they land in reports/, test-results/ and the UI screenshot gallery.
+       Blur rather than hide so the shot still shows the field was filled.
+
+       Selectors are deliberately wider than input[type=password]: this app has a
+       show/hide toggle that flips the field to type="text", at which point that
+       selector stops matching. Verified on the live login form — name="password"
+       and id="password" both survive the toggle, so the blur holds either way. */
+    screenshot: {
+      mode: 'on',
+      style: `
+        input[type="password"],
+        [name*="password" i],
+        [id*="password" i],
+        [data-testid*="password" i],
+        [autocomplete="current-password"],
+        [autocomplete="new-password"] {
+          filter: blur(6px) !important;
+        }
+      `,
+    },
 
     /* Keep videos for failed tests so you can replay what went wrong. */
     video: 'retain-on-failure',
   },
 
-  /* One BDD project per browser — all share the generated test dir
-     so any feature runs identically across chromium / firefox / webkit. */
-  projects: [
-    // 60s per-test timeout on chromium too — the moontower app's cold start
-    // on a fresh connection routinely runs 8-15s; the default 30s leaves no
-    // margin once a test has its own assertions on top. Tests that were
-    // passing in ~9s on a warm run timed out cleanly at 30s on cold today.
-    { name: 'chromium', testDir: bddTestDir, timeout: 60_000, use: { ...devices['Desktop Chrome']  } },
-    // Firefox cold-start under parallel workers is consistently slower than
-    // chromium/webkit on the moontower app — raise the per-test timeout
-    // here only so the wider expectLoaded budget can absorb hydration cost.
-    { name: 'firefox',  testDir: bddTestDir, timeout: 60_000, use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit',   testDir: bddTestDir, timeout: 60_000, use: { ...devices['Desktop Safari']  } },
-  ],
+  /* One BDD project per browser/device — all share the generated test dir so
+     any feature runs identically everywhere. The list lives in ui/projects.js
+     so the UI's browser dropdowns cannot drift from what's defined here.
+
+     60s per-test timeout across the board — the moontower app's cold start on
+     a fresh connection routinely runs 8-15s; the default 30s leaves no margin
+     once a test has its own assertions on top. Tests passing in ~9s warm timed
+     out cleanly at 30s cold. Firefox cold-start under parallel workers is
+     slower still, and the emulated device projects pay the same cost.
+
+     The four device projects are emulation (viewport + DPR + UA + touch on a
+     desktop WebKit/Chromium build), not an iOS Simulator or Android Emulator.
+     They are deliberately excluded from the UI's "All browsers" matrix. */
+  projects: ALL_PROJECTS.map((p) => ({
+    name: p.name,
+    testDir: bddTestDir,
+    timeout: 60_000,
+    use: { ...devices[p.device] },
+  })),
 });
