@@ -2,20 +2,22 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-07-01 16:40:20
+**Last run:** 2026-09-13 00:05:18
 **Browser:** chromium
-**Status:** ✅ PASS (5/5)
-**Duration:** 22.3 s
+**Status:** ❌ FAIL (3/5 — 1 broken)
+**Duration:** 207.2 s
+**Broken (timeout/interrupted):** 1 — 1 timed out
+**Flaky:** 1
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC1-POS-01 — valid credentials log in and reach the location picker | ✅ PASS | 3.3 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ✅ PASS | 4.3 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ✅ PASS | 3.7 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC4-POS-01 — clicking the Inventory tab activates the Inventory view | ✅ PASS | 4.6 s | — |
-| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › Edit a vendor's name from the Vendors list | ✅ PASS | 6.5 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC1-POS-01 — valid credentials log in and reach the location picker | ⏱️ TIMEOUT | 74.2 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ⚠️ FLAKY | 38.1 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ✅ PASS | 41.8 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › AC4-POS-01 — clicking the Inventory tab activates the Inventory view | ✅ PASS | 42.2 s | — |
+| `verify-dashboard-with-tab.feature.spec.js` | Verify Dashboard with tab › Edit a vendor's name from the Vendors list | ✅ PASS | 11.0 s | — |
 
 ## Artifacts
 

@@ -238,10 +238,3 @@ Then('the Password field input type is {string}', async ({ page }, expected: str
   await expect(signup.passwordInput).toHaveAttribute('type', expected);
 });
 
-Then('the URL should match {string}', async ({ page }, pattern: string) => {
-  await expect(page).toHaveURL(new RegExp(pattern), { timeout: 10_000 });
-});
-
-Then('the URL should match the homepage', async ({ page }) => {
-  await expect(page).toHaveURL(/^https?:\/\/[^/]+\/?$/, { timeout: 10_000 });
-});

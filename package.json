@@ -10,6 +10,7 @@
     "lib/",
     "ui/",
     "templates/",
+    "api-tests/_TEMPLATE.json",
     ".claude/agents/",
     "ONBOARDING.md",
     "INTEGRATE.md",
@@ -36,7 +37,10 @@
     "allure:clean": "node -e \"require('fs').rmSync('allure-results',{recursive:true,force:true});require('fs').rmSync('allure-report',{recursive:true,force:true})\"",
     "allure:generate": "allure generate allure-results --clean -o allure-report",
     "allure:open": "allure open allure-report",
-    "allure:serve": "allure serve allure-results"
+    "allure:serve": "allure serve allure-results",
+    "qa:security": "node bin/qa-scan.js security",
+    "qa:perf": "node bin/qa-scan.js perf",
+    "qa:api": "node bin/qa-scan.js api"
   },
   "keywords": [
     "playwright",

@@ -21,16 +21,9 @@ const { Given, When, Then } = createBdd(undefined, { tags: '@dashboard' });
 const EMAIL = process.env.MOONTOWER_LOGIN_EMAIL || 'developers@moontower.com';
 const PASSWORD = process.env.MOONTOWER_LOGIN_PASSWORD || '12345678';
 
-Given('I am on the Moontower login page', async ({ page }) => {
-  const login = new LoginPage(page);
-  await login.goto();
-  await login.expectLoaded();
-});
 
-When('I log in with the provided Moontower credentials', async ({ page }) => {
-  const login = new LoginPage(page);
-  await login.login(EMAIL, PASSWORD);
-});
+
+
 
 Then('I should be redirected to the location-picker screen', async ({ page }) => {
   // AC1: a successful login leaves /login and lands on /select-location.
@@ -43,22 +36,6 @@ Then('I should see the heading {string}', async ({ page }, name: string) => {
   await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 15_000 });
 });
 
-When('I choose the {string} option', async ({ page }, label: string) => {
-  const picker = new LocationPickerPage(page);
-  await picker.expectLoaded();
-  if (/main location/i.test(label)) {
-    await picker.selectMainLocation();
-  } else {
-    // Fall back to a role-based match so the step works if more locations appear.
-    await page.getByRole('button', { name: label }).click();
-  }
-});
 
-Then('the dashboard URL should be {string}', async ({ page }, expectedUrl: string) => {
-  // AC3: clicking "Main Location" must route to the inventory-vendors dashboard.
-  const dashboard = new DashboardPage(page);
-  await dashboard.expectLoaded();
-  await expect(page, 'AC3: dashboard URL must equal the inventory-vendors route').toHaveURL(expectedUrl, {
-    timeout: 20_000,
-  });
-});
+
+

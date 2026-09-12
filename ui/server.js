@@ -12,8 +12,47 @@ const { spawn, exec, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { renderReport } = require('./report-renderer');
-const { writeRunReports } = require('./report-writer');
+const { writeRunReports, featuresFromLastRun, reportMatchesFeature } = require('./report-writer');
+const { ALL_PROJECTS, projectNames, desktopProjectNames } = require('./projects');
 const { writeTestCasesExcel } = require('./excel-writer');
+// Security / performance / API-test engines (dependency-free; also usable
+// headless via bin/qa-scan.js). Wired to the endpoints below + UI panels.
+const security = require('../lib/security');
+const perfEngine = require('../lib/perf/lighthouse');
+const apiTesting = require('../lib/api-testing/runner');
+const explore = require('../lib/explore');
+const stepIndex = require('../lib/steps');
+
+// Model for short, mechanical Claude jobs (converting a recording, explaining a
+// failure). These do not need a frontier model and latency is what you feel, so
+// a fast one is pinned. Set AGENTIC_QA_CLAUDE_MODEL to override, or to the
+// literal "default" to pass no --model flag at all and keep the CLI's own
+// setting. Generation, healing and review are deliberately NOT pinned.
+const FAST_MODEL = process.env.AGENTIC_QA_CLAUDE_MODEL || 'haiku';
+
+/** Append --model only when a fast model is wanted and not disabled. */
+function withFastModel(args) {
+  if (!FAST_MODEL || FAST_MODEL === 'default') return args;
+  return args.concat(['--model', FAST_MODEL]);
+}
+
+/**
+ * Tags declared by a feature's .feature file. Needed because step definitions
+ * are tag-scoped — the set of phrases available to a scenario depends entirely
+ * on its tags, so "does this step already exist?" is unanswerable without them.
+ */
+function featureTagsFor(feature) {
+  if (!feature || !isSafeName(feature)) return [];
+  const dir = path.join(ROOT, 'features', feature);
+  if (!fs.existsSync(dir)) return [];
+  try {
+    const file = fs.readdirSync(dir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+    if (!file) return [];
+    return stepIndex.featureTags(fs.readFileSync(path.join(dir, file), 'utf8'));
+  } catch {
+    return [];
+  }
+}
 
 const app = express();
 const PORT = process.env.UI_PORT ? Number(process.env.UI_PORT) : 3001;
@@ -284,6 +323,34 @@ function clearAllureResults(write) {
   } catch (_) { /* best-effort */ }
 }
 
+// Playwright only recreates output folders for the tests that ACTUALLY run —
+// it never wipes test-results/ as a whole. So per-test artifact folders
+// (screenshots, videos, traces) from PREVIOUS runs of OTHER features or
+// browsers linger on disk, and the screenshot gallery (which lists everything
+// under test-results/) ends up showing stale, cross-feature, cross-browser
+// shots — e.g. 42 images for a single 14-scenario login run because 3 browsers'
+// worth accumulated. Clear the per-test artifact SUBDIRECTORIES before each run
+// so the gallery reflects only the current run. Top-level files are preserved:
+// .last-run.json (so --last-failed / "Re-run failed" still works) and
+// results.json (consumed afterwards by the report + history writers).
+function cleanTestArtifacts(write) {
+  try {
+    if (!fs.existsSync(CFG_PATHS.testResults)) return;
+    let removed = 0;
+    for (const name of fs.readdirSync(CFG_PATHS.testResults)) {
+      const p = path.join(CFG_PATHS.testResults, name);
+      let st;
+      try { st = fs.statSync(p); } catch (_) { continue; }
+      if (st.isDirectory()) {
+        try { fs.rmSync(p, { recursive: true, force: true }); removed++; } catch (_) { /* locked file — skip */ }
+      }
+    }
+    if (removed > 0 && write) {
+      write({ type: 'log', stream: 'stdout', text: `[ui] cleared ${removed} stale artifact folder(s) from test-results/ so the gallery shows only this run\n` });
+    }
+  } catch (_) { /* best-effort */ }
+}
+
 // Track the active Playwright run so /api/abort can kill it from a separate
 // HTTP request. Only one run is allowed at a time anyway (the UI disables
 // the button while a run is in flight), so a single global slot is fine.
@@ -362,7 +429,15 @@ app.post('/api/generate-tests', async (req, res) => {
   if (activeRun) {
     return res.status(409).json({ error: 'a test run is in progress — stop it before generating new tests' });
   }
-  await streamClaudeWithPrompt(res, prompt);
+  // Compile the .feature files here rather than asking the model to run bddgen
+  // itself. Doing it in Node is faster (no extra model turn), deterministic, and
+  // cannot be skipped or mis-run. The prompt tells Claude not to run it.
+  await streamClaudeWithPrompt(res, prompt, {
+    afterSuccess: async (write) => {
+      write({ type: 'log', stream: 'stdout', text: '[ui] compiling .feature files (bddgen)…\n' });
+      await runBddgen(write);
+    },
+  });
 });
 
 // Heal a failing test by handing claude its failure context (error message,
@@ -527,33 +602,30 @@ Be strict but fair — flag only real testability problems, not stylistic nits. 
   proc.on('close', (code) => {
     clearTimeout(timer);
     activeGenerate = null;
-    if (code !== 0) {
-      // Claude CLI exiting non-zero with empty stderr is a classic transient
-      // failure signature (network blip, brief quota check, session refresh).
-      // Give the user an actionable message instead of the cryptic "exited 1".
-      const trimmedErr = stderr.trim();
-      const transient = code === 1 && trimmedErr.length === 0 && stdout.trim().length === 0;
-      return res.status(502).json({
-        error: transient
-          ? 'Claude CLI returned nothing (transient failure). Try again — it usually works on retry.'
-          : `claude exited ${code}`,
-        stderr: stderr.slice(0, 2000),
-        transient,
-      });
-    }
-    // Extract the JSON object from claude's response. Claude usually returns
-    // pure JSON when asked but occasionally wraps in ```json fences or adds a
-    // brief preamble; this scan finds the first balanced {…} block.
+    // Extract the JSON object from claude's response FIRST — the CLI often
+    // prints valid JSON to stdout yet still exits non-zero (post-run warning /
+    // telemetry / broken pipe), so a good result shouldn't be discarded over
+    // the exit code. Claude usually returns pure JSON but occasionally wraps in
+    // ```json fences or adds a preamble; this scan finds the first balanced {…}.
     const parsed = extractJsonObject(stdout);
-    if (!parsed) {
-      return res.status(502).json({
-        error: 'could not parse JSON from claude response',
-        rawPreview: stdout.slice(0, 500),
+    if (parsed) {
+      return res.json({
+        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+        summary: parsed.summary || '',
       });
     }
-    res.json({
-      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-      summary: parsed.summary || '',
+    // No usable output — Claude CLI exiting non-zero with empty stderr AND empty
+    // stdout is a classic transient signature (network blip, quota check,
+    // session refresh). Give an actionable message instead of a cryptic code.
+    const trimmedErr = stderr.trim();
+    const transient = code === 1 && trimmedErr.length === 0 && stdout.trim().length === 0;
+    return res.status(502).json({
+      error: transient
+        ? 'Claude CLI returned nothing (transient failure). Try again — it usually works on retry.'
+        : `claude exited ${code}${trimmedErr ? ': ' + trimmedErr.slice(0, 400) : ' — could not parse a response'}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
+      transient,
     });
   });
   proc.on('error', (err) => {
@@ -601,7 +673,13 @@ function extractJsonObject(s) {
 // --dangerously-skip-permissions`, feed `prompt` via stdin, and stream the
 // JSONL events back to the client as formatted NDJSON log lines. Owns the
 // activeGenerate slot so concurrency guards are consistent across callers.
-async function streamClaudeWithPrompt(res, prompt) {
+/**
+ * @param opts.afterSuccess optional async (write) => void, awaited after Claude
+ *   exits 0 and before the stream closes. Use it for deterministic follow-up
+ *   work — compiling BDD, regenerating reports — that would otherwise cost the
+ *   model a tool-call round trip to perform itself.
+ */
+async function streamClaudeWithPrompt(res, prompt, opts = {}) {
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('X-Accel-Buffering', 'no');
@@ -672,13 +750,22 @@ async function streamClaudeWithPrompt(res, prompt) {
     write({ type: 'done', exitCode: 1 });
     res.end();
   });
-  proc.on('close', (code) => {
+  proc.on('close', async (code) => {
     if (finished) return;
     finished = true;
     activeGenerate = null;
     if (lineBuf.trim()) {
       write({ type: 'log', stream: 'stdout', text: lineBuf + '\n' });
       lineBuf = '';
+    }
+    // Deterministic follow-up work runs here, in Node — not as another model
+    // turn. Only on success: there is nothing to compile after a failed run.
+    if (code === 0 && typeof opts.afterSuccess === 'function') {
+      try {
+        await opts.afterSuccess(write);
+      } catch (err) {
+        write({ type: 'log', stream: 'stderr', text: `[ui] post-step failed: ${err && err.message}\n` });
+      }
     }
     write({ type: 'done', exitCode: code == null ? 1 : code });
     res.end();
@@ -832,6 +919,18 @@ function recordRunHistory({ feature, project, lastFailed } = {}) {
 // (which is one line per run) so the schemas stay flat and append-only.
 // Stored under reports/ for the same reason as run history.
 const TEST_HISTORY_MAX = 5000; // ~200 runs × 25 tests; keeps the file small
+// Playwright's JSON reporter sometimes prefixes a test's title chain with the
+// spec FILE PATH as a suite title (e.g. ".features-gen/features/x/x.feature:7").
+// Strip any path-like segment so a test's history key stays stable across runs —
+// otherwise the same test fragments into several keys and reads as flaky.
+function cleanTestTitle(ft) {
+  return String(ft || '')
+    .split('›')
+    .map((s) => s.trim())
+    .filter((s) => s && !/[\\/]/.test(s) && !/\.(feature|spec\.[jt]s|[jt]s)(?::\d+)?$/i.test(s))
+    .join(' › ');
+}
+
 function recordTestHistory({ feature, project } = {}) {
   const jsonPath = path.join(CFG_PATHS.testResults, 'results.json');
   if (!fs.existsSync(jsonPath)) return;
@@ -846,7 +945,7 @@ function recordTestHistory({ feature, project } = {}) {
         if (!last) continue;
         let status = last.status;
         if (test.status === 'flaky') status = 'flaky';
-        const fullTitle = [...titles, spec.title].filter(Boolean).join(' › ');
+        const fullTitle = cleanTestTitle([...titles, spec.title].filter(Boolean).join(' › '));
         const featureFromFile = (suite.file || spec.file || '')
           .replace(/\\/g, '/')
           .replace(/^(?:.*\/)?\.?features-gen\/features\//, '')
@@ -1025,18 +1124,21 @@ If every step you use already exists in the steps file, return "newSteps": [].`;
     clearTimeout(timer);
     activeGenerate = null;
     if (res.writableEnded || res.destroyed) return;
-    if (code !== 0) {
-      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse first — the CLI can print a valid scenario and still exit non-zero.
     const parsed = extractJsonObject(stdout);
-    if (!parsed || !parsed.scenario) {
-      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    if (parsed && parsed.scenario) {
+      return res.json({
+        scenario: String(parsed.scenario).slice(0, 5000),
+        name: String(parsed.name || '').slice(0, 200),
+        newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+        featureFile: existingFeatureFile ? `features/${feature}/${existingFeatureFile}` : `features/${feature}/`,
+      });
     }
-    res.json({
-      scenario: String(parsed.scenario).slice(0, 5000),
-      name: String(parsed.name || '').slice(0, 200),
-      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
-      featureFile: existingFeatureFile ? `features/${feature}/${existingFeatureFile}` : `features/${feature}/`,
+    const errText = stderr.trim();
+    return res.status(502).json({
+      error: `Draft failed — claude exited ${code}. ${errText ? errText.slice(0, 500) : 'Claude produced no usable scenario. Check that the CLI is signed in, then try again.'}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
     });
   });
   proc.on('error', (err) => {
@@ -1181,7 +1283,8 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
 }`;
 
   const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-  const args = ['--print', '--dangerously-skip-permissions'];
+  // Short, mechanical job — pin the fast model (override with AGENTIC_QA_CLAUDE_MODEL).
+  const args = withFastModel(['--print', '--dangerously-skip-permissions']);
   let proc;
   try {
     proc = spawn(cmd, args, {
@@ -1223,12 +1326,18 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
     clearTimeout(timer);
     activeGenerate = null;
     if (res.writableEnded || res.destroyed) return;
-    if (code !== 0) {
-      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse first — the CLI can emit valid JSON yet still exit non-zero, so the
+    // exit code only matters when there's no usable output to parse.
     const parsed = extractJsonObject(stdout);
     if (!parsed) {
-      return res.status(502).json({ error: 'claude returned non-JSON', rawPreview: stdout.slice(0, 500) });
+      const errText = stderr.trim();
+      return res.status(502).json({
+        error: code !== 0
+          ? `Explain failed — claude exited ${code}. ${errText ? errText.slice(0, 500) : 'No output — check the CLI is signed in, then try again.'}`
+          : 'claude returned non-JSON',
+        stderr: stderr.slice(0, 2000),
+        rawPreview: stdout.slice(0, 500),
+      });
     }
     // Accept a couple of likely key drifts — claude sometimes renames keys
     // when the prompt is dense.
@@ -1659,14 +1768,28 @@ app.post('/api/recorder/convert', async (req, res) => {
   if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
   if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
 
-  // Load existing step defs so claude prefers existing Given/When/Then phrasings.
+  // What steps already exist, so claude reuses a phrase instead of inventing one.
+  //
+  // Two parts, on purpose:
+  //  - the compact phrase index (authoritative, complete, tag-scoped) — ~0.7-1.7KB
+  //    where dumping the raw .steps.ts was 8-10KB, and the raw dump was also
+  //    truncated at 30KB so on a big feature it silently hid definitions;
+  //  - a trimmed slice of the real file, purely so new steps match the house style.
+  let stepPhraseIndex = '';
+  let recorderIndex = null;
+  try {
+    recorderIndex = stepIndex.readStepIndex({ root: ROOT });
+    const tags = featureTagsFor(feature);
+    stepPhraseIndex = stepIndex.renderForPrompt(recorderIndex, tags);
+  } catch (_) { /* fall back to the raw sample below */ }
+
   let existingSteps = '';
   if (feature) {
     const stepsDir = path.join(ROOT, 'features', feature);
     if (fs.existsSync(stepsDir)) {
       const stepsFile = fs.readdirSync(stepsDir).find((f) => f.endsWith('.steps.ts'));
       if (stepsFile) {
-        try { existingSteps = fs.readFileSync(path.join(stepsDir, stepsFile), 'utf8').slice(0, 30_000); }
+        try { existingSteps = fs.readFileSync(path.join(stepsDir, stepsFile), 'utf8').slice(0, 6_000); }
         catch (_) { /* missing/unreadable — claude will invent new steps */ }
       }
     }
@@ -1679,7 +1802,11 @@ CAPTURED PLAYWRIGHT CODE (from \`playwright codegen\`):
 ${code.slice(0, 8000)}
 \`\`\`
 
-${existingSteps ? `EXISTING STEP DEFINITIONS for feature "${feature}" — REUSE these phrasings when the captured action maps to an existing step. Do not invent new steps when an existing one fits.
+${stepPhraseIndex ? `STEP PHRASES ALREADY AVAILABLE to feature "${feature}" (complete and authoritative — every one of these is implemented and in scope). REUSE these verbatim whenever the captured action maps to one. Do NOT invent a new step when one of these fits, and do NOT list any of these under newSteps.
+
+${stepPhraseIndex}
+` : ''}
+${existingSteps ? `STYLE SAMPLE — how step definitions are written in this feature (for matching house style only; the authoritative phrase list is above):
 
 \`\`\`typescript
 ${existingSteps}
@@ -1687,7 +1814,7 @@ ${existingSteps}
 ` : ''}
 INSTRUCTIONS:
 1. Output ONE Scenario block in Gherkin. Start with a one-line "Scenario:" name that describes what the user just did, then Given/When/Then steps.
-2. Prefer existing step phrasings from the file above when they match.
+2. Prefer existing step phrasings from the list above when they match.
 3. Skip browser navigation that just goes back to the start URL (treat that as the Background — don't add a Given for it unless the existing steps already have one).
 4. Group multiple consecutive clicks/fills on the same form into a higher-level When step where it makes sense ("When I fill the sign-in form and submit" instead of 5 separate fill/click whens) — but only IF that matches the existing-step style.
 5. Output STRICT JSON with this exact shape, nothing else:
@@ -1704,7 +1831,8 @@ If every step you used already exists in the steps file, return newSteps: [].`;
 
   // Run claude --print synchronously and parse JSON out of its response.
   const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-  const args = ['--print', '--dangerously-skip-permissions'];
+  // Short, mechanical job — pin the fast model (override with AGENTIC_QA_CLAUDE_MODEL).
+  const args = withFastModel(['--print', '--dangerously-skip-permissions']);
   let proc;
   try {
     proc = spawn(cmd, args, {
@@ -1732,17 +1860,59 @@ If every step you used already exists in the steps file, return newSteps: [].`;
   proc.on('close', (exitCode) => {
     clearTimeout(timer);
     activeGenerate = null;
-    if (exitCode !== 0) {
-      return res.status(502).json({ error: `claude exited ${exitCode}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse the model output FIRST, regardless of exit code. The Claude CLI
+    // frequently prints a valid answer to stdout and STILL exits non-zero
+    // (a post-run telemetry/update warning, a broken stdout pipe on Windows,
+    // etc.). Bailing on exitCode before parsing threw away good scenarios and
+    // surfaced a bare "claude exited 1" — that was the recorder→Gherkin bug.
     const parsed = extractJsonObject(stdout);
-    if (!parsed || !parsed.scenario) {
-      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    if (parsed && parsed.scenario) {
+      if (exitCode !== 0 && stderr.trim()) {
+        console.warn(`[recorder/convert] claude exited ${exitCode} but produced a usable scenario; stderr: ${stderr.trim().slice(0, 300)}`);
+      }
+      // Verify the model's "this step is new" claim against the index rather
+      // than trusting it. A false positive here is expensive: it scaffolds a
+      // duplicate definition of a step that already works, and duplicates are
+      // exactly what the tag-scoped step library already suffers from.
+      let claimedNew = Array.isArray(parsed.newSteps) ? parsed.newSteps : [];
+      let correctedNew = claimedNew;
+      const alreadyExisted = [];
+      if (recorderIndex && claimedNew.length) {
+        const tags = featureTagsFor(feature);
+        correctedNew = claimedNew.filter((s) => {
+          const phrase = typeof s === 'string' ? s : (s && s.phrase) || '';
+          if (!phrase) return true;
+          const verdict = stepIndex.matchStep(phrase, recorderIndex, { tags });
+          if (verdict.status === 'none') return true;
+          alreadyExisted.push(phrase);
+          return false;
+        });
+        if (alreadyExisted.length) {
+          console.log(`[recorder/convert] dropped ${alreadyExisted.length} "new" step(s) that already exist: ${alreadyExisted.join(' | ')}`);
+        }
+      }
+      return res.json({
+        scenario: parsed.scenario,
+        name: parsed.name || '',
+        newSteps: correctedNew,
+        // Surfaced so the review panel can say why the list shrank.
+        alreadyImplemented: alreadyExisted,
+      });
     }
-    res.json({
-      scenario: parsed.scenario,
-      name: parsed.name || '',
-      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+    // No usable output — surface the actual reason instead of a bare exit code.
+    const errText = stderr.trim();
+    if (errText) console.error('[recorder/convert] claude stderr:', errText);
+    // Exit 1 with no stderr and no stdout is almost always an un-authenticated
+    // CLI or an exhausted usage limit — give the user an actionable hint.
+    const hint = errText
+      ? errText.slice(0, 600)
+      : (stdout.trim()
+        ? 'Claude replied but not in the expected JSON format — try Convert again.'
+        : 'Claude produced no output. The CLI is likely not signed in (open a terminal, run `claude`, and log in) or a usage limit was hit.');
+    return res.status(502).json({
+      error: `Convert failed — claude exited ${exitCode}. ${hint}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
     });
   });
   proc.on('error', (err) => {
@@ -1844,6 +2014,34 @@ app.get('/api/pr-impact', (req, res) => {
     impact.get(feature).add(reason);
   };
 
+  // A package.json change only counts as cross-cutting (i.e. flags EVERY
+  // feature) when it actually changes dependencies. Version bumps, script
+  // edits, and npm metadata shouldn't blanket-flag the whole suite — otherwise
+  // "impacted" degrades to "all features" on any branch that touched
+  // package.json, and "Run impacted" runs everything. Compared by parsing the
+  // dependency maps at `base` vs. now; memoized so we do it at most once.
+  let _pkgDepsCache = null;
+  function pkgDepsChanged() {
+    if (_pkgDepsCache !== null) return _pkgDepsCache;
+    try {
+      const cur = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+      let baseJson;
+      try {
+        baseJson = JSON.parse(execSync(`git show ${base}:package.json`, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+      } catch {
+        _pkgDepsCache = true; return true; // can't read base copy → assume it matters
+      }
+      const deps = (p) => JSON.stringify({
+        d: p.dependencies || {}, dd: p.devDependencies || {},
+        pd: p.peerDependencies || {}, od: p.optionalDependencies || {},
+      });
+      _pkgDepsCache = deps(cur) !== deps(baseJson);
+    } catch {
+      _pkgDepsCache = true; // on any error, be conservative
+    }
+    return _pkgDepsCache;
+  }
+
   for (const file of allChanged) {
     const norm = file.replace(/\\/g, '/');
     const fMatch = norm.match(/^features\/([^/]+)\//);
@@ -1879,6 +2077,9 @@ app.get('/api/pr-impact', (req, res) => {
     }
     const cfgMatch = norm.match(/^(playwright\.config\.js|package\.json|features\/_shared\/|utils\/)/);
     if (cfgMatch) {
+      // Skip a package.json change that didn't touch dependencies — it isn't
+      // genuinely cross-cutting, so it shouldn't mark every feature impacted.
+      if (cfgMatch[1] === 'package.json' && !pkgDepsChanged()) continue;
       for (const f of features) addImpact(f, `Global: ${cfgMatch[1]} changed`);
     }
   }
@@ -2031,18 +2232,58 @@ app.post('/api/tags', (req, res) => {
 const SCHEDULES_DIR = path.join(ROOT, '.claude');
 const SCHEDULES_FILE = path.join(SCHEDULES_DIR, 'schedules.json');
 const SCHEDULE_LOGS_DIR = path.join(ROOT, 'reports', 'scheduled-runs');
-const SCHEDULE_TICK_MS = 30_000;
+const SCHEDULE_OUTPUT_DIR = path.join(ROOT, 'test-results-scheduled');
+// How often the scheduler checks for due schedules. This is also the worst-case
+// lateness for a "daily at 09:00" — computeNextRun works out the exact instant,
+// but nothing fires until the next tick observes it. 5s keeps a timed run
+// visibly punctual; the check itself is one small JSON read.
+const SCHEDULE_TICK_MS = 5_000;
+const SCHEDULE_ID_RE = /^sch_[a-z0-9_]+$/;
+// Retention caps. Scheduled runs are fire-and-forget and nothing used to prune
+// their output, so an every-N-minute schedule grew both dirs without bound (a
+// 1-minute schedule left behind 161 logs + 151 artifact dirs / ~74 MB). Keep a
+// useful window of recent history and drop the rest after each run.
+const SCHEDULE_LOG_RETENTION = 20;       // logs kept per schedule
+const SCHEDULE_ARTIFACT_RETENTION = 40;  // test-results-scheduled/ dirs kept in total
+const SCHEDULE_LOG_MAX_BYTES = 256 * 1024; // largest log body served to the UI
+// Hard ceiling on a single scheduled run. This is a safety net, not a policy
+// timer: a scheduled run holds the run lock, so one that wedges (a hung page
+// against a slow live app, a browser that never exits) would otherwise block
+// every later scheduled AND interactive run for the life of the process.
+// A full headed matrix legitimately takes tens of minutes, hence 30.
+// Overridable via env so the kill path can be exercised without a 30 min wait.
+const SCHEDULE_RUN_MAX_MS = Number(process.env.AGENTIC_QA_SCHEDULE_MAX_MS) || 30 * 60_000;
+
+// Last list this process parsed successfully. Used as the fallback for a failed
+// read so a corrupt file can never present as "the user has no schedules".
+let lastGoodSchedules = null;
 
 function loadSchedules() {
   try {
-    if (!fs.existsSync(SCHEDULES_FILE)) return [];
-    return JSON.parse(fs.readFileSync(SCHEDULES_FILE, 'utf8'));
-  } catch { return []; }
+    if (!fs.existsSync(SCHEDULES_FILE)) { lastGoodSchedules = []; return []; }
+    const parsed = JSON.parse(fs.readFileSync(SCHEDULES_FILE, 'utf8'));
+    if (!Array.isArray(parsed)) throw new Error('schedules.json is not an array');
+    lastGoodSchedules = parsed;
+    return parsed;
+  } catch (err) {
+    // A half-written or corrupt file must NOT read back as an empty list: a
+    // caller that then saves turns a transient read failure into permanent
+    // deletion of every schedule. Fall back to the last good copy instead.
+    console.error('loadSchedules failed (keeping last known good):', err.message);
+    return lastGoodSchedules ? JSON.parse(JSON.stringify(lastGoodSchedules)) : [];
+  }
 }
 function saveSchedules(list) {
+  if (!Array.isArray(list)) return;
   try {
     if (!fs.existsSync(SCHEDULES_DIR)) fs.mkdirSync(SCHEDULES_DIR, { recursive: true });
-    fs.writeFileSync(SCHEDULES_FILE, JSON.stringify(list, null, 2), 'utf8');
+    // Write-then-rename. A truncating in-place write can be interrupted (crash,
+    // kill, or a second UI instance started on another port sharing this file)
+    // and leave an empty or half-written schedules.json behind.
+    const tmp = `${SCHEDULES_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(list, null, 2), 'utf8');
+    fs.renameSync(tmp, SCHEDULES_FILE);
+    lastGoodSchedules = list;
   } catch (err) { console.error('saveSchedules failed:', err.message); }
 }
 function computeNextRun(schedule, fromTs) {
@@ -2080,40 +2321,245 @@ function humanFrequency(s) {
   return 'Unknown';
 }
 
-function fireScheduledRun(schedule) {
+// The `line` reporter renders progress by overwriting a single terminal line
+// with cursor-up + erase-line escapes. Written to a file those escapes make the
+// log unreadable, but the *lines* themselves are more useful than the one final
+// line a terminal would leave visible — so drop the control sequences and keep
+// every line.
+function stripTerminalControl(s) {
+  // Match the ESC byte explicitly (\x1b). A bare /\[[0-9;]*[A-Za-z]/ would also
+  // eat the "[f" out of test lines like "[firefox] > ...".
+  return String(s).replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+}
+
+// Pull the pass/fail tallies out of a `line` reporter run so a schedule card can
+// show "33 passed" instead of a bare ✓. Returns null when no summary is present
+// (run still in flight, crashed before reporting, or bddgen failed).
+function parseRunSummary(text) {
+  const tail = stripTerminalControl(text).slice(-4000);
+  const count = (re) => { const m = tail.match(re); return m ? Number(m[1]) : 0; };
+  const passed = count(/(\d+)\s+passed/);
+  const failed = count(/(\d+)\s+failed/);
+  const flaky = count(/(\d+)\s+flaky/);
+  const skipped = count(/(\d+)\s+skipped/);
+  const total = passed + failed + flaky + skipped;
+  if (!total) return null;
+  // Duration is printed alongside the final tally, so take the last match.
+  const durations = tail.match(/\((\d+(?:\.\d+)?(?:ms|s|m))\)/g) || [];
+  const duration = durations.length
+    ? durations[durations.length - 1].slice(1, -1)
+    : '';
+  return { passed, failed, flaky, skipped, total, duration };
+}
+
+// Keep only the newest SCHEDULE_LOG_RETENTION logs for one schedule.
+function pruneScheduleLogs(scheduleId) {
+  try {
+    if (!fs.existsSync(SCHEDULE_LOGS_DIR)) return;
+    const prefix = `${scheduleId}-`;
+    const logs = fs.readdirSync(SCHEDULE_LOGS_DIR)
+      .filter((f) => f.startsWith(prefix) && f.endsWith('.log'))
+      .map((f) => ({ f, ts: Number(f.slice(prefix.length, -4)) || 0 }))
+      .sort((a, b) => b.ts - a.ts);
+    for (const { f } of logs.slice(SCHEDULE_LOG_RETENTION)) {
+      fs.rmSync(path.join(SCHEDULE_LOGS_DIR, f), { force: true });
+    }
+  } catch (err) { console.error('pruneScheduleLogs:', err.message); }
+}
+
+// Cap test-results-scheduled/ by total dir count. Artifacts land here from every
+// schedule with no per-schedule namespacing, and nothing in the UI ever reads
+// them back — they exist only for a manual `playwright show-trace`.
+function pruneScheduleArtifacts() {
+  try {
+    if (!fs.existsSync(SCHEDULE_OUTPUT_DIR)) return;
+    const dirs = fs.readdirSync(SCHEDULE_OUTPUT_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => {
+        const full = path.join(SCHEDULE_OUTPUT_DIR, e.name);
+        const stat = fs.statSync(full, { throwIfNoEntry: false });
+        return { full, ts: stat ? stat.mtimeMs : 0 };
+      })
+      .sort((a, b) => b.ts - a.ts);
+    for (const { full } of dirs.slice(SCHEDULE_ARTIFACT_RETENTION)) {
+      fs.rmSync(full, { recursive: true, force: true });
+    }
+  } catch (err) { console.error('pruneScheduleArtifacts:', err.message); }
+}
+
+// ---- Scheduled-run event fan-out -------------------------------------------
+// An interactive run streams NDJSON straight down its own /api/run response.
+// A scheduled run has no client to stream to, so it publishes the SAME event
+// shapes here and every open UI renders them live — same log, same Gherkin step
+// timeline, same pass/fail pills — instead of the run happening invisibly.
+const runStreamClients = new Set();
+
+function broadcastRunEvent(obj) {
+  const frame = `data: ${JSON.stringify(obj)}\n\n`;
+  for (const res of [...runStreamClients]) {
+    if (res.writableEnded || res.destroyed) { runStreamClients.delete(res); continue; }
+    try { res.write(frame); } catch (_) { runStreamClients.delete(res); }
+  }
+}
+
+async function fireScheduledRun(schedule) {
+  // One Playwright run at a time. Overlapping an interactive run would put two
+  // bddgen processes into .features-gen at once; skip this fire and let the
+  // next tick pick it up rather than corrupting the compiled specs.
+  if (activeRun) {
+    broadcastRunEvent({ type: 'sched_skipped', name: schedule.name, id: schedule.id, reason: 'another run is already in progress' });
+    return;
+  }
   if (!fs.existsSync(SCHEDULE_LOGS_DIR)) fs.mkdirSync(SCHEDULE_LOGS_DIR, { recursive: true });
   const logPath = path.join(SCHEDULE_LOGS_DIR, `${schedule.id}-${Date.now()}.log`);
   const logStream = fs.createWriteStream(logPath, { flags: 'a' });
   logStream.write(`\n=== Scheduled run: ${schedule.name} @ ${new Date().toISOString()} ===\n`);
   const args = ['playwright', 'test'];
   if (schedule.feature) args.push(`.features-gen/features/${schedule.feature}/`);
-  if (schedule.project) args.push(`--project=${schedule.project}`);
+  if (schedule.project) {
+    args.push(`--project=${schedule.project}`);
+  } else {
+    // Same reasoning as /api/run: a schedule saved with no project must not
+    // start including the emulated device projects just because they exist.
+    for (const name of desktopProjectNames) args.push(`--project=${name}`);
+  }
   if (schedule.tagFilter) args.push(`--grep=${schedule.tagFilter}`);
   args.push('--grep-invert=@destructive');
-  // Headless by default for scheduled runs (no user watching).
-  const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  // Compile BDD first, then run.
-  const bdd = spawn(npx, ['bddgen'], { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
-  bdd.stdout.on('data', (d) => logStream.write(d));
-  bdd.stderr.on('data', (d) => logStream.write(d));
-  bdd.on('close', () => {
-    const proc = spawn(npx, args, { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
-    proc.stdout.on('data', (d) => logStream.write(d));
-    proc.stderr.on('data', (d) => logStream.write(d));
-    proc.on('close', (code) => {
-      logStream.write(`\n=== exit code ${code} ===\n`);
-      logStream.end();
-      const list = loadSchedules();
-      const s = list.find((x) => x.id === schedule.id);
-      if (s) {
-        s.lastRun = Date.now();
-        s.lastRunExitCode = code;
-        s.nextRun = computeNextRun(s, s.lastRun);
-        saveSchedules(list);
-      }
-    });
-    proc.on('error', () => { logStream.write('\n=== spawn error ===\n'); logStream.end(); });
+  // Isolate scheduled-run artifacts from the INTERACTIVE gallery and reports.
+  // A schedule can fire every minute and (with empty feature/project) run the
+  // whole matrix across every browser; without isolation those screenshots pile
+  // into test-results/ and the gallery shows dozens of unrelated shots after any
+  // interactive run. Route scheduled artifacts to a separate output dir and use
+  // the lightweight `line` reporter so scheduled runs never overwrite
+  // test-results/, results.json, playwright-report/ or allure-results/.
+  args.push(`--output=${path.basename(SCHEDULE_OUTPUT_DIR)}`);
+  // `line` for the durable log tail we parse tallies from, plus the live-step
+  // reporter so a scheduled run drives the UI's Gherkin step timeline exactly
+  // like an interactive one. The step reporter only writes [LIVE_STEP] lines to
+  // stdout — it produces no files, so artifact isolation is unaffected.
+  args.push('--reporter=line,./ui/live-step-reporter.js');
+  // Headless unless the schedule opts in. Opting in means "let me watch the
+  // real browsers run at the scheduled time"; it stays off by default because
+  // an unattended every-N-minutes schedule that pops browser windows and
+  // steals focus is unusable.
+  if (schedule.headed) {
+    args.push('--headed');
+    // Mirror /api/run: one window for a single project, otherwise a worker per
+    // project so they come up together instead of one at a time.
+    args.push(`--workers=${schedule.project ? 1 : desktopProjectNames.length}`);
+  }
+  // Fan-out writer: the log file keeps the durable record (and feeds the tally
+  // parser), while the SSE hub drives any open UI. Reusing runBddgen /
+  // runPlaywrightProcess means scheduled runs emit byte-identical event shapes
+  // to interactive ones, so the browser needs no special-case rendering.
+  let tail = '';
+  const write = (obj) => {
+    if (obj && obj.type === 'log' && obj.text) {
+      logStream.write(obj.text);
+      tail = (tail + obj.text).slice(-8000);
+    }
+    broadcastRunEvent({ ...obj, scheduled: true, scheduleId: schedule.id });
+  };
+
+  broadcastRunEvent({
+    type: 'sched_start',
+    id: schedule.id,
+    name: schedule.name,
+    feature: schedule.feature || 'all features',
+    project: schedule.project || desktopProjectNames.join(' + '),
+    headed: !!schedule.headed,
   });
+
+  let code = 1;
+  let watchdog = null;
+  let timedOut = false;
+  try {
+    await runBddgen(write);
+    write({ type: 'start', cmd: 'npx ' + args.join(' '), cwd: ROOT });
+    code = await runPlaywrightProcess(args, write, (p) => {
+      // Hold the run lock so an interactive Run is refused (409) rather than
+      // colliding, and so the Stop button can kill a visible scheduled run.
+      activeRun = { proc: p, startedAt: Date.now(), scheduleId: schedule.id };
+      // Release valve for the lock above. Without this, one wedged run blocks
+      // the runner permanently — and a run that never exits is exactly what
+      // happens when a short interval stacks headed runs against a slow app.
+      watchdog = setTimeout(() => {
+        timedOut = true;
+        write({
+          type: 'log',
+          stream: 'stderr',
+          text: `[ui] scheduled run exceeded ${SCHEDULE_RUN_MAX_MS < 60_000 ? `${Math.round(SCHEDULE_RUN_MAX_MS / 1000)}s` : `${Math.round(SCHEDULE_RUN_MAX_MS / 60000)} min`} — killing it (and its browsers) so later runs are not blocked\n`,
+        });
+        killProcessTree(p);
+      }, SCHEDULE_RUN_MAX_MS);
+    });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[ui] scheduled run failed: ${err && err.message}\n` });
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    activeRun = null;
+    logStream.write(`\n=== exit code ${code}${timedOut ? ' (killed: exceeded time limit)' : ''} ===\n`);
+    logStream.end();
+  }
+
+  const stats = parseRunSummary(tail);
+  const list = loadSchedules();
+  const s = list.find((x) => x.id === schedule.id);
+  if (s) {
+    s.lastRun = Date.now();
+    s.lastRunExitCode = code;
+    // null when the run produced no summary (crash / bddgen failure) — the
+    // card falls back to the bare ✓/✗ in that case.
+    s.lastRunStats = stats;
+    s.nextRun = computeNextRun(s, s.lastRun);
+    saveSchedules(list);
+  }
+  pruneScheduleLogs(schedule.id);
+  pruneScheduleArtifacts();
+  broadcastRunEvent({ type: 'sched_done', id: schedule.id, name: schedule.name, exitCode: code, stats });
+  // Tell someone when an unattended run goes red. Fire-and-forget: a webhook
+  // that is down must never wedge the scheduler or hold the run lock.
+  notifyScheduleFailure(schedule, code, stats).catch(() => {});
+}
+
+/**
+ * POST a failure summary to the schedule's webhook.
+ *
+ * Only fires on failure — a green run every 15 minutes is noise, and noise is
+ * how people learn to ignore alerts. Never throws: the caller is the scheduler.
+ */
+async function notifyScheduleFailure(schedule, exitCode, stats) {
+  const url = schedule && schedule.webhookUrl;
+  if (!url || !isHttpUrl(url)) return;
+  const failed = (stats && (stats.failed || stats.flaky)) || 0;
+  if (exitCode === 0 && !failed) return;
+
+  const payload = {
+    event: 'scheduled_run_failed',
+    schedule: { id: schedule.id, name: schedule.name, feature: schedule.feature || '(all)', project: schedule.project || '(desktop browsers)' },
+    exitCode,
+    // stats is null when the run died before reporting (crash, bddgen failure).
+    summary: stats || null,
+    text: stats
+      ? `QA scheduled run "${schedule.name}" failed — ${stats.failed || 0} failed, ${stats.flaky || 0} flaky, ${stats.passed || 0} passed (${stats.duration || 'n/a'})`
+      : `QA scheduled run "${schedule.name}" failed before reporting (exit ${exitCode})`,
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    console.log(`[schedule] webhook for "${schedule.name}" -> ${resp.status}`);
+  } catch (err) {
+    console.error(`[schedule] webhook for "${schedule.name}" failed: ${err && err.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 setInterval(() => {
@@ -2146,7 +2592,7 @@ app.get('/api/schedules', (_req, res) => {
 });
 
 app.post('/api/schedules', (req, res) => {
-  const { id, name, feature, project, tagFilter, mode, intervalMinutes, hour, minute, dayOfWeek, enabled } = req.body || {};
+  const { id, name, feature, project, tagFilter, mode, intervalMinutes, hour, minute, dayOfWeek, enabled, headed, webhookUrl } = req.body || {};
   if (!name || typeof name !== 'string' || name.length > 80) {
     return res.status(400).json({ error: 'name required (max 80 chars)' });
   }
@@ -2156,6 +2602,15 @@ app.post('/api/schedules', (req, res) => {
   if (tagFilter && tagFilter.length > 200) return res.status(400).json({ error: 'tagFilter too long' });
   if (tagFilter && !/^[@A-Za-z0-9_.\s\-()!&|]+$/.test(tagFilter)) {
     return res.status(400).json({ error: 'tagFilter contains invalid characters (allowed: letters, digits, @, _, -, ., spaces, boolean ops)' });
+  }
+  if (headed !== undefined && headed !== null && typeof headed !== 'boolean') {
+    return res.status(400).json({ error: 'headed must be a boolean' });
+  }
+  if (webhookUrl) {
+    if (typeof webhookUrl !== 'string' || !isHttpUrl(webhookUrl)) {
+      return res.status(400).json({ error: 'webhookUrl must be a valid http(s) URL' });
+    }
+    if (webhookUrl.length > 2048) return res.status(400).json({ error: 'webhookUrl too long' });
   }
   if (!['interval', 'daily', 'weekly'].includes(mode)) {
     return res.status(400).json({ error: 'mode must be interval / daily / weekly' });
@@ -2186,31 +2641,105 @@ app.post('/api/schedules', (req, res) => {
     minute: (mode === 'daily' || mode === 'weekly') ? Number(minute) : undefined,
     dayOfWeek: mode === 'weekly' ? Number(dayOfWeek) : undefined,
     enabled: enabled !== false,
+    // Opt-in visible browsers for this schedule's runs.
+    headed: headed === true,
+    // Optional: POST a summary here when this schedule's run fails.
+    webhookUrl: webhookUrl || '',
     createdAt: Date.now(),
   };
   record.nextRun = computeNextRun(record, Date.now());
   const existingIdx = list.findIndex((s) => s.id === record.id);
   if (existingIdx >= 0) {
-    // Preserve lastRun/exitCode on update
+    // Preserve lastRun/exitCode/stats on update
     record.lastRun = list[existingIdx].lastRun;
     record.lastRunExitCode = list[existingIdx].lastRunExitCode;
+    record.lastRunStats = list[existingIdx].lastRunStats;
     record.createdAt = list[existingIdx].createdAt;
     list[existingIdx] = record;
   } else {
     list.push(record);
   }
   saveSchedules(list);
-  res.json({ ok: true, schedule: { ...record, humanFrequency: humanFrequency(record) } });
+  // Non-blocking advice. A short interval does not break anything now that a
+  // fire is skipped while another run holds the lock, but the user should know
+  // most fires will be no-ops — and that a headed run of the whole suite opens
+  // a browser window per worker.
+  const warnings = [];
+  if (record.mode === 'interval' && record.intervalMinutes < 10) {
+    const scope = record.feature ? `the "${record.feature}" feature` : 'every feature';
+    warnings.push(`Every ${record.intervalMinutes} min is shorter than a typical run of ${scope}. Overlapping fires are skipped, so most ticks will do nothing — consider 15-30 min.`);
+  }
+  if (record.headed) {
+    const windows = record.project ? 1 : desktopProjectNames.length;
+    warnings.push(`Visible mode opens ${windows} browser window${windows === 1 ? '' : 's'} (each is ~8 OS processes) every time this fires.`);
+  }
+  res.json({ ok: true, schedule: { ...record, humanFrequency: humanFrequency(record) }, warnings });
 });
 
 app.delete('/api/schedules/:id', (req, res) => {
   const id = String(req.params.id || '');
-  if (!/^sch_[a-z0-9_]+$/.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
+  if (!SCHEDULE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
   const list = loadSchedules();
   const filtered = list.filter((s) => s.id !== id);
   if (filtered.length === list.length) return res.status(404).json({ error: 'schedule not found' });
   saveSchedules(filtered);
   res.json({ ok: true, deleted: id });
+});
+
+// A scheduled run never streams to a client — its output goes to
+// reports/scheduled-runs/<id>-<ts>.log and nothing read those files back, so the
+// only feedback in the UI was a ✓/✗ on the card. These two routes make the runs
+// inspectable: a list of recent runs, and the body of one of them.
+app.get('/api/schedules/:id/logs', (req, res) => {
+  const id = String(req.params.id || '');
+  if (!SCHEDULE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
+  try {
+    if (!fs.existsSync(SCHEDULE_LOGS_DIR)) return res.json({ logs: [], retention: SCHEDULE_LOG_RETENTION });
+    const prefix = `${id}-`;
+    const logs = fs.readdirSync(SCHEDULE_LOGS_DIR)
+      .filter((f) => f.startsWith(prefix) && f.endsWith('.log'))
+      .map((f) => {
+        const ts = Number(f.slice(prefix.length, -4)) || 0;
+        const stat = fs.statSync(path.join(SCHEDULE_LOGS_DIR, f), { throwIfNoEntry: false });
+        return { ts, size: stat ? stat.size : 0 };
+      })
+      .filter((l) => l.ts > 0)
+      .sort((a, b) => b.ts - a.ts);
+    res.json({ logs, retention: SCHEDULE_LOG_RETENTION });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+app.get('/api/schedules/:id/logs/:ts', (req, res) => {
+  const id = String(req.params.id || '');
+  const ts = String(req.params.ts || '');
+  if (!SCHEDULE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
+  if (!/^\d+$/.test(ts)) return res.status(400).json({ error: 'invalid timestamp' });
+  // Both segments are pattern-validated and the filename is rebuilt from them,
+  // so no caller-supplied path can escape SCHEDULE_LOGS_DIR.
+  const file = path.join(SCHEDULE_LOGS_DIR, `${id}-${ts}.log`);
+  try {
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    if (!stat || !stat.isFile()) return res.status(404).json({ error: 'log not found' });
+    let content = fs.readFileSync(file, 'utf8');
+    let truncated = false;
+    if (content.length > SCHEDULE_LOG_MAX_BYTES) {
+      // Keep the tail: the summary and any failure output are at the end.
+      content = content.slice(-SCHEDULE_LOG_MAX_BYTES);
+      truncated = true;
+    }
+    content = stripTerminalControl(content);
+    res.json({
+      ts: Number(ts),
+      size: stat.size,
+      truncated,
+      summary: parseRunSummary(content),
+      content,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
 });
 
 // Coverage-gap detector: cross-reference the ACs in a story with the
@@ -2323,7 +2852,9 @@ app.get('/api/flaky-tests', (req, res) => {
     // Group by (feature, project, fullTitle) — the unique key for a test instance
     const groups = new Map();
     for (const e of entries) {
-      const key = `${e.feature}|${e.project}|${e.fullTitle}`;
+      // Normalize the title so history recorded with a path-y fullTitle (older
+      // runs) groups with the clean-title runs for the same test.
+      const key = `${e.feature}|${e.project}|${cleanTestTitle(e.fullTitle)}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(e);
     }
@@ -2348,12 +2879,20 @@ app.get('/api/flaky-tests', (req, res) => {
       const passRate = passes / window.length;
       const flakyStatusCount = window.filter((r) => r.status === 'flaky').length;
 
-      // Real flaky tests: at least minFlips status flips AND pass-rate not 0 or 1.
-      // OR: Playwright already marked it flaky at least once.
-      if ((flips >= minFlips && passRate > 0 && passRate < 1) || flakyStatusCount > 0) {
+      // Recency gate: a test that flipped historically but has been green for
+      // its last few runs has stabilized — it's not *currently* flaky. Only
+      // surface tests with at least one non-pass in the recent window, so the
+      // count reflects live instability rather than long-healed history.
+      const recentWindow = Math.min(8, window.length);
+      const recentlyUnstable = window.slice(-recentWindow).some((r) => r.status !== 'passed');
+
+      // Real flaky tests: at least minFlips status flips AND pass-rate not 0 or 1,
+      // OR Playwright already marked it flaky at least once — AND it's been
+      // unstable recently (not stabilized).
+      if (recentlyUnstable && ((flips >= minFlips && passRate > 0 && passRate < 1) || flakyStatusCount > 0)) {
         const last = runs[runs.length - 1];
         flaky.push({
-          fullTitle: last.fullTitle,
+          fullTitle: cleanTestTitle(last.fullTitle) || last.fullTitle,
           spec: last.spec,
           feature: last.feature,
           project: last.project,
@@ -2374,6 +2913,23 @@ app.get('/api/flaky-tests', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
+});
+
+// Reset local run/flaky history — clears the accumulated per-test history
+// (flaky detection) and the per-run summaries (status-bar sparkline). Both are
+// gitignored, per-machine, and rebuild automatically on the next run. Used by
+// the "reset history" action on the flaky pill.
+app.post('/api/reset-history', (_req, res) => {
+  const removed = [];
+  for (const f of ['test-history.jsonl', 'history.jsonl']) {
+    const p = path.join(CFG_PATHS.reports, f);
+    try {
+      if (fs.existsSync(p)) { fs.rmSync(p); removed.push(f); }
+    } catch (err) {
+      return res.status(500).json({ error: `could not remove ${f}: ${err.message}`, removed });
+    }
+  }
+  res.json({ ok: true, removed });
 });
 
 // Return the last N run summaries (default 30) for the status-bar sparkline.
@@ -2425,7 +2981,7 @@ app.get('/api/last-failures', (_req, res) => {
             last.status;
           failures.push({
             title: spec.title,
-            fullTitle: [...titles, spec.title].filter(Boolean).join(' › '),
+            fullTitle: cleanTestTitle([...titles, spec.title].filter(Boolean).join(' › ')),
             file: (suite.file || spec.file || '').replace(/\\/g, '/'),
             line: spec.line,
             project: test.projectName,
@@ -2514,7 +3070,15 @@ app.post('/api/run', async (req, res) => {
     // Specific feature picked → filter the BDD compiled tests by feature dir.
     args.push(`.features-gen/features/${feature}/`);
   }
-  if (project) args.push(`--project=${project}`);
+  if (project) {
+    args.push(`--project=${project}`);
+  } else {
+    // No project = the UI's "All browsers" matrix: every configured project,
+    // desktop browsers AND emulated devices, in one pass. Named explicitly
+    // rather than relying on Playwright's "run all projects" default so the
+    // set the UI advertises is the set that actually runs.
+    for (const name of projectNames) args.push(`--project=${name}`);
+  }
   // Optional tag filter (Playwright supports boolean expressions like "@smoke and not @slow").
   if (tagFilter && typeof tagFilter === 'string' && tagFilter.trim()) {
     const clean = tagFilter.trim();
@@ -2524,13 +3088,35 @@ app.post('/api/run', async (req, res) => {
     args.push(`--grep=${clean}`);
   }
   // Default-skip @destructive tag (e.g. signup AC1/AC2 that creates real
-  // tenants on prod). Override with `?destructive=1` in the request.
-  if (!req.body?.destructive) args.push('--grep-invert=@destructive');
+  // tenants on prod, or order-flow that submits real vendor orders). Override
+  // with `destructive: true` in the request body. The UI no longer sends that
+  // flag at all — the opt-in checkbox was removed — so an interactive run
+  // always skips them; `npm run test:destructive` is the deliberate path. The
+  // branch stays for API callers that opt in explicitly.
+  if (!req.body?.destructive) {
+    args.push('--grep-invert=@destructive');
+  } else {
+    // Destructive scenarios submit real, persistent data. Force retries=0 so a
+    // transient failure can never re-run and double-submit (e.g. send the same
+    // orders twice) — matches the safety note in the destructive .feature files.
+    args.push('--retries=0');
+  }
   if (headed !== false) {
     args.push('--headed');
-    // In headed mode, force a single worker so the user can actually watch
-    // each test execute in sequence (8 parallel browser windows are unusable).
-    args.push('--workers=1');
+    if (project) {
+      // Single project headed: one worker so you can follow the run in one
+      // window instead of 8 windows of the same browser fighting for focus.
+      args.push('--workers=1');
+    } else {
+      // Headed matrix: the whole point is watching every browser and device
+      // side by side, so clamping to one worker would defeat it — the projects
+      // would open one at a time. Playwright interleaves projects across
+      // workers (measured: 4 distinct engines starting inside 80ms with 7
+      // workers), so a worker per project gets them all up together. It does
+      // not guarantee a strict one-window-per-project ordering — the scheduler
+      // decides which test each free worker picks up.
+      args.push(`--workers=${projectNames.length}`);
+    }
   }
 
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
@@ -2550,6 +3136,9 @@ app.post('/api/run', async (req, res) => {
 
   try {
     clearAllureResults(write);
+    // Remove stale per-test artifact folders so the screenshot gallery reflects
+    // ONLY this run (Playwright leaves prior runs' folders in place otherwise).
+    cleanTestArtifacts(write);
     // Compile .feature files first so BDD scenarios are present in the
     // generated dir before Playwright walks the testDir.
     await runBddgen(write);
@@ -2697,18 +3286,398 @@ app.get('/api/screenshots', (_req, res) => {
   }
 });
 
+// Live event stream for runs the browser did not start itself — currently
+// scheduled runs. Server-Sent Events rather than a WebSocket: the traffic is
+// one-way, EventSource reconnects on its own, and it needs no extra dependency.
+app.get('/api/run-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  // Defeat proxy buffering, which would otherwise hold events until the socket
+  // closed — the exact opposite of "live".
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (res.flushHeaders) res.flushHeaders();
+  res.write(': connected\n\n');
+  runStreamClients.add(res);
+  // Comment-only heartbeat keeps idle intermediaries from dropping the socket.
+  const beat = setInterval(() => {
+    if (res.writableEnded || res.destroyed) return;
+    try { res.write(': ping\n\n'); } catch (_) { /* pruned on next broadcast */ }
+  }, 20_000);
+  const cleanup = () => { clearInterval(beat); runStreamClients.delete(res); };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
+});
+
+// The runnable Playwright projects, so the UI's browser dropdowns are built
+// from the same list playwright.config.js uses instead of a hardcoded copy.
+// `kind` lets the UI group desktop browsers apart from emulated devices.
+app.get('/api/projects', (_req, res) => {
+  res.json({
+    projects: ALL_PROJECTS.map((p) => ({ name: p.name, label: p.label, kind: p.kind })),
+    // What "All browsers" runs: every project, desktop + emulated devices.
+    matrix: projectNames,
+    // What a schedule saved with no explicit browser runs — deliberately just
+    // the desktop three, so an unattended every-N-minutes schedule doesn't
+    // quietly run the full 7-project matrix against the live app.
+    scheduleDefault: desktopProjectNames,
+  });
+});
+
 app.get('/api/report-status', (_req, res) => {
   try {
     const allReports = fs.existsSync(CFG_PATHS.reports) ? fs.readdirSync(CFG_PATHS.reports) : [];
+    const mdReports = allReports.filter((f) => f.endsWith('.md'));
+    // reports/ keeps every report ever generated, so a flat listing puts a
+    // report from a run weeks ago next to the one you just produced with no way
+    // to tell them apart. Work out which features actually ran last so the UI
+    // can lead with those and fold the rest away.
+    const features = featuresFromLastRun({ root: ROOT, paths: CFG_PATHS });
+    const lastRunReports = features
+      ? mdReports.filter((f) => [...features].some((slug) => reportMatchesFeature(f, slug)))
+      // null (not []) when the last run is unknown — no results.json yet, or a
+      // run in flight. The UI must show everything rather than hide reports.
+      : null;
+    const reportTimes = {};
+    for (const f of allReports) {
+      const stat = fs.statSync(path.join(CFG_PATHS.reports, f), { throwIfNoEntry: false });
+      if (stat && stat.isFile()) reportTimes[f] = stat.mtimeMs;
+    }
     res.json({
       playwright: fs.existsSync(path.join(CFG_PATHS.playwrightReport, 'index.html')),
       allure: fs.existsSync(path.join(CFG_PATHS.allureReport, 'index.html')),
-      aiReports: allReports.filter((f) => f.endsWith('.md')),
+      aiReports: mdReports,
       excelReports: allReports.filter((f) => f.endsWith('.xlsx')),
+      lastRunReports,
+      lastRunFeatures: features ? [...features] : null,
+      reportTimes,
     });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
+});
+
+// ---- Security scanner ------------------------------------------------------
+// Validate a target is a real http(s) URL before we make requests to it.
+function isHttpUrl(s) {
+  try { const u = new URL(String(s)); return u.protocol === 'http:' || u.protocol === 'https:'; }
+  catch { return false; }
+}
+
+// POST /api/security-scan — streams progress as NDJSON, ends with the full
+// result ({type:'result'}) and a {type:'done'}. Reuses the lib/security engine.
+app.post('/api/security-scan', async (req, res) => {
+  const { target, passive, active, probeFiles, zap } = req.body || {};
+  if (!isHttpUrl(target)) return res.status(400).json({ error: 'target must be a valid http(s) URL' });
+
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  write({ type: 'start', target });
+  try {
+    const result = await security.runSecurityScan(target, {
+      passive: passive !== false,
+      active: active !== false,
+      probeFiles: !!probeFiles,
+      zap: !!zap,
+      reportsDir: CFG_PATHS.reports,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({ type: 'result', result });
+    write({ type: 'done', exitCode: 0 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[security] scan failed: ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
+});
+
+// GET /api/security-report — the last persisted scan (reports/security/latest.json).
+app.get('/api/security-report', (_req, res) => {
+  try {
+    const p = path.join(CFG_PATHS.reports, 'security', 'latest.json');
+    if (!fs.existsSync(p)) return res.json({ exists: false });
+    res.json({ exists: true, result: JSON.parse(fs.readFileSync(p, 'utf8')) });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// POST /api/security-review — Claude turns the latest findings into a
+// prioritized remediation plan. Reuses the shared streamClaudeWithPrompt path.
+app.post('/api/security-review', async (req, res) => {
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+  let result = req.body && req.body.result;
+  if (!result) {
+    const p = path.join(CFG_PATHS.reports, 'security', 'latest.json');
+    if (fs.existsSync(p)) { try { result = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) {} }
+  }
+  if (!result || !Array.isArray(result.findings)) {
+    return res.status(400).json({ error: 'no scan findings available — run a scan first' });
+  }
+  await streamClaudeWithPrompt(res, security.buildReviewPrompt(result));
+});
+
+// ---- Step index ------------------------------------------------------------
+
+// GET /api/steps — every step definition that already exists, with tag scope.
+// Cheap (plain file parsing, no AI) and the basis for skipping AI calls when a
+// step is already implemented.
+app.get('/api/steps', (_req, res) => {
+  try {
+    const index = stepIndex.readStepIndex({ root: ROOT });
+    res.json({
+      files: index.files,
+      count: index.steps.length,
+      byScope: index.byScope,
+      duplicates: stepIndex.findDuplicates(index),
+      // Paste-ready library for the generation prompt, so Claude does not spend
+      // round trips grepping the repo to find out what already exists.
+      promptBlock: stepIndex.renderLibraryForPrompt(index),
+      steps: index.steps,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// POST /api/steps/match — which steps already have definitions, and which
+// genuinely need code written.
+//
+// This is the fast path: a step that matches an existing definition (exactly,
+// or through its {string} placeholders) needs NO Claude call. Only the ones
+// that come back "none" do. Answers in milliseconds.
+//
+// Body: { feature: "<slug>" }  or  { gherkin: "<feature text>" }
+//       plus optional { tags: ["@login"] } when passing raw gherkin.
+app.post('/api/steps/match', (req, res) => {
+  const { feature, gherkin, tags } = req.body || {};
+  let src = gherkin;
+
+  if (!src) {
+    if (!feature) return res.status(400).json({ error: 'provide feature or gherkin' });
+    if (!isSafeName(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+    const dir = path.join(CFG_PATHS.features || path.join(ROOT, 'features'), feature);
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: `feature "${feature}" not found` });
+    let picked = null;
+    try {
+      picked = fs.readdirSync(dir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+    } catch { /* handled below */ }
+    if (!picked) return res.status(404).json({ error: `no .feature file in features/${feature}` });
+    try { src = fs.readFileSync(path.join(dir, picked), 'utf8'); }
+    catch (err) { return res.status(500).json({ error: String(err && err.message) }); }
+  }
+
+  if (typeof src !== 'string' || !src.trim()) return res.status(400).json({ error: 'gherkin is empty' });
+  if (src.length > 200_000) return res.status(413).json({ error: 'gherkin too large' });
+
+  try {
+    const index = stepIndex.readStepIndex({ root: ROOT });
+    const analysis = stepIndex.analyzeFeature(src, index);
+    // Caller-supplied tags win when raw gherkin carries none of its own.
+    if (Array.isArray(tags) && tags.length && !analysis.tags.length) {
+      const re = stepIndex.analyzeFeature(
+        tags.map((t) => String(t)).join(' ') + '\n' + src,
+        index
+      );
+      return res.json({ ...re, needsAi: re.results.filter((r) => r.status === 'none').map((r) => r.text) });
+    }
+    res.json({ ...analysis, needsAi: analysis.results.filter((r) => r.status === 'none').map((r) => r.text) });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// ---- Exploratory testing ---------------------------------------------------
+
+// One crawl at a time. A crawl drives its own Chromium independently of a
+// Playwright test run, so it does NOT take the activeRun lock — but two
+// concurrent crawls would fight over reports/exploration/latest.json.
+let activeExplore = false;
+
+// POST /api/explore/run — crawl the live app and diff it against the suite.
+//
+// Credentials: taken from the request, falling back to QA_EMAIL / QA_PASSWORD.
+// They are passed straight to the engine and never persisted or echoed — the
+// only thing written to the stream is the engine's own log lines, which carry
+// no secrets, and the report on disk contains no credentials.
+app.post('/api/explore/run', async (req, res) => {
+  const { baseUrl, email, password, mode, maxRoutes } = req.body || {};
+  if (!isHttpUrl(baseUrl)) return res.status(400).json({ error: 'baseUrl must be a valid http(s) URL' });
+  if (String(baseUrl).length > 2048) return res.status(400).json({ error: 'baseUrl too long' });
+  const em = email || process.env.QA_EMAIL;
+  const pw = password || process.env.QA_PASSWORD;
+  if (!em || !pw) {
+    return res.status(400).json({ error: 'credentials required — enter them here or set QA_EMAIL / QA_PASSWORD' });
+  }
+  if (mode !== undefined && !['passive', 'guarded'].includes(mode)) {
+    return res.status(400).json({ error: 'mode must be passive or guarded' });
+  }
+  let cap;
+  if (maxRoutes !== undefined && maxRoutes !== null && maxRoutes !== '') {
+    cap = Number(maxRoutes);
+    if (!Number.isFinite(cap) || cap < 1 || cap > 60) {
+      return res.status(400).json({ error: 'maxRoutes must be between 1 and 60' });
+    }
+  }
+  if (activeExplore) return res.status(409).json({ error: 'an exploratory crawl is already running' });
+
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  activeExplore = true;
+  write({ type: 'start', baseUrl, mode: mode || 'guarded' });
+  try {
+    const result = await explore.runExploration({
+      root: ROOT,
+      baseUrl,
+      email: em,
+      password: pw,
+      mode: mode || 'guarded',
+      maxRoutes: cap,
+      reportsDir: CFG_PATHS.reports,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({
+      type: 'result',
+      ok: !!result.ok,
+      error: result.error || null,
+      summary: result.ok ? result.analysis.summary : null,
+      groups: result.ok ? result.analysis.findingGroups : [],
+      routeReports: result.ok ? result.analysis.routeReports : [],
+    });
+    write({ type: 'done', exitCode: result.ok ? 0 : 1 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[explore] crawl failed: ${err.message}\n` });
+    write({ type: 'result', ok: false, error: String(err && err.message) });
+    write({ type: 'done', exitCode: 1 });
+  } finally {
+    activeExplore = false;
+    if (!res.writableEnded) res.end();
+  }
+});
+
+// GET /api/explore/report — the latest crawl's surface map + ranked gaps.
+app.get('/api/explore/report', (_req, res) => {
+  const p = path.join(CFG_PATHS.reports, 'exploration', 'latest.json');
+  if (!fs.existsSync(p)) return res.json({ available: false });
+  try {
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const stat = fs.statSync(p, { throwIfNoEntry: false });
+    res.json({
+      available: true,
+      ranAt: stat ? stat.mtimeMs : null,
+      mode: data.crawl && data.crawl.mode,
+      traversal: data.crawl && data.crawl.traversal,
+      summary: data.analysis && data.analysis.summary,
+      groups: (data.analysis && data.analysis.findingGroups) || [],
+      routeReports: (data.analysis && data.analysis.routeReports) || [],
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// POST /api/explore/draft — Claude drafts Gherkin for the top gaps. Reuses the
+// same streamClaudeWithPrompt path as generate/heal/security-review, so it
+// obeys the single-Claude-job lock and streams into the existing log viewer.
+//
+// The prompt (lib/explore/index.js buildScenarioPrompt) constrains it hard:
+// drafts go to specs/ for review, never straight into .feature files, and it is
+// told not to draft anything that mutates data — destructive gaps are listed
+// for a human to write with the @destructive tag this repo already uses.
+app.post('/api/explore/draft', async (req, res) => {
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+  let payload = req.body && req.body.result;
+  if (!payload) {
+    const p = path.join(CFG_PATHS.reports, 'exploration', 'latest.json');
+    if (fs.existsSync(p)) { try { payload = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) {} }
+  }
+  if (!payload || !payload.analysis || !Array.isArray(payload.analysis.findings)) {
+    return res.status(400).json({ error: 'no exploration findings available — run a crawl first' });
+  }
+  await streamClaudeWithPrompt(res, explore.buildScenarioPrompt(payload.crawl, payload.analysis));
+});
+
+// ---- API testing -----------------------------------------------------------
+app.get('/api/api-test/suites', (_req, res) => {
+  try { res.json({ suites: apiTesting.listSuites(ROOT) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/api-test/run', async (req, res) => {
+  const { file } = req.body || {};
+  // Suite filename must be a plain <name>.json under api-tests/ — no traversal.
+  if (!file || typeof file !== 'string' || file.includes('/') || file.includes('\\') || file.includes('..') || !/^[A-Za-z0-9._-]+\.json$/.test(file)) {
+    return res.status(400).json({ error: 'file must be a .json suite name under api-tests/' });
+  }
+  if (!fs.existsSync(path.join(ROOT, 'api-tests', file))) {
+    return res.status(404).json({ error: `suite not found: api-tests/${file}` });
+  }
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  try {
+    const suite = apiTesting.loadSuite(ROOT, file);
+    const summary = await apiTesting.runSuite(suite, {
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+      now: () => Date.now(),
+    });
+    write({ type: 'result', summary });
+    write({ type: 'done', exitCode: summary.failed > 0 ? 1 : 0 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[api] ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
+});
+
+// ---- Performance budgets ---------------------------------------------------
+app.get('/api/perf/budgets', (_req, res) => {
+  try { res.json({ budget: perfEngine.loadBudget(ROOT) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/perf/budgets', (req, res) => {
+  try { res.json({ budget: perfEngine.saveBudget(ROOT, (req.body && req.body.budget) || {}) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/perf/run', async (req, res) => {
+  const { target } = req.body || {};
+  if (!isHttpUrl(target)) return res.status(400).json({ error: 'target must be a valid http(s) URL' });
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  try {
+    const result = await perfEngine.runPerf(target, {
+      rootDir: ROOT,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({ type: 'result', result });
+    write({ type: 'done', exitCode: result.passed ? 0 : 1 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[perf] ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
 });
 
 app.listen(PORT, HOST, () => {
