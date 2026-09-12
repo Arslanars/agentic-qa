@@ -7,6 +7,9 @@
 import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { LoginPage } from '../../pages/login-user/LoginPage';
+import { LocationPickerPage } from '../../pages/verify-dashboard/LocationPickerPage';
+import { InventoryVendorsPage } from '../../pages/order-flow/InventoryVendorsPage';
+import { InventoryItemsPage } from '../../pages/inventory/InventoryItemsPage';
 
 // Scope these step definitions to the @login feature tag so the same
 // step phrases (e.g. `I click the {string} link`) can be redefined for
@@ -14,12 +17,6 @@ import { LoginPage } from '../../pages/login-user/LoginPage';
 const { Given, When, Then } = createBdd(undefined, { tags: '@login' });
 
 const AUTH_API_RE = /security-api\.moontower\.aiimone\.com\/api\/Auth\/Login/i;
-
-Given('I am on the Moontower login page', async ({ page }) => {
-  const login = new LoginPage(page);
-  await login.goto();
-  await login.expectLoaded();
-});
 
 When('I sign in with email {string} and password {string}', async ({ page }, email: string, password: string) => {
   const login = new LoginPage(page);
@@ -119,10 +116,40 @@ Then('the email field should report a typeMismatch validity error', async ({ pag
     .toBe(true);
 });
 
-Then('the URL should match {string}', async ({ page }, pattern: string) => {
-  await expect(page).toHaveURL(new RegExp(pattern), { timeout: 10_000 });
+// ---- auto-generated step definitions (scaffold-missing-steps) ----
+When('I select the {string} location', async ({ page }, name: string) => {
+  const picker = new LocationPickerPage(page);
+  await picker.expectLoaded();
+  if (/main location/i.test(name)) await picker.selectMainLocation();
+  else await page.getByRole('button', { name }).click();
+  // Selecting a location routes to the inventory-vendors dashboard.
+  await new InventoryVendorsPage(page).expectLoaded();
 });
 
-Then('the URL should match the homepage', async ({ page }) => {
-  await expect(page).toHaveURL(/^https?:\/\/[^/]+\/?$/, { timeout: 10_000 });
+When('I open the {string} page', async ({ page }, name: string) => {
+  // Sidebar nav items render as <button>s (some as links) — match either.
+  const nav = page.getByRole('button', { name }).or(page.getByRole('link', { name }));
+  await nav.first().waitFor({ state: 'visible', timeout: 30_000 });
+  await nav.first().click();
+  // Inventory Items lands on /inventory — wait for the catalog to render so the
+  // next step doesn't race the navigation.
+  if (/inventory items/i.test(name)) await new InventoryItemsPage(page).expectLoaded();
+});
+
+When('I expand the inventory row for {string}', async ({ page }, product: string) => {
+  // Clicking the product *name* is a link that navigates to the item's mappings
+  // detail page; the in-place expander is the row's "Expand row" chevron button.
+  // The POM searches for the item first (the catalog is paginated) then expands it.
+  await new InventoryItemsPage(page).expandRow(product);
+});
+
+When('I set the pack size to {int} cases and {int} units per case', async ({ page }, cases: number, unitsPerCase: number) => {
+  // Opens the vendor "Set pack size" drawer on the expanded row, fills the
+  // Cases / Units-per-case spinbuttons and saves (see InventoryItemsPage for the
+  // "Save is disabled on a no-op" nudge that keeps this deterministic).
+  await new InventoryItemsPage(page).setPackSize(cases, unitsPerCase);
+});
+
+Then('I should see the confirmation {string}', async ({ page }, message: string) => {
+  await expect(page.getByText(message, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
 });

@@ -34,3 +34,9 @@ Feature: Order Flow
     And I click the "Orders List" button
     And I view order number 2 in the orders list
     Then I should see "Sprite" in the order details
+
+Scenario: Open the Restaurant Inventory section
+  Given I am on the Moontower login page
+  When I open the navigation menu
+  And I select "Restaurant Inventory" from the menu
+  Then I should be on the Restaurant Inventory section

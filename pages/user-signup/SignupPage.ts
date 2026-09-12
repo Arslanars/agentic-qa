@@ -37,8 +37,14 @@ export class SignupPage extends BasePage {
   readonly signInLink: Locator;
   readonly backLink: Locator;
 
+  // Full-page "Loading" splash (MoonTower logo) the SPA renders before the
+  // signup form hydrates. Scoped to the role=status region so it never
+  // collides with post-load aria-live announcements.
+  readonly loadingSplash: Locator;
+
   constructor(page: Page) {
     super(page);
+    this.loadingSplash = page.getByRole('status').filter({ hasText: /loading/i });
     this.step1Heading = page.getByRole('heading', { name: 'Register Your Restaurant' });
     this.restaurantNameInput = page.locator('#restaurantName');
     this.subdomainInput = page.locator('#subDomain');
@@ -93,7 +99,14 @@ export class SignupPage extends BasePage {
   }
 
   async expectStep1Rendered(): Promise<void> {
-    await expect(this.step1Heading).toBeVisible();
+    // The live SPA shows a "Loading" splash while it hydrates and fetches
+    // initial data. Cold start on a fresh connection routinely runs 8-15s
+    // (see playwright.config.js) — longer than the default 5s expect timeout,
+    // so the Step-1 heading is NOT present immediately after navigation.
+    // Gate on the real app-ready signal (splash clearing) before asserting
+    // the form. Bounds stay well under the 60s per-test budget.
+    await expect(this.loadingSplash).toBeHidden({ timeout: 30_000 });
+    await expect(this.step1Heading).toBeVisible({ timeout: 10_000 });
     await expect(this.nextButton).toBeVisible();
   }
 }

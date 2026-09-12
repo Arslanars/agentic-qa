@@ -43,7 +43,10 @@ Feature: Verify Dashboard with tab
     Then the "Inventory" tab should be the active dashboard tab
 
 Scenario: Edit a vendor's name from the Vendors list
-  Given I am on the Moontower login page
+  # The Background already opens the login page; repeating the Given here made
+  # the slow SPA login page cold-load twice, stealing the 60s budget the longer
+  # vendor-edit flow needs (it was timing out on the "Loading" splash before the
+  # dashboard sidebar rendered). Rely on the Background like AC1–AC4 do.
   When I log in with the provided Moontower credentials
   And I choose the "Main Location" option
   And I navigate to the Vendors List

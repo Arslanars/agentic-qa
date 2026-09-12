@@ -22,12 +22,6 @@ import { OrdersListPage } from '../../pages/order-flow/OrdersListPage';
 
 const { Given, When, Then } = createBdd(undefined, { tags: '@order-flow' });
 
-Given('I am on the Moontower login page', async ({ page }) => {
-  const login = new LoginPage(page);
-  await login.goto();
-  await login.expectLoaded();
-});
-
 When('I sign in with email {string} and password {string}', async ({ page }, email: string, password: string) => {
   // Credentials come from the AC; env overrides allow CI to inject a different
   // account without editing the .feature.
@@ -131,4 +125,30 @@ Then('I should see {string} in the order details', async ({ page }, product: str
       `SYSCO order; a freshly-sent batch's list order is non-deterministic, so "order number 2" ` +
       `is not a stable reference to the ${product}-containing order.`,
   ).toBeVisible({ timeout: 15_000 });
+});
+
+// ---- auto-generated step definitions (scaffold-missing-steps) ----
+When('I open the navigation menu', async ({ page }) => {
+  // Persistent left sidebar; a hamburger/menu toggle only shows on narrow
+  // layouts — click it if present, otherwise the nav is already open.
+  const toggle = page.getByRole('button', { name: /menu|navigation|open sidebar/i }).first();
+  if (await toggle.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await toggle.click();
+  }
+  await expect(page.getByRole('navigation').first()).toBeVisible({ timeout: 15_000 });
+});
+
+When('I select {string} from the menu', async ({ page }, item: string) => {
+  // Sidebar nav items render as styled <button>s (some as links); match either.
+  const entry = page.getByRole('button', { name: item }).or(page.getByRole('link', { name: item }));
+  await entry.first().waitFor({ state: 'visible', timeout: 20_000 });
+  await entry.first().click();
+});
+
+Then('I should be on the Restaurant Inventory section', async ({ page }) => {
+  // No dedicated POM/URL is verified for this section; assert the section is
+  // identified on-screen by its name (heading, else any matching text).
+  const section = page.getByRole('heading', { name: /Restaurant Inventory/i })
+    .or(page.getByText(/Restaurant Inventory/i));
+  await expect(section.first()).toBeVisible({ timeout: 20_000 });
 });

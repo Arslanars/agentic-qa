@@ -10,6 +10,7 @@ Feature: Login User
   # POSITIVE — happy path
   # ---------------------------------------------------------------------
 
+  @smoke
   Scenario: AC1-POS-01 — successful login with valid credentials
     When I sign in with email "developers@moontower.com" and password "12345678"
     Then I should be redirected to the location-picker screen
@@ -103,3 +104,12 @@ Scenario: Attempt to sign in with a malformed email and no password
   When I sign in with email "asdasdasd" and password ""
   Then the email field should report a typeMismatch validity error
   And I should remain on the login page
+
+Scenario: Set the pack size for the American Sliced Cheese inventory item
+  Given I am on the Moontower login page
+  When I sign in with email "activeproduct@yopmail.com" and password "12345678"
+  And I select the "Main Location" location
+  And I open the "Inventory Items" page
+  And I expand the inventory row for "CHEESE - American Sliced"
+  And I set the pack size to 5 cases and 4 units per case
+  Then I should see the confirmation "Pack size set to 5/4 LB"
