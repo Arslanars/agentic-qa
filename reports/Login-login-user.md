@@ -2,30 +2,32 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-07-16 17:04:54
+**Last run:** 2026-09-13 00:05:18
 **Browser:** chromium
-**Status:** ✅ PASS (15/15)
-**Duration:** 197.3 s
+**Status:** ❌ FAIL (14/16 — 2 broken)
+**Duration:** 310.7 s
+**Broken (timeout/interrupted):** 2 — 2 timed out
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | ✅ PASS | 16.5 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | ✅ PASS | 15.6 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | ✅ PASS | 16.3 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | ✅ PASS | 24.5 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | ✅ PASS | 24.3 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | ✅ PASS | 25.2 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | ✅ PASS | 25.5 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | ✅ PASS | 24.1 s | — |
-| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | ✅ PASS | 2.7 s | — |
-| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | ✅ PASS | 2.4 s | — |
-| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | ✅ PASS | 2.8 s | — |
-| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 1.7 s | — |
-| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | ✅ PASS | 1.7 s | — |
-| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 2.4 s | — |
-| `login.feature.spec.js` | Login User › Attempt to sign in with a malformed email and no password | ✅ PASS | 11.7 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | ✅ PASS | 9.9 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | ✅ PASS | 9.9 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | ✅ PASS | 9.3 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | ✅ PASS | 17.2 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | ✅ PASS | 17.0 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | ✅ PASS | 19.6 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | ✅ PASS | 19.8 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | ✅ PASS | 16.9 s | — |
+| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | ✅ PASS | 4.5 s | — |
+| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | ✅ PASS | 6.4 s | — |
+| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | ✅ PASS | 11.1 s | — |
+| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 5.9 s | — |
+| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | ⏱️ TIMEOUT | 68.8 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
+| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 7.9 s | — |
+| `login.feature.spec.js` | Login User › Attempt to sign in with a malformed email and no password | ✅ PASS | 17.4 s | — |
+| `login.feature.spec.js` | Login User › Set the pack size for the American Sliced Cheese inventory item | ⏱️ TIMEOUT | 69.0 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
 
 ## Artifacts
 
