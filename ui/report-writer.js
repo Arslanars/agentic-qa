@@ -94,6 +94,45 @@ function featureFromPath(file) {
 }
 
 /**
+ * Which feature folders had tests in the run recorded by
+ * test-results/results.json.
+ *
+ * Returns a Set of feature slugs, or null when the run JSON is missing or
+ * unreadable. null means "unknown" and callers must NOT treat it as "no
+ * features ran" — reports/ accumulates every report ever generated, so the
+ * difference decides whether a caller may hide anything.
+ */
+function featuresFromLastRun({ root, paths } = {}) {
+  const testResultsDir = paths?.testResults || path.join(root, 'test-results');
+  const jsonPath = path.join(testResultsDir, 'results.json');
+  try {
+    if (!fs.existsSync(jsonPath)) return null;
+    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    const tests = [];
+    for (const suite of data.suites || []) flattenSuites(suite, tests);
+    const features = new Set();
+    for (const t of tests) {
+      const feat = featureFromPath(t.file);
+      if (feat) features.add(feat);
+    }
+    return features.size ? features : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Does a report filename belong to the given feature slug? Mirrors the naming
+ * writeRunReports uses below: `<storyId>-<slug>.md`, or `<slug>.md` when no
+ * user story was found for the feature.
+ */
+function reportMatchesFeature(filename, slug) {
+  const stem = String(filename).replace(/\.md$/i, '').toLowerCase();
+  const s = String(slug).toLowerCase();
+  return stem === s || stem.endsWith(`-${s}`);
+}
+
+/**
  * Locate the user-story file for a feature slug. We expect
  * `user-stories/<STORY-ID>-<slug>.md` but tolerate other formats.
  * Returns { storyId, file } or null.
@@ -329,4 +368,4 @@ function writeRunReports({ root, paths, onLog } = {}) {
   return written;
 }
 
-module.exports = { writeRunReports };
+module.exports = { writeRunReports, featuresFromLastRun, reportMatchesFeature };

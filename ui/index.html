@@ -152,7 +152,6 @@
     }
 
     /* Dark-theme tweaks for elements that have hardcoded colors. */
-    :root[data-theme="dark"] details.express pre { background: #0a0a0a; border-color: #27272a; }
     :root[data-theme="dark"] .shot img { background: #09090b; }
     /* Report drawer iframe loads light-rendered markdown — keep its bg white
        so the report content reads correctly regardless of UI theme. */
@@ -619,6 +618,10 @@
        "Missing step definitions: N". Designed to use the minimum vertical
        space so the dashboard underneath stays uncluttered. Subtle gradient
        background, animated slide-in, refined CTA with arrow icon. */
+    /* An author `display` beats the UA stylesheet's [hidden] { display: none },
+       so this banner never actually hid — it stayed on screen showing a stale
+       "0 missing steps" after hideMissingStepsBanner() set the attribute. */
+    .missing-steps-banner[hidden] { display: none !important; }
     .missing-steps-banner {
       display: flex; align-items: center; gap: 10px;
       padding: 7px 14px;
@@ -933,6 +936,51 @@
     .log .meta { color: #71717a; }
     .log.empty { display: grid; place-items: center; text-align: center; color: #71717a; }
     .log .empty-art { font-size: 36px; opacity: 0.6; margin-bottom: 10px; }
+
+    /* ---- Idle "AI bot" that greets you in the empty log terminal ---- */
+    .log-idle { display: grid; justify-items: center; gap: 12px; }
+    .ai-bot { position: relative; width: 92px; height: 84px; display: grid; place-items: center; color: var(--accent); }
+    .ai-bot-glow {
+      position: absolute; width: 80px; height: 80px; border-radius: 50%;
+      background: radial-gradient(circle, currentColor 0%, transparent 68%);
+      opacity: .16; filter: blur(2px);
+      animation: aibot-glow 3.4s ease-in-out infinite;
+    }
+    .ai-bot-svg {
+      position: relative; width: 84px; height: 84px; overflow: visible;
+      animation: aibot-bob 3.6s ease-in-out infinite;
+      filter: drop-shadow(0 3px 6px rgba(0,0,0,.45));
+    }
+    .ai-bot-head { fill: #0d0d12; stroke: currentColor; stroke-width: 3; }
+    .ai-bot-ear { fill: currentColor; opacity: .75; }
+    .ai-bot-visor { fill: currentColor; fill-opacity: .12; }
+    .ai-bot-antenna {
+      fill: currentColor; transform-box: fill-box; transform-origin: center;
+      animation: aibot-ping 2s ease-in-out infinite;
+    }
+    .ai-bot-eye {
+      fill: currentColor; transform-box: fill-box; transform-origin: center;
+      animation: aibot-blink 4.2s infinite;
+    }
+    .ai-bot-eye.right { animation-delay: .05s; }
+    .ai-bot-mouth { stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; opacity: .8; }
+    .ai-bot-dots { display: flex; gap: 6px; }
+    .ai-bot-dots span {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .3;
+      animation: aibot-think 1.4s ease-in-out infinite;
+    }
+    .ai-bot-dots span:nth-child(2) { animation-delay: .18s; }
+    .ai-bot-dots span:nth-child(3) { animation-delay: .36s; }
+
+    @keyframes aibot-bob   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    @keyframes aibot-glow  { 0%, 100% { opacity: .10; transform: scale(.92); } 50% { opacity: .24; transform: scale(1.05); } }
+    @keyframes aibot-ping  { 0%, 100% { opacity: .5; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.3); } }
+    @keyframes aibot-blink { 0%, 7%, 100% { transform: scaleY(1); } 3%, 4% { transform: scaleY(.12); } }
+    @keyframes aibot-think { 0%, 100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+    @media (prefers-reduced-motion: reduce) {
+      .ai-bot-glow, .ai-bot-svg, .ai-bot-antenna, .ai-bot-eye, .ai-bot-dots span { animation: none !important; }
+    }
+
     .log-entry { animation: slideIn 0.12s ease; }
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(2px); }
@@ -1034,41 +1082,22 @@
     }
     .report-link:hover { border-color: var(--accent); background: var(--accent-soft); text-decoration: none; transform: translateY(-1px); }
     .report-link svg { width: 13px; height: 13px; color: var(--accent); }
+    /* An author `display` beats the UA stylesheet's [hidden] { display: none },
+       so the attribute alone would not hide a collapsed older report. */
+    .report-link[hidden] { display: none; }
+    /* Reports left over from an earlier run — de-emphasised so the run you just
+       executed reads as the current one. */
+    .report-link.stale { background: transparent; color: var(--text-faint); border-style: dashed; }
+    .report-link.stale svg { color: var(--text-faint); }
+    .report-link.stale:hover { color: var(--text); border-style: solid; }
+    .report-older-chip {
+      background: transparent; border: 1px dashed var(--border);
+      color: var(--text-faint); cursor: pointer;
+      padding: 6px 11px; border-radius: var(--radius-sm);
+      font-size: 11.5px;
+    }
+    .report-older-chip:hover { color: var(--accent); border-color: var(--accent); }
     .reports .empty { color: var(--text-faint); font-style: italic; font-size: 12.5px; }
-
-    /* ---------- Disclosure ---------- */
-    details.express {
-      margin-top: 16px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      background: var(--bg-2);
-      transition: border-color 0.12s ease;
-    }
-    details.express[open] { border-color: var(--border-strong); background: var(--bg-1); }
-    details.express summary {
-      cursor: pointer; padding: 10px 14px;
-      font-size: 12.5px; color: var(--text-dim); font-weight: 500;
-      list-style: none; display: flex; align-items: center; gap: 8px;
-    }
-    details.express summary::-webkit-details-marker { display: none; }
-    details.express summary svg { width: 14px; height: 14px; transition: transform 0.15s ease; color: var(--text-faint); }
-    details.express[open] summary svg { transform: rotate(90deg); color: var(--accent); }
-    details.express .body { padding: 0 14px 14px; font-size: 12.5px; color: var(--text-dim); }
-    details.express ol { padding-left: 20px; margin: 6px 0 10px; }
-    details.express pre {
-      background: #18181b; color: #d4d4d8; padding: 12px; border-radius: 6px; overflow: auto;
-      font-size: 11.5px; max-height: 220px; user-select: all;
-      border: 1px solid #27272a;
-    }
-    .prompt-copy {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 5px 10px; border-radius: 5px; background: var(--bg-1);
-      border: 1px solid var(--border); color: var(--text-dim);
-      font-size: 11.5px; cursor: pointer; margin-top: 8px;
-      transition: color 0.12s ease, border-color 0.12s ease;
-    }
-    .prompt-copy:hover { color: var(--accent); border-color: var(--accent); }
-    .prompt-copy svg { width: 12px; height: 12px; }
 
     /* ---------- Test Recorder modal ----------
        A small dialog that drives the codegen → claude → append flow. The
@@ -2089,6 +2118,66 @@
       font-size: 16px; line-height: 1;
     }
     .sched-delete-btn:hover { color: var(--danger); background: var(--danger-soft, #fee); }
+    .sched-tally.ok { color: var(--success); }
+    .sched-tally.bad { color: var(--danger); }
+    .sched-logs-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .sched-logs-btn:hover,
+    .sched-logs-btn[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+    /* Expanded run-log panel — spans both card columns so it sits under the row. */
+    .sched-logs {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
+      padding-top: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    /* An author `display` beats the UA stylesheet's [hidden] { display: none },
+       so the attribute alone would not collapse this panel. */
+    .sched-logs[hidden] { display: none; }
+    .sched-log-runs { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sched-log-run {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-family: ui-monospace, monospace;
+      font-size: 10.5px;
+    }
+    .sched-log-run:hover { border-color: var(--border-strong); color: var(--text); }
+    .sched-log-run[aria-pressed="true"] {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-weight: 600;
+    }
+    .sched-log-body {
+      margin: 0;
+      max-height: 260px;
+      overflow: auto;
+      background: var(--bg-0);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      line-height: 1.55;
+      white-space: pre;
+      color: var(--text-dim);
+    }
 
     /* Modern confirm modal — used for delete-schedule + any destructive action. */
     .confirm-modal {
@@ -2227,8 +2316,11 @@
       transition: background 0.15s ease, color 0.15s ease;
     }
     .sched-mode-tab.active {
-      background: var(--card, white); color: var(--text);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      /* `--card` is not defined in any theme, so the previous
+         `var(--card, white)` fell through to hard-coded white — a glaring
+         unreadable slab in dark mode. accent-soft/accent is defined in every
+         theme and matches the other selected-pill states in this file. */
+      background: var(--accent-soft); color: var(--accent);
       font-weight: 600;
     }
     .sched-mode-body { margin-top: 10px; }
@@ -2667,8 +2759,63 @@
     /* Safety: short viewports (< ~1000px tall) keep a scrollbar so nothing
        important ever clips; taller screens fit in one page with no scroll. */
     @media (max-height: 1000px) { .left-scroll { overflow: auto; } }
-    /* Keep the collapsible generation-prompt from forcing overflow. */
-    .left-scroll > details.express { flex: 0 0 auto; }
+
+    /* ---------- Info icons + shared popover (CTA / feature help) ---------- */
+    /* Standalone circular "i" affordance placed next to labels & headers. */
+    .info-i {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 15px; height: 15px; flex: 0 0 auto; padding: 0; margin: 0;
+      border-radius: 50%; border: 1px solid var(--border-strong);
+      background: transparent; color: var(--text-faint);
+      cursor: help; vertical-align: middle; line-height: 0;
+      -webkit-appearance: none; appearance: none;
+      transition: color .12s, border-color .12s, background .12s;
+    }
+    .info-i::before { content: "i"; font: italic 700 10px/1 Georgia, "Times New Roman", serif; }
+    .info-i:hover, .info-i:focus-visible {
+      color: var(--accent); border-color: var(--accent);
+      background: var(--accent-soft); outline: none;
+    }
+    .section-label .info-i { margin-left: auto; }
+    .field label .info-i, label.check .info-i, .step-timeline-head .info-i,
+    .pr-impact-title .info-i, .gallery-head .info-i, .log-head .info-i,
+    .coverage-header .info-i { margin-left: 6px; }
+
+    /* Small "i" baked into CTA buttons that carry data-info — inherits the
+       button's text colour so it works on ghost and solid/accent buttons. */
+    .info-glyph {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 13px; height: 13px; margin-left: 2px; flex: 0 0 auto;
+      border-radius: 50%; border: 1px solid currentColor; opacity: .5;
+      line-height: 0; pointer-events: none;
+    }
+    .info-glyph::before { content: "i"; font: italic 700 9px/1 Georgia, serif; }
+    :is(button, .pill):hover > .info-glyph { opacity: .9; }
+
+    /* Shared popover — mounted on <body>, positioned with JS so it is never
+       clipped by the scrollable left panel or any overflow:hidden ancestor. */
+    #info-pop {
+      position: fixed; top: 0; left: 0; z-index: 1200; max-width: 300px;
+      background: var(--bg-1); color: var(--text);
+      border: 1px solid var(--border-strong); border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.24);
+      padding: 11px 13px; font-size: 12px; line-height: 1.5;
+      opacity: 0; transform: translateY(-4px); pointer-events: none;
+      transition: opacity .12s ease, transform .12s ease;
+    }
+    #info-pop.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    #info-pop strong { display: block; font-size: 12.5px; color: var(--text); margin-bottom: 4px; }
+    #info-pop p { margin: 0 0 6px; color: var(--text-dim); }
+    #info-pop p:last-child { margin-bottom: 0; }
+    #info-pop p.how {
+      font-size: 11px; color: var(--text-faint);
+      border-top: 1px solid var(--border); padding-top: 6px;
+    }
+    #info-pop p.how b {
+      display: inline-block; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; font-size: 9.5px; color: var(--accent); margin-right: 5px;
+    }
+    @media (prefers-reduced-motion: reduce) { #info-pop { transition: none; } }
   </style>
 </head>
 <body>
@@ -2690,46 +2837,58 @@
       </div>
       <div class="spacer"></div>
       <div class="topbar-actions">
-        <button id="topbar-run" type="button" class="verb run" aria-label="Run tests (Ctrl+R)">
+        <button id="topbar-run" type="button" class="verb run" data-info="run" aria-label="Run tests (Ctrl+R)">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
-          Run <kbd>Ctrl·R</kbd>
+          Run <kbd>Ctrl·R</kbd><span class="info-glyph" aria-hidden="true"></span>
         </button>
-        <button id="topbar-stop" type="button" class="verb stop" aria-label="Stop running tests (Ctrl+.)" disabled>
+        <button id="topbar-stop" type="button" class="verb stop" data-info="stop" aria-label="Stop running tests (Ctrl+.)" disabled>
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-          Stop <kbd>Ctrl·.</kbd>
+          Stop <kbd>Ctrl·.</kbd><span class="info-glyph" aria-hidden="true"></span>
         </button>
-        <button id="topbar-rerun-failed" type="button" class="verb" aria-label="Re-run only failed tests (Ctrl+Shift+R)" disabled>
+        <button id="topbar-rerun-failed" type="button" class="verb" data-info="rerun" aria-label="Re-run only failed tests (Ctrl+Shift+R)" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/>
           </svg>
-          Re-run failed
+          Re-run failed<span class="info-glyph" aria-hidden="true"></span>
         </button>
-        <button id="topbar-matrix" type="button" class="verb" aria-label="Run the selected feature across chromium, firefox and webkit" title="Run the selected feature across all three browsers in one go">
+        <button id="topbar-matrix" type="button" class="verb" data-info="matrix" aria-label="Run the selected feature across every browser and emulated device at once">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
           </svg>
-          All browsers
+          All browsers<span class="info-glyph" aria-hidden="true"></span>
         </button>
-        <button id="topbar-schedules" type="button" class="verb" aria-label="Open scheduled runs" title="Set up recurring test runs (every N minutes, daily, or weekly)">
+        <button id="topbar-schedules" type="button" class="verb" data-info="schedules" aria-label="Open scheduled runs">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10"/>
             <polyline points="12 6 12 12 16 14"/>
           </svg>
           Schedules
           <span id="sched-count-badge" class="sched-count-badge" hidden>0</span>
+          <span class="info-glyph" aria-hidden="true"></span>
         </button>
-        <button id="topbar-security" type="button" class="verb" aria-label="Open the security scanner" title="Scan a target URL for common web-security issues (headers, cookies, TLS, XSS, SQLi, open redirect, …)">
+        <button id="topbar-security" type="button" class="verb" data-info="security" aria-label="Open the security scanner">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
           </svg>
           Security
           <span id="sec-grade-badge" class="sec-grade-badge" hidden></span>
+          <span class="info-glyph" aria-hidden="true"></span>
         </button>
-        <button id="topbar-apiperf" type="button" class="verb" aria-label="Open API and performance testing" title="Run request-level API test suites and grade real Web Vitals against a budget">
+        <button id="topbar-apiperf" type="button" class="verb" data-info="apiperf" aria-label="Open API and performance testing">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
           </svg>
-          API &amp; Perf
+          API &amp; Perf<span class="info-glyph" aria-hidden="true"></span>
+        </button>
+        <button id="topbar-explore" type="button" class="verb" data-info="explore" aria-label="Open exploratory testing — find app surface no test covers">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"/>
+            <path d="m20 20-3.5-3.5"/>
+            <path d="M11 8v6M8 11h6"/>
+          </svg>
+          Explore
+          <span id="explore-gap-badge" class="sec-grade-badge" hidden></span>
+          <span class="info-glyph" aria-hidden="true"></span>
         </button>
         <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme">
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2748,7 +2907,7 @@
       <section class="panel left" aria-label="Story input and run configuration">
         <div class="left-scroll">
           <div class="section">
-            <h2 class="section-label">Story input</h2>
+            <h2 class="section-label">Story input<button type="button" class="info-i" data-info="storyInput" aria-label="About: Story input"></button></h2>
             <div class="field">
               <label for="url">Application URL</label>
               <input id="url" type="url" placeholder="https://example.com/login" aria-required="true" aria-describedby="url-err" />
@@ -2777,14 +2936,14 @@
           </div>
 
           <div class="section">
-            <h2 class="section-label">Run configuration</h2>
+            <h2 class="section-label">Run configuration<button type="button" class="info-i" data-info="runConfig" aria-label="About: Run configuration"></button></h2>
             <div class="row r-31">
               <div class="field">
-                <label for="feature">Feature suite</label>
+                <label for="feature">Feature suite<button type="button" class="info-i" data-info="feature" aria-label="About: Feature suite"></button></label>
                 <select id="feature"></select>
               </div>
               <div class="field">
-                <label for="project">Browser</label>
+                <label for="project">Browser<button type="button" class="info-i" data-info="project" aria-label="About: Browser"></button></label>
                 <select id="project">
                   <option value="chromium">chromium</option>
                   <option value="firefox">firefox</option>
@@ -2795,8 +2954,7 @@
             <div id="coverage-panel" class="coverage-panel" hidden>
               <div class="coverage-header">
                 <button type="button" class="coverage-summary" id="coverage-summary" aria-expanded="false"
-                        aria-controls="coverage-details"
-                        title="Click to see per-AC coverage details for this feature">
+                        aria-controls="coverage-details" data-info="coverage">
                   <span class="coverage-metric">
                     <span id="coverage-metric-num" class="num empty">–</span>
                     <span id="coverage-metric-total" class="total">/–</span>
@@ -2804,13 +2962,13 @@
                   <span id="coverage-summary-text" class="coverage-summary-text">Coverage: —</span>
                   <svg class="coverage-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
-                <button id="coverage-gaps-cta" type="button" class="coverage-gaps-cta" hidden aria-label="Draft scenarios for uncovered ACs">
+                <button id="coverage-gaps-cta" type="button" class="coverage-gaps-cta" hidden data-info="gaps" aria-label="Draft scenarios for uncovered ACs">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-                  <span id="coverage-gaps-cta-text">Close 0 gaps</span>
+                  <span id="coverage-gaps-cta-text">Close 0 gaps</span><span class="info-glyph" aria-hidden="true"></span>
                 </button>
-                <button id="manage-tags-btn" type="button" class="coverage-tags-btn" aria-label="Manage tags on scenarios" title="Add or remove Gherkin tags (@smoke, @regression, …) on any scenario">
+                <button id="manage-tags-btn" type="button" class="coverage-tags-btn" data-info="tags" aria-label="Manage tags on scenarios">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                  <span>Tags</span>
+                  <span>Tags</span><span class="info-glyph" aria-hidden="true"></span>
                 </button>
               </div>
               <div class="coverage-progress" aria-hidden="true">
@@ -2822,7 +2980,7 @@
               <label for="tag-filter">
                 <span class="tag-filter-label">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                  Tag filter <span style="color:var(--text-faint);font-weight:normal;">(optional)</span>
+                  Tag filter <span style="color:var(--text-faint);font-weight:normal;">(optional)</span><button type="button" class="info-i" data-info="tagFilter" aria-label="About: Tag filter"></button>
                 </span>
               </label>
               <input id="tag-filter" type="text" placeholder="e.g. @smoke  or  @smoke and not @slow" spellcheck="false" autocomplete="off" />
@@ -2830,71 +2988,44 @@
             </div>
             <label class="check">
               <input id="headed" type="checkbox" checked />
-              <span>Headed (visible browser window)</span>
-            </label>
-            <label class="check" title="Scenarios tagged @destructive perform real, persistent actions — e.g. submitting real vendor orders or creating real accounts. They're skipped by default. Enable only against a safe test environment; you'll be asked to confirm before each destructive run.">
-              <input id="run-destructive" type="checkbox" />
-              <span>Include <code>@destructive</code> tests <span style="color:var(--text-faint);font-weight:normal;">— real, persistent actions</span></span>
+              <span>Headed (visible browser window)</span><button type="button" class="info-i" data-info="headed" aria-label="About: Headed mode"></button>
             </label>
           </div>
 
           <div class="section">
-            <h2 class="section-label">Launch</h2>
+            <h2 class="section-label">Launch<button type="button" class="info-i" data-info="launch" aria-label="About: Launch actions"></button></h2>
             <div class="actions">
-              <button id="run" class="btn primary">
+              <button id="run" class="btn primary" data-info="run">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/>
                 </svg>
-                Run Tests
+                Run Tests<span class="info-glyph" aria-hidden="true"></span>
               </button>
-              <button id="save" class="btn ghost" title="Save the story and auto-generate tests via Claude Code (falls back to copy-prompt if Claude Code CLI isn't installed)">
+              <button id="save" class="btn ghost" data-info="save">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                   <polyline points="17 21 17 13 7 13 7 21"/>
                   <polyline points="7 3 7 8 15 8"/>
                 </svg>
-                <span id="save-label">Save &amp; Generate Tests</span>
+                <span id="save-label">Save &amp; Generate Tests</span><span class="info-glyph" aria-hidden="true"></span>
               </button>
-              <button id="critique" class="btn ghost" title="Lint the user story for ambiguous ACs / vague verbs / missing negatives BEFORE generating — saves a wasted Claude round-trip on bad input">
+              <button id="critique" class="btn ghost" data-info="critique">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                 </svg>
-                <span id="critique-label">Critique Story</span>
+                <span id="critique-label">Critique Story</span><span class="info-glyph" aria-hidden="true"></span>
               </button>
-              <button id="record" class="btn ghost" style="grid-column: 1 / -1;" title="Drive the app manually in a real browser; the actions you take get captured and converted into a Gherkin scenario you can append to an existing feature">
+              <button id="record" class="btn ghost" style="grid-column: 1 / -1;" data-info="record">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="9"/>
                   <circle cx="12" cy="12" r="3.5" fill="currentColor"/>
                 </svg>
-                <span>Record New Scenario</span>
+                <span>Record New Scenario</span><span class="info-glyph" aria-hidden="true"></span>
               </button>
             </div>
             <div id="critique-panel" class="critique-panel" hidden role="region" aria-label="Spec critique results"></div>
           </div>
 
-          <details class="express">
-            <summary>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-              <span id="generate-disclosure-title">Generation prompt (auto-sent to Claude Code)</span>
-            </summary>
-            <div class="body">
-              <div id="generate-disclosure-copy">
-                When you click <b>Save &amp; Generate Tests</b>, this prompt is piped to the local
-                <code>claude</code> CLI with <code>--print --verbose</code>. Output streams into the log on the right;
-                when generation finishes, the new feature appears in the dropdown above.
-              </div>
-              <pre id="prompt-out">Fill in the form first to see the prompt.</pre>
-              <button class="prompt-copy" id="prompt-copy">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                </svg>
-                Copy prompt
-              </button>
-            </div>
-          </details>
         </div>
       </section>
 
@@ -2908,8 +3039,8 @@
             <span id="pill-fail" class="pill fail" hidden>0 failed</span>
             <span id="pill-time" class="pill">—</span>
           </div>
-          <span id="pill-flaky" class="pill flaky" hidden title="Click to see which tests are unstable across recent runs"></span>
-          <button id="pill-pr-impact" type="button" class="pill pr-impact" hidden title="This PR touches files that likely affect these features — click to see + run them"></button>
+          <span id="pill-flaky" class="pill flaky" hidden data-info="flaky"></span>
+          <button id="pill-pr-impact" type="button" class="pill pr-impact" hidden data-info="prImpact"></button>
           <svg id="history-spark" class="history-spark" viewBox="0 0 120 22" preserveAspectRatio="none" aria-label="Run history (last 30 runs)" role="img" hidden></svg>
           <div id="waterfall" class="waterfall" aria-hidden="true"></div>
         </div>
@@ -2921,7 +3052,7 @@
                 <line x1="12" y1="8" x2="12" y2="12"/>
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
-              <span id="pr-impact-heading">PR Impact Radar</span>
+              <span id="pr-impact-heading">PR Impact Radar</span><button type="button" class="info-i" data-info="prImpact" aria-label="About: PR Impact Radar"></button>
             </span>
             <button type="button" id="pr-impact-close" class="pr-impact-close" aria-label="Close">×</button>
           </div>
@@ -2936,10 +3067,10 @@
           <span class="msb-icon" aria-hidden="true">🔨</span>
           <span class="msb-text">
             <b id="msb-count">0</b> missing step<span id="msb-plural">s</span>
-            <span class="msb-sep">·</span><span class="msb-hint">implement with your existing POM + step style</span>
+            <span class="msb-sep">·</span><span class="msb-hint" id="msb-hint">implement with your existing POM + step style</span>
           </span>
-          <button type="button" id="msb-action" class="msb-action">
-            <span>Implement with Claude</span>
+          <button type="button" id="msb-action" class="msb-action" data-info="missingSteps">
+            <span>Implement with Claude</span><span class="info-glyph" aria-hidden="true"></span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <polyline points="5 12 19 12"/>
               <polyline points="13 5 19 12 13 19"/>
@@ -2956,6 +3087,7 @@
             </span>
             <span id="step-timeline-title" class="step-timeline-title">Idle</span>
             <span id="step-timeline-meta" class="step-timeline-meta"></span>
+            <button type="button" class="info-i" data-info="stepTimeline" aria-label="About: Live step timeline"></button>
           </div>
           <div id="step-timeline-list" class="step-timeline-list" aria-live="polite"></div>
         </div>
@@ -2964,6 +3096,7 @@
           <div class="log-head">
             <div class="log-dots" aria-hidden="true"><span></span><span></span><span></span></div>
             <span>output stream</span>
+            <button type="button" class="info-i" data-info="log" aria-label="About: Output stream"></button>
             <span id="log-line-count" class="log-line-count" aria-live="polite"></span>
             <span class="log-spacer"></span>
             <div class="log-search">
@@ -2975,9 +3108,23 @@
             <button id="log-clear" class="log-clear-btn" type="button" aria-label="Clear log">Clear</button>
           </div>
           <div id="log" class="log empty" tabindex="0" aria-label="Live Playwright test output">
-            <div>
-              <div class="empty-art" aria-hidden="true">⚡</div>
+            <div class="log-idle">
+              <div class="ai-bot" aria-hidden="true">
+                <span class="ai-bot-glow"></span>
+                <svg class="ai-bot-svg" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <line x1="48" y1="17" x2="48" y2="9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                  <circle class="ai-bot-antenna" cx="48" cy="7" r="4"/>
+                  <rect class="ai-bot-ear" x="14" y="34" width="6" height="15" rx="3"/>
+                  <rect class="ai-bot-ear" x="76" y="34" width="6" height="15" rx="3"/>
+                  <rect class="ai-bot-head" x="22" y="17" width="52" height="47" rx="13"/>
+                  <rect class="ai-bot-visor" x="29" y="26" width="38" height="29" rx="8"/>
+                  <circle class="ai-bot-eye" cx="41" cy="41" r="4"/>
+                  <circle class="ai-bot-eye right" cx="55" cy="41" r="4"/>
+                  <path class="ai-bot-mouth" d="M42 50 h12"/>
+                </svg>
+              </div>
               <div>Live test output will appear here</div>
+              <div class="ai-bot-dots" aria-hidden="true"><span></span><span></span><span></span></div>
             </div>
           </div>
         </div>
@@ -2991,7 +3138,7 @@
 
         <div id="gallery" class="gallery hidden">
           <div class="gallery-head">
-            <span>Screenshots from latest run</span>
+            <span>Screenshots from latest run</span><button type="button" class="info-i" data-info="gallery" aria-label="About: Screenshot gallery"></button>
             <span id="gallery-count" style="text-transform: none; letter-spacing: 0; font-weight: 500;"></span>
             <button type="button" id="gallery-close" class="gallery-close" aria-label="Hide screenshot gallery" title="Hide the gallery — it will reappear next time you run tests">×</button>
           </div>
@@ -3171,7 +3318,7 @@
             <div class="field">
               <label for="sched-project">Browser</label>
               <select id="sched-project">
-                <option value="">chromium (default)</option>
+                <option value="">desktop browsers (default)</option>
                 <option value="chromium">chromium</option>
                 <option value="firefox">firefox</option>
                 <option value="webkit">webkit</option>
@@ -3181,6 +3328,14 @@
           <div class="field">
             <label for="sched-tag-filter">Tag filter <span style="color:var(--text-faint);font-weight:normal;">(optional)</span></label>
             <input id="sched-tag-filter" type="text" placeholder="e.g. @smoke" spellcheck="false" autocomplete="off" />
+          </div>
+          <label class="check" title="Run this schedule with visible browser windows so you can watch it execute at the scheduled time. Off by default — a frequent unattended schedule popping windows and stealing focus is disruptive.">
+            <input id="sched-headed" type="checkbox" />
+            <span>Run visibly <span style="color:var(--text-faint);font-weight:normal;">— open real browser windows when it fires</span></span>
+          </label>
+          <div class="field">
+            <label for="sched-webhook">Notify on failure <span style="color:var(--text-faint);font-weight:normal;">(optional)</span></label>
+            <input id="sched-webhook" type="url" placeholder="https://hooks.slack.com/services/… — POSTed only when a run fails" spellcheck="false" autocomplete="off" />
           </div>
           <div class="field">
             <label>Frequency</label>
@@ -3270,6 +3425,59 @@
       <button id="sec-review" type="button" class="btn ghost" disabled title="Ask Claude to turn the findings into a prioritized remediation plan">AI review</button>
       <button id="sec-close-2" type="button" class="btn ghost">Close</button>
       <button id="sec-run" type="button" class="btn primary">Run scan</button>
+    </div>
+  </div>
+
+  <!-- Exploratory testing modal -->
+  <div id="explore-modal" class="rec-modal" role="dialog" aria-modal="true" aria-labelledby="explore-title">
+    <div class="rec-head">
+      <h3 id="explore-title">Exploratory testing</h3>
+      <button type="button" class="close" id="explore-close" aria-label="Close">×</button>
+    </div>
+    <div class="rec-body">
+      <p>Crawls the live app, then diffs what it finds against your feature files and page objects — so it reports app surface <b>no scenario mentions at all</b>. Only run this against systems you are <b>authorized</b> to test.</p>
+      <div class="sec-hint" style="margin-bottom:10px;">
+        Read-only by design: it never fills a form, submits, accepts a dialog, or clicks anything matching the
+        destructive denylist (Send, Delete, Save, Create, Set pack size, ± steppers…). Those are reported for
+        you to write by hand with <code>@destructive</code>.
+      </div>
+      <div class="field">
+        <label for="explore-base">Base URL</label>
+        <input id="explore-base" type="url" placeholder="https://your-app.example.com" spellcheck="false" autocomplete="off" />
+      </div>
+      <div class="sched-form-row">
+        <div class="field">
+          <label for="explore-email">Login email</label>
+          <input id="explore-email" type="text" placeholder="QA_EMAIL if left blank" spellcheck="false" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="explore-password">Password</label>
+          <input id="explore-password" type="password" placeholder="QA_PASSWORD if left blank" autocomplete="off" />
+        </div>
+      </div>
+      <div class="sched-form-row">
+        <div class="field">
+          <label for="explore-mode">Mode</label>
+          <select id="explore-mode">
+            <option value="guarded" selected>Guarded — follow nav links and tabs</option>
+            <option value="passive">Passive — zero clicks (one route on an SPA)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="explore-max">Max routes</label>
+          <input id="explore-max" type="number" min="1" max="60" value="10" style="width:90px;" />
+        </div>
+      </div>
+      <div id="explore-summary" class="sec-summary" hidden></div>
+      <div id="explore-findings" class="sec-findings"></div>
+      <pre id="explore-draft-out" class="rec-code" style="max-height:220px; white-space:pre-wrap;" hidden></pre>
+    </div>
+    <div class="rec-foot">
+      <span id="explore-status" class="rec-status-pill working" hidden>Crawling…</span>
+      <span class="spacer"></span>
+      <button id="explore-draft" type="button" class="btn ghost" disabled title="Ask Claude to draft Gherkin for the untested surface (drafts land in specs/ for review)">Draft scenarios</button>
+      <button id="explore-close-2" type="button" class="btn ghost">Close</button>
+      <button id="explore-run" type="button" class="btn primary">Run crawl</button>
     </div>
   </div>
 
@@ -3467,6 +3675,13 @@
     }
 
     function appendLog(text, stream) {
+      // Playwright's list/line reporters redraw progress with terminal cursor
+      // escapes (ESC[1A cursor-up, ESC[2K erase-line). A browser log cannot act
+      // on them, so they used to render as literal "[1A[2K" garbage in front of
+      // every progress line. Strip CSI sequences up front. The ESC byte is
+      // required in the pattern — a bare /\[[0-9;]*[A-Za-z]/ would also eat the
+      // "[f" out of "[firefox] › …".
+      if (text) text = text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
       // Scan for the bddgen "Missing step definitions: N" line so we can
       // surface the auto-implement banner the moment the user runs against
       // a feature that has unbound scenarios. Cheap regex; runs per chunk.
@@ -3535,11 +3750,33 @@
       scheduleScroll();
     }
 
+    // Idle "AI bot" greeter markup, kept identical to the static empty-log
+    // state so Clear restores the same animated bot rather than a bare glyph.
+    const IDLE_LOG_HTML =
+      '<div class="log-idle">' +
+        '<div class="ai-bot" aria-hidden="true">' +
+          '<span class="ai-bot-glow"></span>' +
+          '<svg class="ai-bot-svg" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<line x1="48" y1="17" x2="48" y2="9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>' +
+            '<circle class="ai-bot-antenna" cx="48" cy="7" r="4"/>' +
+            '<rect class="ai-bot-ear" x="14" y="34" width="6" height="15" rx="3"/>' +
+            '<rect class="ai-bot-ear" x="76" y="34" width="6" height="15" rx="3"/>' +
+            '<rect class="ai-bot-head" x="22" y="17" width="52" height="47" rx="13"/>' +
+            '<rect class="ai-bot-visor" x="29" y="26" width="38" height="29" rx="8"/>' +
+            '<circle class="ai-bot-eye" cx="41" cy="41" r="4"/>' +
+            '<circle class="ai-bot-eye right" cx="55" cy="41" r="4"/>' +
+            '<path class="ai-bot-mouth" d="M42 50 h12"/>' +
+          '</svg>' +
+        '</div>' +
+        '<div>Live test output will appear here</div>' +
+        '<div class="ai-bot-dots" aria-hidden="true"><span></span><span></span><span></span></div>' +
+      '</div>';
+
     function clearLog() {
       logEl.replaceChildren();
       logStartedFlag = false;
       logEl.classList.add('empty');
-      logEl.innerHTML = '<div><div class="empty-art" aria-hidden="true">⚡</div><div>Live test output will appear here</div></div>';
+      logEl.innerHTML = IDLE_LOG_HTML;
       updateLineCount();
       runLogSearch(); // re-evaluate against the now-empty log
     }
@@ -3556,6 +3793,39 @@
       $('msb-count').textContent = String(count);
       $('msb-plural').textContent = count === 1 ? '' : 's';
       el.hidden = false;
+    }
+
+    // Instant "how many steps actually need code?" for the selected feature.
+    // /api/steps/match is plain file parsing — milliseconds, no bddgen, no
+    // Claude — so this can run the moment you pick a feature, instead of only
+    // after a run has already compiled the specs.
+    async function checkFeatureSteps(feature) {
+      if (!feature) return null;
+      try {
+        const r = await fetch('/api/steps/match', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feature }),
+        });
+        if (!r.ok) return null;
+        const d = await r.json();
+        const hint = $('msb-hint');
+        if (d.needsCode > 0) {
+          showMissingStepsBanner(d.needsCode);
+          if (hint) hint.textContent = `${d.needsCode} of ${d.total} steps need code — the other ${d.covered} already exist`;
+        } else {
+          hideMissingStepsBanner();
+        }
+        return d;
+      } catch { return null; }
+    }
+
+    // Shown once the step library is loaded, so you can see the suite has a
+    // reusable library at all.
+    function updateStepLibraryHint(d) {
+      const hint = $('msb-hint');
+      if (hint && d && d.count && $('missing-steps-banner')?.hidden !== false) {
+        hint.dataset.libraryCount = String(d.count);
+      }
     }
     function hideMissingStepsBanner() {
       const el = $('missing-steps-banner');
@@ -4486,9 +4756,8 @@
           opt.textContent = `${f.name}${suffix}`;
           select.appendChild(opt);
         }
-        // Refresh the save-mode chip + prompt now that features are loaded.
+        // Refresh the save-mode chip now that features are loaded.
         updateSaveMode();
-        updatePrompt();
         // Initial coverage render for whatever feature is initially selected.
         refreshCoverage();
       } catch {
@@ -4507,10 +4776,70 @@
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="14" x2="15" y2="20"/><line x1="15" y1="14" x2="9" y2="20"/></svg>';
     }
 
+    // Runnable Playwright projects, fetched from /api/projects so the dropdowns
+    // and the artifact-name prettifier all agree with playwright.config.js.
+    // Seeded with the desktop three so everything works before the fetch lands
+    // (and if the server is unreachable).
+    let knownProjects = ['chromium', 'firefox', 'webkit'];
+    // What "All browsers" will actually run — reported by the server so the
+    // status text can't drift from the projects it launches.
+    let matrixProjects = ['chromium', 'firefox', 'webkit'];
+
+    async function loadProjects() {
+      try {
+        const r = await fetch('/api/projects');
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!Array.isArray(data.projects) || !data.projects.length) return;
+        // Longest first so a name that is a suffix of another can't shadow it.
+        knownProjects = data.projects.map((p) => p.name).sort((a, b) => b.length - a.length);
+        if (Array.isArray(data.matrix) && data.matrix.length) matrixProjects = data.matrix;
+        fillProjectSelect($('project'), data.projects, { includeDefault: false });
+        fillProjectSelect($('sched-project'), data.projects, { includeDefault: true });
+      } catch { /* keep the static <option>s already in the markup */ }
+    }
+
+    // Rebuild a project <select>, grouping emulated devices apart from the real
+    // desktop browsers. Keeps the current selection if it still exists.
+    function fillProjectSelect(sel, projects, { includeDefault }) {
+      if (!sel) return;
+      const previous = sel.value;
+      sel.innerHTML = '';
+      if (includeDefault) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'desktop browsers (default)';
+        sel.appendChild(opt);
+      }
+      for (const [kind, groupLabel] of [
+        ['desktop', 'Desktop'],
+        ['tablet', 'Tablets (emulated)'],
+        ['phone', 'Phones (emulated)'],
+      ]) {
+        const inGroup = projects.filter((p) => p.kind === kind);
+        if (!inGroup.length) continue;
+        const group = document.createElement('optgroup');
+        group.label = groupLabel;
+        for (const p of inGroup) {
+          const opt = document.createElement('option');
+          opt.value = p.name;
+          opt.textContent = p.label;
+          group.appendChild(opt);
+        }
+        sel.appendChild(group);
+      }
+      if ([...sel.options].some((o) => o.value === previous)) sel.value = previous;
+    }
+
     function prettifyTestName(dir) {
       // e.g. "login-successful-authenticates-user-chromium" -> "login successful authenticates user"
-      return dir
-        .replace(/-chromium$|-firefox$|-webkit$/, '')
+      // Playwright appends "-<project>" to every artifact dir, so strip whichever
+      // project matches — otherwise device runs read "… -ipad-pro-11".
+      let out = dir;
+      for (const name of knownProjects) {
+        if (out.endsWith(`-${name}`)) { out = out.slice(0, -(name.length + 1)); break; }
+      }
+      return out
         .replace(/^[a-z0-9]+-/, '') // drop hash prefix if any
         .replace(/-/g, ' ');
     }
@@ -4683,18 +5012,54 @@
             a.target = '_blank';
             a.rel = 'noopener';
           }
+          if (opts.stale) a.classList.add('stale');
+          if (opts.title) a.title = opts.title;
           a.innerHTML = iconHtml;
           a.appendChild(document.createTextNode(label));
           reportsEl.appendChild(a);
           any = true;
+          return a;
         };
         if (status.playwright) addLink('/playwright-report/index.html', 'Playwright HTML', reportIcon());
         if (status.allure) addLink('/allure-report/index.html', 'Allure', reportIcon());
-        for (const f of status.aiReports || []) {
+
+        // Lead with the reports the last run actually produced. `lastRunReports`
+        // is null when the last run is unknown (no results.json, or a run still
+        // in flight) — in that case show everything rather than hide anything.
+        const md = status.aiReports || [];
+        const fromLastRun = status.lastRunReports;
+        const current = fromLastRun ? md.filter((f) => fromLastRun.includes(f)) : md;
+        const older = fromLastRun ? md.filter((f) => !fromLastRun.includes(f)) : [];
+        for (const f of current) {
           addLink(`/reports-view/${encodeURIComponent(f)}`, f, reportIcon());
         }
         for (const f of status.excelReports || []) {
           addLink(`/reports/${encodeURIComponent(f)}`, f, excelIcon(), { download: true });
+        }
+        if (older.length) {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'report-older-chip';
+          chip.setAttribute('aria-expanded', 'false');
+          chip.title = 'Reports from earlier runs — not part of the run you just executed';
+          reportsEl.appendChild(chip);
+          const olderLinks = older.map((f) => {
+            const when = status.reportTimes?.[f];
+            return addLink(`/reports-view/${encodeURIComponent(f)}`, f, reportIcon(), {
+              stale: true,
+              title: when ? `From an earlier run — last written ${new Date(when).toLocaleString()}` : 'From an earlier run',
+            });
+          });
+          const sync = () => {
+            const open = chip.getAttribute('aria-expanded') === 'true';
+            olderLinks.forEach((a) => { a.hidden = !open; });
+            chip.textContent = open ? 'hide older' : `+${older.length} older`;
+          };
+          chip.addEventListener('click', () => {
+            chip.setAttribute('aria-expanded', chip.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+            sync();
+          });
+          sync();
         }
         if (!any) reportsEl.insertAdjacentHTML('beforeend', '<span class="empty">none yet</span>');
       } catch {}
@@ -4718,6 +5083,31 @@
         chip.textContent = 'NEW STORY';
         chip.title = 'No existing feature matches this title. Save & Generate will scaffold a new feature folder, POM, and step defs.';
       }
+    }
+
+    // The existing step library, fetched once and pasted into the generation
+    // prompt. Without it Claude greps and reads the step files on every single
+    // generation just to learn what exists — several sequential round trips
+    // before it writes anything, and it still sometimes duplicates a step.
+    // Empty string until the fetch lands, so the prompt is simply unchanged.
+    let stepLibraryBlock = '';
+    async function loadStepLibrary() {
+      try {
+        const r = await fetch('/api/steps');
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d && typeof d.promptBlock === 'string' && d.count) {
+          stepLibraryBlock = d.promptBlock;
+          updateStepLibraryHint(d);
+        }
+      } catch { /* generation still works without it, just slower */ }
+    }
+    function stepLibrarySection() {
+      if (!stepLibraryBlock) return '';
+      return `EXISTING STEP DEFINITIONS (reuse these — do NOT grep for them, and do NOT redefine one that already exists in the same tag scope):
+${stepLibraryBlock}
+
+`;
     }
 
     function expressPrompt() {
@@ -4753,13 +5143,13 @@ ${creds || ''}
 UPDATED ACCEPTANCE CRITERIA:
 ${ac || '<ACs>'}
 
-INSTRUCTIONS FOR CLAUDE:
+${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
 1. READ the existing .feature, .steps.ts, and POM files first so you understand current coverage.
 2. Compare the UPDATED ACs above against existing scenarios. Identify: new scenarios, changed scenarios, removed scenarios, unchanged scenarios.
 3. UPDATE the existing files IN PLACE — preserve scenarios that still apply; add scenarios for new ACs; modify scenarios for changed ACs; remove scenarios for removed ACs.
 4. Extend the POM only if new selectors are required. Do NOT rewrite existing methods unless the AC actually changed the underlying flow.
 5. Do NOT delete the existing feature folder or POM.
-6. Re-run \`npx bddgen\` so the compiled specs reflect the changes.
+6. Do NOT run \`npx bddgen\` — the server compiles the .feature files itself as soon as you finish.
 7. Stream short status updates between steps so the UI shows progress.`;
       }
 
@@ -4778,27 +5168,21 @@ ${creds || ''}
 ACCEPTANCE CRITERIA:
 ${ac || '<ACs>'}
 
-INSTRUCTIONS FOR CLAUDE:
+${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
 1. Derive a kebab-case <feature-slug> from the story title.
 2. Use a <STORY-ID> if not provided (e.g. AUTO-001).
 3. Run steps 1-6 of the workflow (skip git commit).
 4. Generate Page Objects + tests using the POM convention.
-5. Stream short status updates between steps.`;
+5. Do NOT run \`npx bddgen\` — the server compiles the .feature files itself as soon as you finish.
+6. Stream short status updates between steps.`;
     }
 
-    function updatePrompt() { $('prompt-out').textContent = expressPrompt(); }
+    // expressPrompt() is still what gets sent to the Claude CLI on
+    // Save & Generate — it builds the prompt from the form directly, so
+    // removing the on-screen preview does not affect generation.
     ['url', 'title', 'ac', 'creds', 'storyId'].forEach((id) =>
-      $(id).addEventListener('input', () => { updateSaveMode(); updatePrompt(); })
+      $(id).addEventListener('input', () => { updateSaveMode(); })
     );
-
-    $('prompt-copy').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText($('prompt-out').textContent);
-        showToast('Prompt copied to clipboard');
-      } catch {
-        showToast('Could not access clipboard', 'error');
-      }
-    });
 
     // Per-field validation: replace the silent toast with real aria-invalid
     // states + visible inline messages + focus-first-invalid.
@@ -4831,9 +5215,14 @@ INSTRUCTIONS FOR CLAUDE:
         claudeCliAvailable = !!data.available;
         const lbl = $('save-label');
         if (lbl) lbl.textContent = claudeCliAvailable ? 'Save & Generate Tests' : 'Save Story';
-        const copy = $('generate-disclosure-copy');
-        if (copy && !claudeCliAvailable) {
-          copy.innerHTML = `<b>Claude Code CLI not detected.</b> Install <code>claude</code> on PATH for one-click generation, or paste the prompt below into a separate Claude Code session manually after saving.`;
+        // The prompt-preview panel used to carry this explanation. With that
+        // panel removed, hang it off the button so the reason the label says
+        // "Save Story" is still discoverable.
+        const saveBtn = lbl?.closest('button');
+        if (saveBtn) {
+          saveBtn.title = claudeCliAvailable
+            ? ''
+            : 'Claude Code CLI not detected — install `claude` on PATH for one-click generation. Saving stores the user story only.';
         }
       } catch { /* server down — leave defaults */ }
     })();
@@ -5639,24 +6028,59 @@ INSTRUCTIONS FOR CLAUDE:
       if (schedCountdownTimer) { clearInterval(schedCountdownTimer); schedCountdownTimer = null; }
     }
 
+    // Which schedules have their run-log panel expanded, which run is selected in
+    // each, and where the log body was scrolled. Kept outside the card DOM
+    // because refreshSchedulesList() rebuilds every card from scratch every 15s,
+    // which would otherwise collapse an open panel while you were reading it.
+    const schedOpenLogs = new Set();
+    const schedSelectedLog = new Map();
+
     async function refreshSchedulesList() {
       try {
         const r = await fetch('/api/schedules');
         if (!r.ok) return;
         const data = await r.json();
         const list = $('sched-list');
+        // Remember scroll position of any open log body before the rebuild.
+        const scrollMemo = new Map();
+        list.querySelectorAll('.sched-card').forEach((c) => {
+          const body = c.querySelector('[data-role="log-body"]');
+          if (body && c.dataset.id) scrollMemo.set(c.dataset.id, body.scrollTop);
+        });
         list.innerHTML = '';
         if (data.schedules.length === 0) {
           $('sched-empty').hidden = false;
         } else {
           $('sched-empty').hidden = true;
-          for (const s of data.schedules) list.appendChild(renderSchedCard(s));
+          for (const s of data.schedules) list.appendChild(renderSchedCard(s, scrollMemo.get(s.id)));
         }
         refreshSchedulesBadge();
       } catch { /* ignore */ }
     }
 
-    function renderSchedCard(s) {
+    // "✓ 33 passed · 30.4s" instead of a bare "✓" — a scheduled run reports
+    // nowhere else in the UI, so the tally on the card is the only place the
+    // result of the run is visible at a glance.
+    function schedLastRunHtml(s) {
+      if (!s.lastRun) return '';
+      const ok = s.lastRunExitCode === 0;
+      const st = s.lastRunStats;
+      const bits = [];
+      if (st) {
+        if (st.passed) bits.push(`${st.passed} passed`);
+        if (st.failed) bits.push(`${st.failed} failed`);
+        if (st.flaky) bits.push(`${st.flaky} flaky`);
+        if (st.skipped) bits.push(`${st.skipped} skipped`);
+      }
+      // No parsed summary means the run died before reporting (e.g. bddgen
+      // failed) — fall back to the exit code alone.
+      const tally = bits.length ? bits.join(', ') : (ok ? 'passed' : 'no summary');
+      const dur = st && st.duration ? ` · ${escapeHtml(st.duration)}` : '';
+      return `<span class="sched-tally ${ok ? 'ok' : 'bad'}" title="Last run">${ok ? '✓' : '✗'} ${escapeHtml(tally)}${dur}</span>` +
+        `<span title="Last run">${new Date(s.lastRun).toLocaleString()}</span>`;
+    }
+
+    function renderSchedCard(s, restoreScrollTop) {
       const card = document.createElement('div');
       card.className = 'sched-card' + (s.enabled ? '' : ' disabled');
       card.dataset.id = s.id;
@@ -5671,9 +6095,11 @@ INSTRUCTIONS FOR CLAUDE:
       meta.className = 'sched-meta';
       meta.innerHTML = `<span class="badge">${escapeHtml(s.humanFrequency)}</span>` +
         (s.feature ? `<span>📁 ${escapeHtml(s.feature)}</span>` : '<span>📁 all features</span>') +
-        (s.project ? `<span>🌐 ${escapeHtml(s.project)}</span>` : '') +
+        (s.project ? `<span>🌐 ${escapeHtml(s.project)}</span>` : '<span>🌐 desktop browsers</span>') +
         (s.tagFilter ? `<span>🏷 <code>${escapeHtml(s.tagFilter)}</code></span>` : '') +
-        (s.lastRun ? `<span title="Last run">${(s.lastRunExitCode === 0 ? '✓' : '✗')} last: ${new Date(s.lastRun).toLocaleString()}</span>` : '');
+        (s.headed ? '<span title="Opens visible browser windows when it fires">👁 visible</span>' : '') +
+        (s.webhookUrl ? '<span title="POSTs a summary to your webhook when a run fails">🔔 notifies</span>' : '') +
+        schedLastRunHtml(s);
       info.appendChild(meta);
       const nextRun = document.createElement('div');
       nextRun.className = 'sched-next';
@@ -5682,6 +6108,12 @@ INSTRUCTIONS FOR CLAUDE:
       card.appendChild(info);
       const actions = document.createElement('div');
       actions.className = 'sched-actions';
+      const logsBtn = document.createElement('button');
+      logsBtn.type = 'button';
+      logsBtn.className = 'sched-logs-btn';
+      logsBtn.textContent = 'Logs';
+      logsBtn.title = 'Show the output of recent runs of this schedule';
+      actions.appendChild(logsBtn);
       const toggle = document.createElement('input');
       toggle.type = 'checkbox';
       toggle.className = 'sched-toggle';
@@ -5697,8 +6129,81 @@ INSTRUCTIONS FOR CLAUDE:
       del.addEventListener('click', () => deleteSchedule(s));
       actions.appendChild(del);
       card.appendChild(actions);
+
+      const logs = document.createElement('div');
+      logs.className = 'sched-logs';
+      logs.innerHTML = '<div class="sched-log-runs" data-role="log-runs"></div>' +
+        '<pre class="sched-log-body" data-role="log-body"></pre>';
+      card.appendChild(logs);
+
+      const open = schedOpenLogs.has(s.id);
+      logs.hidden = !open;
+      logsBtn.setAttribute('aria-expanded', String(open));
+      if (open) loadSchedLogs(s.id, logs, restoreScrollTop);
+      logsBtn.addEventListener('click', () => {
+        const nowOpen = !schedOpenLogs.has(s.id);
+        if (nowOpen) schedOpenLogs.add(s.id); else schedOpenLogs.delete(s.id);
+        logs.hidden = !nowOpen;
+        logsBtn.setAttribute('aria-expanded', String(nowOpen));
+        if (nowOpen) loadSchedLogs(s.id, logs);
+      });
+
       updateSchedCountdown(card);
       return card;
+    }
+
+    // Populate the expanded panel: one pill per recorded run (newest first),
+    // with the selected run's output below it.
+    async function loadSchedLogs(id, panel, restoreScrollTop) {
+      const runsRow = panel.querySelector('[data-role="log-runs"]');
+      const body = panel.querySelector('[data-role="log-body"]');
+      try {
+        const r = await fetch(`/api/schedules/${encodeURIComponent(id)}/logs`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        runsRow.innerHTML = '';
+        if (!data.logs.length) {
+          body.textContent = 'No runs recorded yet — the output appears here once this schedule fires.';
+          return;
+        }
+        // Keep the previously selected run if it still exists, else newest.
+        const want = schedSelectedLog.get(id);
+        const selected = data.logs.some((l) => l.ts === want) ? want : data.logs[0].ts;
+        schedSelectedLog.set(id, selected);
+        for (const l of data.logs) {
+          const pill = document.createElement('button');
+          pill.type = 'button';
+          pill.className = 'sched-log-run';
+          pill.setAttribute('aria-pressed', String(l.ts === selected));
+          pill.textContent = new Date(l.ts).toLocaleTimeString();
+          pill.title = `${new Date(l.ts).toLocaleString()} — ${(l.size / 1024).toFixed(1)} KB`;
+          pill.addEventListener('click', () => {
+            schedSelectedLog.set(id, l.ts);
+            runsRow.querySelectorAll('.sched-log-run').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+            pill.setAttribute('aria-pressed', 'true');
+            loadSchedLogBody(id, l.ts, body);
+          });
+          runsRow.appendChild(pill);
+        }
+        await loadSchedLogBody(id, selected, body, restoreScrollTop);
+      } catch (err) {
+        body.textContent = 'Could not load logs: ' + err.message;
+      }
+    }
+
+    async function loadSchedLogBody(id, ts, body, restoreScrollTop) {
+      body.textContent = 'Loading…';
+      try {
+        const r = await fetch(`/api/schedules/${encodeURIComponent(id)}/logs/${ts}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        body.textContent = (data.truncated ? '[log truncated — showing the tail]\n\n' : '') + data.content;
+        // Land on the end of the log: that is where the pass/fail summary and
+        // any failure output live.
+        body.scrollTop = typeof restoreScrollTop === 'number' ? restoreScrollTop : body.scrollHeight;
+      } catch (err) {
+        body.textContent = 'Could not load this run: ' + err.message;
+      }
     }
 
     function updateSchedCountdowns() {
@@ -5786,7 +6291,12 @@ INSTRUCTIONS FOR CLAUDE:
       if (!ok) return;
       try {
         const r = await fetch(`/api/schedules/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
-        if (r.ok) { showToast('Schedule deleted'); refreshSchedulesList(); }
+        if (r.ok) {
+          schedOpenLogs.delete(s.id);
+          schedSelectedLog.delete(s.id);
+          showToast('Schedule deleted');
+          refreshSchedulesList();
+        }
         else { const d = await r.json().catch(() => ({})); showToast(d.error || 'Delete failed', 'error'); }
       } catch (err) { showToast('Delete failed: ' + err.message, 'error'); }
     }
@@ -5801,6 +6311,8 @@ INSTRUCTIONS FOR CLAUDE:
         tagFilter: $('sched-tag-filter').value.trim() || undefined,
         mode: currentSchedMode,
         enabled: true,
+        headed: !!$('sched-headed')?.checked,
+        webhookUrl: ($('sched-webhook')?.value || '').trim() || undefined,
       };
       if (currentSchedMode === 'interval') {
         body.intervalMinutes = Number($('sched-interval').value) || 60;
@@ -5820,8 +6332,12 @@ INSTRUCTIONS FOR CLAUDE:
         const data = await r.json();
         if (!r.ok) { showToast(data.error || 'Add failed', 'error'); return; }
         showToast(`Schedule "${name}" added`);
+        // Surface the server's advice about intervals / visible-mode cost.
+        for (const w of data.warnings || []) showToast(w, 'error');
         $('sched-name').value = '';
         $('sched-tag-filter').value = '';
+        if ($('sched-headed')) $('sched-headed').checked = false;
+        if ($('sched-webhook')) $('sched-webhook').value = '';
         refreshSchedulesList();
       } catch (err) { showToast('Add failed: ' + err.message, 'error'); }
     }
@@ -6147,7 +6663,13 @@ INSTRUCTIONS FOR CLAUDE:
     const topbarStopBtn = $('topbar-stop');
     const topbarRerunFailedBtn = $('topbar-rerun-failed');
 
+    // Readable mirror of the in-flight state. The scheduled-run stream needs to
+    // know whether the user already has a run in this panel before it takes it
+    // over.
+    let runInFlight = false;
+
     function setRunInFlight(inFlight) {
+      runInFlight = inFlight;
       $('run').disabled = inFlight;
       topbarRunBtn.disabled = inFlight;
       topbarStopBtn.disabled = !inFlight;
@@ -6323,24 +6845,11 @@ INSTRUCTIONS FOR CLAUDE:
       const featuresList = Array.isArray(opts.features) && opts.features.length ? opts.features : null;
       const feature = featuresList ? null : ((opts.lastFailed) ? null : $('feature').value);
       // Matrix mode: omit project so /api/run runs across all configured
-      // projects (chromium + firefox + webkit) in one pass.
+      // projects (desktop browsers + emulated devices) in one pass.
       const matrix = !!opts.matrix;
       const project = matrix ? '' : $('project').value;
       const headed = $('headed').checked;
       const lastFailed = !!opts.lastFailed;
-      const destructive = !!$('run-destructive')?.checked;
-
-      // Destructive scenarios submit real, persistent data — always confirm.
-      if (destructive) {
-        const ok = await openConfirmModal({
-          title: 'Run @destructive tests?',
-          body: 'This run includes scenarios tagged @destructive, which perform real, persistent actions — for example submitting real vendor orders or creating real accounts.',
-          detail: 'Only proceed against a safe test environment. Retries are disabled for this run so nothing can be double-submitted.',
-          confirmLabel: 'Run destructive tests',
-          cancelLabel: 'Cancel',
-        });
-        if (!ok) return;
-      }
 
       clearDashboard({
         logMsg: lastFailed ? 'Re-running failed tests…' :
@@ -6350,7 +6859,7 @@ INSTRUCTIONS FOR CLAUDE:
       setStatus('running',
         lastFailed ? 'Re-running last-failed tests…' :
         featuresList ? `running ${featuresList.length} impacted feature${featuresList.length === 1 ? '' : 's'}: ${featuresList.join(', ')}…` :
-        matrix ? `running ${feature || 'all features'} across chromium + firefox + webkit${headed ? ' (headed)' : ''}…` :
+        matrix ? `running ${feature || 'all features'} across all ${matrixProjects.length} browsers & devices${headed ? ' (headed, in parallel)' : ''}…` :
                  `running ${feature || 'all features'} on ${project}${headed ? ' (headed)' : ''}…`);
       setRunInFlight(true);
       // Live ETA tick. Skip only re-run-failed (no comparable history —
@@ -6359,36 +6868,7 @@ INSTRUCTIONS FOR CLAUDE:
       if (!lastFailed) startEtaTicker({ feature, project, matrix });
 
       // Reset the live waterfall for this run.
-      const wfState = { total: 0, cursor: 0, results: [] };
-      rebuildWaterfall(wfState);
-
-      // Parse Playwright `list` reporter lines as they stream in:
-      //   "Running N tests using …"   → set total
-      //   "  ok  N [chromium] › …"    → results[N-1] = 'pass'
-      //   "  x   N [chromium] › …"    → results[N-1] = 'fail'
-      //   "  -   N [chromium] › …"    → results[N-1] = 'skip'
-      function parseWaterfall(text) {
-        let dirty = false;
-        const totalMatch = text.match(/Running\s+(\d+)\s+tests?/i);
-        if (totalMatch) {
-          const n = Number(totalMatch[1]);
-          if (n > 0 && n !== wfState.total) { wfState.total = n; wfState.results = []; dirty = true; }
-        }
-        const lineRe = /^\s*(ok|x|-)\s+(\d+)\b/gm;
-        let m;
-        while ((m = lineRe.exec(text)) !== null) {
-          const idx = Number(m[2]) - 1;
-          if (idx < 0) continue;
-          const status = m[1] === 'ok' ? 'pass' : (m[1] === 'x' ? 'fail' : 'skip');
-          if (wfState.results[idx] !== status) {
-            wfState.results[idx] = status;
-            wfState.cursor = Math.max(wfState.cursor, idx + 1);
-            if (wfState.total === 0) wfState.total = idx + 1;
-            dirty = true;
-          }
-        }
-        if (dirty) rebuildWaterfall(wfState);
-      }
+      const parseWaterfall = makeWaterfallFeed();
 
       let allOutput = '';
       const tagFilter = ($('tag-filter')?.value || '').trim() || undefined;
@@ -6396,7 +6876,10 @@ INSTRUCTIONS FOR CLAUDE:
         const resp = await fetch('/api/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ feature, features: featuresList || undefined, project, headed, lastFailed, tagFilter, destructive }),
+          // No `destructive` flag: /api/run treats a falsy/absent value as
+          // "skip @destructive", so the UI runner always excludes them. Run
+          // them deliberately from the CLI with `npm run test:destructive`.
+          body: JSON.stringify({ feature, features: featuresList || undefined, project, headed, lastFailed, tagFilter }),
         });
         if (resp.status === 409) {
           setStatus('idle', 'A run is already in progress.');
@@ -6430,33 +6913,7 @@ INSTRUCTIONS FOR CLAUDE:
             }
           }
         }
-        const summary = parseSummary(allOutput);
-        const hasPassed = !!summary.passed;
-        const hasFailed = !!(summary.failed && summary.failed !== '0');
-        if (hasPassed) { pillPass.textContent = `${summary.passed} passed`; pillPass.hidden = false; }
-        else { pillPass.hidden = true; }
-        if (hasFailed) { pillFail.textContent = `${summary.failed} failed`; pillFail.hidden = false; }
-        else { pillFail.hidden = true; }
-        if (summary.time) { pillTime.textContent = summary.time; }
-        // Reveal the stat-pills container whenever ANY pill has content —
-        // not just on success — so an all-fail run still shows the failure count.
-        if (hasPassed || hasFailed || summary.time) { statPills.hidden = false; }
-        // Playwright exits non-zero with "No tests found" when the path/filter
-        // matched nothing — most often because every scenario in the picked
-        // feature is @destructive (and therefore skipped by default). Translate
-        // that into an actionable message instead of a scary "exit code 1".
-        const noTestsFound = !hasPassed && !hasFailed && /No tests found/i.test(allOutput);
-        if (noTestsFound) {
-          const hint = !destructive
-            ? 'No runnable tests matched. If this feature is tagged @destructive, tick “Include @destructive tests” below to run it. (A tag filter can also exclude everything.)'
-            : 'No tests matched the current selection or tag filter.';
-          setStatus('idle', hint);
-          appendMeta('[ui] ' + hint);
-          showToast('No tests found — nothing to run', 'error');
-        }
-        else if (exitCode === 0) { setStatus('pass', 'All tests passed.'); showToast('All tests passed'); }
-        else if (exitCode != null) { setStatus('fail', `Run finished with exit code ${exitCode}.`); showToast(`Exit code ${exitCode}`, 'error'); }
-        else setStatus('idle', 'Run ended.');
+        const { summary, hasFailed } = renderRunOutcome(allOutput, exitCode);
         // Flip the PR Impact pill to green "verified" once a run has COVERED
         // and PASSED all currently-impacted features. This fires for any run
         // path that covers the impacted set — not just the "Run impacted
@@ -6495,6 +6952,137 @@ INSTRUCTIONS FOR CLAUDE:
         refreshTriage();
         refreshHistory();
         refreshPrImpact();
+      }
+    }
+
+    // Live waterfall feeder. Each call returns a fresh closure over its own
+    // state, so the interactive run and a scheduled run get independent strips.
+    // This used to be a function nested inside runTests(), which is exactly why
+    // the scheduled-run handler could not reach it.
+    //
+    // Parses Playwright `list` reporter lines as they stream in:
+    //   "Running N tests using …"   → set total
+    //   "  ok  N [chromium] › …"    → results[N-1] = 'pass'
+    //   "  x   N [chromium] › …"    → results[N-1] = 'fail'
+    //   "  -   N [chromium] › …"    → results[N-1] = 'skip'
+    function makeWaterfallFeed() {
+      const wfState = { total: 0, cursor: 0, results: [] };
+      rebuildWaterfall(wfState);
+      return function feed(text) {
+        let dirty = false;
+        const totalMatch = text.match(/Running\s+(\d+)\s+tests?/i);
+        if (totalMatch) {
+          const n = Number(totalMatch[1]);
+          if (n > 0 && n !== wfState.total) { wfState.total = n; wfState.results = []; dirty = true; }
+        }
+        const lineRe = /^\s*(ok|x|-)\s+(\d+)\b/gm;
+        let m;
+        while ((m = lineRe.exec(text)) !== null) {
+          const idx = Number(m[2]) - 1;
+          if (idx < 0) continue;
+          const status = m[1] === 'ok' ? 'pass' : (m[1] === 'x' ? 'fail' : 'skip');
+          if (wfState.results[idx] !== status) {
+            wfState.results[idx] = status;
+            wfState.cursor = Math.max(wfState.cursor, idx + 1);
+            if (wfState.total === 0) wfState.total = idx + 1;
+            dirty = true;
+          }
+        }
+        if (dirty) rebuildWaterfall(wfState);
+      };
+    }
+
+    // Turn a finished run's raw output + exit code into the stat pills and the
+    // status line. Shared by the interactive run stream and the scheduled-run
+    // event stream so a scheduled run reports its result identically instead of
+    // finishing silently. `label` prefixes the toast/status for scheduled runs.
+    function renderRunOutcome(allOutput, exitCode, opts = {}) {
+      const label = opts.label || '';
+      const summary = parseSummary(allOutput);
+      const hasPassed = !!summary.passed;
+      const hasFailed = !!(summary.failed && summary.failed !== '0');
+      if (hasPassed) { pillPass.textContent = `${summary.passed} passed`; pillPass.hidden = false; }
+      else { pillPass.hidden = true; }
+      if (hasFailed) { pillFail.textContent = `${summary.failed} failed`; pillFail.hidden = false; }
+      else { pillFail.hidden = true; }
+      if (summary.time) { pillTime.textContent = summary.time; }
+      // Reveal the stat-pills container whenever ANY pill has content —
+      // not just on success — so an all-fail run still shows the failure count.
+      if (hasPassed || hasFailed || summary.time) { statPills.hidden = false; }
+      // Playwright exits non-zero with "No tests found" when the path/filter
+      // matched nothing — most often because every scenario in the picked
+      // feature is @destructive (and therefore skipped by default). Translate
+      // that into an actionable message instead of a scary "exit code 1".
+      const noTestsFound = !hasPassed && !hasFailed && /No tests found/i.test(allOutput);
+      if (noTestsFound) {
+        const hint = 'No runnable tests matched. Scenarios tagged @destructive are always skipped here — run those with `npm run test:destructive`. (A tag filter can also exclude everything.)';
+        setStatus('idle', hint);
+        appendMeta('[ui] ' + hint);
+        showToast('No tests found — nothing to run', 'error');
+      }
+      else if (exitCode === 0) {
+        setStatus('pass', label ? `${label} passed.` : 'All tests passed.');
+        showToast(label ? `${label} passed` : 'All tests passed');
+      }
+      else if (exitCode != null) {
+        setStatus('fail', `${label || 'Run'} finished with exit code ${exitCode}.`);
+        showToast(`${label ? label + ': ' : ''}exit code ${exitCode}`, 'error');
+      }
+      else setStatus('idle', 'Run ended.');
+      return { summary, hasPassed, hasFailed };
+    }
+
+    /* ---- Scheduled runs render in THIS panel, not in the background ----
+       Interactive runs stream down their own /api/run response. A scheduled
+       run has no client, so the server publishes its events on /api/run-stream
+       (SSE) and we render them here: same log, same [LIVE_STEP] Gherkin
+       timeline, same pass/fail pills. */
+    let runStream = null;
+    let schedRun = null; // { name, output } while a scheduled run owns the panel
+
+    function connectRunStream() {
+      if (runStream || typeof EventSource === 'undefined') return;
+      try { runStream = new EventSource('/api/run-stream'); } catch { return; }
+      runStream.addEventListener('message', (e) => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+        handleScheduledRunEvent(msg);
+      });
+      // EventSource reconnects by itself; a dropped socket needs no handling.
+    }
+
+    function handleScheduledRunEvent(msg) {
+      if (msg.type === 'sched_skipped') {
+        showToast(`Schedule "${msg.name}" skipped — ${msg.reason}`, 'error');
+        return;
+      }
+      if (msg.type === 'sched_start') {
+        // Never hijack a run the user started themselves — theirs owns the panel.
+        if (runInFlight) {
+          showToast(`Schedule "${msg.name}" fired — running behind your current run`);
+          return;
+        }
+        schedRun = { name: msg.name, output: '', feedWaterfall: null };
+        clearDashboard({ logArt: '⏰', logMsg: `Scheduled run "${msg.name}" starting…` });
+        // Created after clearDashboard so it paints onto the reset strip.
+        schedRun.feedWaterfall = makeWaterfallFeed();
+        setStatus('running', `scheduled: ${msg.name} — ${msg.feature} on ${msg.project}${msg.headed ? ' (visible)' : ''}…`);
+        appendMeta(`[ui] scheduled run "${msg.name}" — artifacts stay in test-results-scheduled/, so reports and the gallery are left untouched`);
+        return;
+      }
+      // Anything below only applies to a scheduled run we chose to render.
+      if (!schedRun) return;
+      if (msg.type === 'start') { appendMeta(`$ ${msg.cmd}`); return; }
+      if (msg.type === 'log') {
+        appendLog(msg.text, msg.stream);
+        schedRun.output += msg.text;
+        if (schedRun.feedWaterfall) schedRun.feedWaterfall(msg.text);
+        return;
+      }
+      if (msg.type === 'sched_done') {
+        renderRunOutcome(schedRun.output, msg.exitCode, { label: `Scheduled run "${msg.name}"` });
+        schedRun = null;
+        refreshSchedulesList();
       }
     }
 
@@ -6549,7 +7137,12 @@ INSTRUCTIONS FOR CLAUDE:
     }
 
     // When the user picks a different feature, refresh the coverage panel.
-    $('feature').addEventListener('change', () => refreshCoverage());
+    $('feature').addEventListener('change', () => {
+      refreshCoverage();
+      // Instant, local check — no bddgen, no Claude. Tells you up front how many
+      // of this feature's steps actually need code written.
+      checkFeatureSteps($('feature').value);
+    });
 
     // Upgrade both <select>s to the custom combobox UI. Must run BEFORE
     // loadFeatures() so the combobox observer picks up the populated options
@@ -6892,13 +7485,15 @@ INSTRUCTIONS FOR CLAUDE:
     })();
 
     loadFeatures();
+    loadProjects();
+    loadStepLibrary();
+    connectRunStream();
     refreshReports();
     refreshGallery();
     refreshFlaky().then(() => refreshTriage());
     refreshHistory();
     refreshPrImpact();
     setInterval(refreshPrImpact, 45_000);
-    updatePrompt();
 
     /* ---- Theme toggle: light ↔ dark, persisted, follows OS if not opted ----
        The initial paint is set by the inline <head> bootstrap so there's no
@@ -6951,7 +7546,7 @@ INSTRUCTIONS FOR CLAUDE:
     (function () {
       const byId = (id) => document.getElementById(id);
       const backdrop = () => byId('rec-backdrop');
-      const MODALS = ['rec-modal', 'sched-modal', 'tags-modal', 'sec-modal', 'perf-modal'];
+      const MODALS = ['rec-modal', 'sched-modal', 'tags-modal', 'sec-modal', 'perf-modal', 'explore-modal'];
       const anyOtherOpen = (except) => MODALS.some((m) => m !== except && byId(m)?.classList.contains('show'));
       const openModal = (id) => { const m = byId(id); if (!m) return; m.classList.add('show'); backdrop()?.classList.add('show'); };
       const closeModal = (id) => { const m = byId(id); if (!m) return; m.classList.remove('show'); if (!anyOtherOpen(id)) backdrop()?.classList.remove('show'); };
@@ -7099,7 +7694,165 @@ INSTRUCTIONS FOR CLAUDE:
             </div>`).join('');
       }
 
+      // ===== Exploratory testing =====
+      let lastExploreResult = null;
+
+      function renderExploreSummary(s) {
+        const el = byId('explore-summary');
+        if (!s) { el.hidden = true; return; }
+        el.hidden = false;
+        const pct = s.controlsSeen ? Math.round((s.controlsUntested / s.controlsSeen) * 100) : 0;
+        el.innerHTML =
+          `<span class="sec-count sev-high">${s.controlsUntested} untested</span>` +
+          `<span class="sec-count">of ${s.controlsSeen} controls (${pct}%)</span>` +
+          `<span class="sec-count${s.routesUncoveredByTests ? ' sev-medium' : ' zero'}">${s.routesUncoveredByTests} route(s) no test visits</span>` +
+          `<span class="sec-count${s.destructiveUntested ? ' sev-high' : ' zero'}">${s.destructiveUntested} destructive untested</span>` +
+          `<span class="sec-count">${s.routesCrawled} route(s) crawled</span>`;
+        // Badge the topbar so the gap count is visible without opening the modal.
+        const badge = byId('explore-gap-badge');
+        if (badge) {
+          badge.hidden = false;
+          badge.textContent = String(s.controlsUntested);
+          badge.style.background = s.destructiveUntested ? '#dc2626' : s.controlsUntested ? '#f59e0b' : '#16a34a';
+        }
+      }
+
+      function renderExploreGroups(groups, routeReports) {
+        const el = byId('explore-findings');
+        if (!groups || !groups.length) {
+          el.innerHTML = '<div class="sec-empty">No untested surface found — either coverage is complete or the crawl saw too little.</div>';
+          return;
+        }
+        const uncovered = new Set((routeReports || []).filter((r) => r.routeUncovered).map((r) => r.route));
+        el.innerHTML = groups.slice(0, 30).map((g) => {
+          const sev = g.score >= 8 ? 'critical' : g.score >= 6 ? 'high' : g.score >= 4 ? 'medium' : 'low';
+          const tags = [
+            g.destructive ? '<span class="sec-cat">destructive</span>' : '',
+            g.input ? '<span class="sec-cat">input</span>' : '',
+            g.elements > 1 ? `<span class="sec-cat">${g.elements} elements</span>` : '',
+            g.instances > 1 ? `<span class="sec-cat">${g.instances} variants</span>` : '',
+          ].join('');
+          const routes = (g.routes || []).map((r) =>
+            `<code>${esc(r)}</code>${uncovered.has(r) ? ' <em>(no test visits)</em>' : ''}`).join(', ');
+          return `
+            <div class="sec-card sec-border-${sev}">
+              <div class="sec-card-head">
+                <span class="sec-sev sev-${sev}">${g.score}</span>
+                <span class="sec-title">${esc(g.pattern)}</span>
+                ${tags}
+              </div>
+              <div class="sec-ev"><b>Where:</b> ${routes}</div>
+              <div class="sec-fix"><b>Why it ranks:</b> ${esc((g.why || []).join('; '))}</div>
+              ${(g.examples && g.examples.length > 1)
+                ? `<div class="sec-url">e.g. ${g.examples.slice(0, 3).map((e) => esc(e)).join(' · ')}</div>` : ''}
+            </div>`;
+        }).join('');
+      }
+
+      // Load the last crawl from disk so opening the modal shows prior results
+      // instead of an empty panel.
+      async function loadExploreReport() {
+        try {
+          const r = await fetch('/api/explore/report');
+          if (!r.ok) return;
+          const d = await r.json();
+          if (!d.available) return;
+          lastExploreResult = d;
+          renderExploreSummary(d.summary);
+          renderExploreGroups(d.groups, d.routeReports);
+          byId('explore-draft').disabled = !(d.groups && d.groups.length);
+        } catch { /* no prior crawl — leave the panel empty */ }
+      }
+
+      async function runExploreCrawl() {
+        const baseUrl = byId('explore-base').value.trim();
+        if (!baseUrl) { toast('Enter a base URL', 'error'); return; }
+        const btn = byId('explore-run'); const status = byId('explore-status');
+        btn.disabled = true; status.hidden = false; status.textContent = 'Crawling…';
+        byId('explore-findings').innerHTML = '';
+        byId('explore-summary').hidden = true;
+        byId('explore-draft-out').hidden = true;
+        byId('explore-draft-out').textContent = '';
+        byId('explore-draft').disabled = true;
+        try {
+          const resp = await fetch('/api/explore/run', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              baseUrl,
+              // Blank falls back to QA_EMAIL / QA_PASSWORD on the server.
+              email: byId('explore-email').value.trim() || undefined,
+              password: byId('explore-password').value || undefined,
+              mode: byId('explore-mode').value,
+              maxRoutes: byId('explore-max').value,
+            }),
+          });
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            toast(d.error || `HTTP ${resp.status}`, 'error');
+            status.hidden = true; btn.disabled = false; return;
+          }
+          await streamNdjson(resp, (msg) => {
+            if (msg.type === 'log') status.textContent = (msg.text || '').trim().slice(0, 90) || 'Crawling…';
+            else if (msg.type === 'result') {
+              if (!msg.ok) { toast(msg.error || 'Crawl failed', 'error'); return; }
+              lastExploreResult = msg;
+              renderExploreSummary(msg.summary);
+              renderExploreGroups(msg.groups, msg.routeReports);
+              byId('explore-draft').disabled = !(msg.groups && msg.groups.length);
+            }
+          });
+          status.hidden = true;
+        } catch (err) {
+          toast('Crawl failed: ' + (err?.message || err), 'error');
+          status.hidden = true;
+        } finally { btn.disabled = false; }
+      }
+
+      async function runExploreDraft() {
+        if (!lastExploreResult) { toast('Run a crawl first', 'error'); return; }
+        const status = byId('explore-status'); const out = byId('explore-draft-out');
+        out.hidden = false; out.textContent = ''; status.hidden = false; status.textContent = 'Claude drafting…';
+        try {
+          // Send no body: the server reads reports/exploration/latest.json, so
+          // the prompt is built from the full findings rather than the trimmed
+          // group list the browser holds.
+          const resp = await fetch('/api/explore/draft', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+          });
+          if (resp.status === 501) {
+            toast('Claude CLI not detected', 'error');
+            out.textContent = 'Claude CLI not available. The same prompt is written to reports/exploration/draft-prompt.md — paste it into Claude Code manually.';
+            status.hidden = true; return;
+          }
+          if (!resp.ok) {
+            const d = await resp.json().catch(() => ({}));
+            toast(d.error || `HTTP ${resp.status}`, 'error'); status.hidden = true; return;
+          }
+          await streamNdjson(resp, (msg) => {
+            if (msg.type === 'log' && msg.stream === 'stdout') {
+              out.textContent += msg.text; out.scrollTop = out.scrollHeight;
+            }
+          });
+          status.hidden = true;
+        } catch (err) { toast('Drafting failed', 'error'); status.hidden = true; }
+      }
+
       // ===== Wire up =====
+      byId('topbar-explore')?.addEventListener('click', () => {
+        openModal('explore-modal');
+        // Seed the base URL from the story input, and default the origin only
+        // (a crawl starts at /Login, not at whatever deep path is typed there).
+        const b = byId('explore-base'); const u = byId('url');
+        if (b && !b.value && u && u.value) {
+          try { b.value = new URL(u.value).origin; } catch { b.value = u.value; }
+        }
+        loadExploreReport();
+      });
+      byId('explore-close')?.addEventListener('click', () => closeModal('explore-modal'));
+      byId('explore-close-2')?.addEventListener('click', () => closeModal('explore-modal'));
+      byId('explore-run')?.addEventListener('click', runExploreCrawl);
+      byId('explore-draft')?.addEventListener('click', runExploreDraft);
+
       byId('topbar-security')?.addEventListener('click', () => {
         openModal('sec-modal');
         const t = byId('sec-target'); const u = byId('url');
@@ -7121,7 +7874,118 @@ INSTRUCTIONS FOR CLAUDE:
         if (e.key !== 'Escape') return;
         if (byId('sec-modal')?.classList.contains('show')) closeModal('sec-modal');
         if (byId('perf-modal')?.classList.contains('show')) closeModal('perf-modal');
+        if (byId('explore-modal')?.classList.contains('show')) closeModal('explore-modal');
       });
+    })();
+  </script>
+
+  <!-- Info popover: one shared, body-mounted tooltip positioned in JS so it is
+       never clipped by the scrollable panels. Any element with [data-info] is a
+       trigger; standalone .info-i icons also pin on click. -->
+  <script>
+    (function () {
+      const INFO = {
+        run:        { t: "Run tests", d: "Runs the selected feature suite on the chosen browser.", h: "Compiles your .feature files with bddgen, then launches Playwright. Output streams into the log and the step timeline fills live. Shortcut: Ctrl+R." },
+        stop:       { t: "Stop", d: "Aborts the run currently in progress.", h: "Signals the Playwright process to terminate and marks the run cancelled. Shortcut: Ctrl+." },
+        rerun:      { t: "Re-run failed", d: "Re-runs only the tests that failed last time.", h: "Uses Playwright --last-failed so you skip the whole suite while chasing one failure. Shortcut: Ctrl+Shift+R." },
+        matrix:     { t: "All browsers & devices", d: "Runs the selected feature across every desktop browser and emulated device in one pass.", h: "Queues the same scenarios on all configured projects at once — Chromium, Firefox, WebKit plus the emulated tablets and phones. In headed mode they open in parallel rather than one at a time." },
+        schedules:  { t: "Scheduled runs", d: "Set up recurring runs — every N minutes, daily, or weekly.", h: "Schedules are saved to .claude/schedules.json; a background tick fires the due ones headlessly and feeds results into history and flaky detection." },
+        security:   { t: "Security scanner", d: "Scans a target URL for common web-security issues.", h: "Passive checks (headers, cookies, TLS, CORS) plus safe active probes (XSS, SQLi, open redirect), with optional OWASP ZAP. Findings roll up to an A–F grade Claude can turn into a fix plan." },
+        apiperf:    { t: "API & Performance", d: "Runs request-level API suites and grades real Web Vitals.", h: "API tests assert status, latency, headers and JSON paths and capture variables between requests. Performance loads the page and grades TTFB/FCP/LCP against perf/budgets.json." },
+        explore:    { t: "Exploratory testing", d: "Crawls the live app and reports surface no scenario mentions.", h: "Coverage gaps asks which ACs lack scenarios; this asks what the app does that no AC even mentions. Read-only — it never fills, submits or clicks anything on the destructive denylist, and ranks findings by risk. Claude can draft Gherkin for the safe gaps into specs/." },
+        save:       { t: "Save & Generate Tests", d: "Saves the story and auto-generates the .feature plus step definitions with Claude.", h: "Pipes the generation prompt to your local claude CLI; output streams into the log and the new feature appears in the dropdown. Falls back to copy-prompt if the CLI is missing." },
+        critique:   { t: "Critique Story (Spec Doctor)", d: "Lints your acceptance criteria before you spend a generate call.", h: "Claude flags ambiguous verbs, vague quantities, missing negatives, untestable assertions, missing preconditions and scope creep — each with a one-click rewrite." },
+        record:     { t: "Record New Scenario", d: "Captures a manual browser session as a Gherkin scenario.", h: "Opens Playwright codegen in a real browser; your clicks and inputs are converted to a scenario (reusing existing steps) that you review and append." },
+        storyInput: { t: "Story input", d: "The user story that drives generation: URL, Story ID, title, acceptance criteria and optional credentials.", h: "Saved to user-stories/<id>-<slug>.md and used as prompt context for Save & Generate and Critique." },
+        runConfig:  { t: "Run configuration", d: "Chooses what runs and how — feature suite, browser, tag filter and run modes.", h: "These settings feed the Run, All-browsers and Re-run buttons; coverage and tags refresh when you pick a feature." },
+        launch:     { t: "Launch actions", d: "The main actions: run tests, generate from the story, critique it, or record a new scenario.", h: "Run executes immediately; the other three call your local Claude CLI (Save / Critique) or Playwright codegen (Record)." },
+        feature:    { t: "Feature suite", d: "Picks which feature's scenarios to run.", h: "Populated from features/<name>/*.feature. Selecting one loads its coverage breakdown and tags." },
+        project:    { t: "Browser", d: "Chooses the browser engine to run on.", h: "Maps to a Playwright project — Desktop Chrome, Firefox or Safari (WebKit)." },
+        coverage:   { t: "Coverage", d: "How many acceptance criteria are backed by scenarios.", h: "Each AC is matched to scenarios; click to expand the per-AC pass/gap list. Uncovered ACs get a Draft-scenario button." },
+        gaps:       { t: "Close gaps", d: "Drafts scenarios for the ACs that currently have no coverage.", h: "Claude writes a Gherkin scenario for each uncovered AC using your existing step library; you review and append them." },
+        tags:       { t: "Tags manager", d: "Adds or removes Gherkin tags on any scenario.", h: "Edits the @tags in the .feature file (@smoke, @regression, @critical, @slow, @wip, @flaky). Tags feed the Tag filter and reports." },
+        tagFilter:  { t: "Tag filter", d: "Runs only the scenarios matching a tag expression.", h: "Passed to Playwright --grep; supports booleans, e.g. @smoke and not @slow." },
+        headed:     { t: "Headed mode", d: "Shows the browser window while tests run.", h: "Runs with a visible browser (single worker) so you can watch. Uncheck for faster headless runs." },
+        stepTimeline: { t: "Live step timeline", d: "Watch each Given / When / Then execute in real time.", h: "A custom Playwright reporter emits per-step events; each step renders as a beam that fills green, or red on error." },
+        prImpact:   { t: "PR Impact Radar", d: "Shows which features your current git diff is likely to affect.", h: "Maps changed files to features (direct edits, POM references, story or config changes). Click to run only the impacted ones in a single pass." },
+        flaky:      { t: "Flaky tests", d: "Tests that flip between pass and fail across recent runs.", h: "Tracks a rolling 20-run window per test. Click to see the unstable ones and reset their history." },
+        log:        { t: "Output stream", d: "Live Playwright output for the current run.", h: "Streams line-by-line as tests execute. Search with the box (Ctrl+F) and jump between matches; Clear resets it." },
+        gallery:    { t: "Screenshot gallery", d: "Screenshots captured during the latest run.", h: "Playwright saves a shot per test and on failure. Click any thumbnail to open the lightbox." },
+        missingSteps: { t: "Missing steps", d: "Undefined Gherkin steps detected during the run.", h: "Claude reads your Page Objects and existing step style and writes an implementation for each undefined step into the matching .steps.ts." }
+      };
+
+      const pop = document.createElement('div');
+      pop.id = 'info-pop';
+      pop.setAttribute('role', 'tooltip');
+      document.body.appendChild(pop);
+
+      let showT = 0, hideT = 0, current = null, pinned = false;
+      const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+      function render(key) {
+        const info = INFO[key];
+        if (!info) return false;
+        let html = '<strong>' + esc(info.t) + '</strong>';
+        if (info.d) html += '<p>' + esc(info.d) + '</p>';
+        if (info.h) html += '<p class="how"><b>How it works</b>' + esc(info.h) + '</p>';
+        pop.innerHTML = html;
+        return true;
+      }
+      function place(el) {
+        const r = el.getBoundingClientRect();
+        const m = 8, vw = window.innerWidth, vh = window.innerHeight;
+        const pw = pop.offsetWidth, ph = pop.offsetHeight;
+        let left = r.left, top = r.bottom + 8;
+        if (left + pw > vw - m) left = vw - m - pw;
+        if (left < m) left = m;
+        if (top + ph > vh - m) top = r.top - ph - 8;   // flip above the trigger
+        if (top < m) top = m;
+        pop.style.left = left + 'px';
+        pop.style.top = top + 'px';
+      }
+      function show(el) {
+        if (!render(el.getAttribute('data-info'))) return;
+        current = el;
+        pop.classList.add('show');
+        place(el);
+      }
+      function hide() { pinned = false; current = null; pop.classList.remove('show'); }
+      function scheduleShow(el) { clearTimeout(hideT); clearTimeout(showT); showT = setTimeout(() => show(el), 260); }
+      function scheduleHide() { clearTimeout(showT); clearTimeout(hideT); hideT = setTimeout(hide, 140); }
+
+      pop.addEventListener('mouseenter', () => clearTimeout(hideT));
+      pop.addEventListener('mouseleave', () => { if (!pinned) scheduleHide(); });
+
+      document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest('[data-info]'); if (!el || pinned) return;
+        scheduleShow(el);
+      });
+      document.addEventListener('mouseout', (e) => {
+        const el = e.target.closest('[data-info]'); if (!el || pinned) return;
+        if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+        scheduleHide();
+      });
+      document.addEventListener('focusin', (e) => {
+        const el = e.target.closest('[data-info]'); if (!el) return;
+        clearTimeout(showT); show(el);
+      });
+      document.addEventListener('focusout', (e) => {
+        const el = e.target.closest('[data-info]'); if (!el || pinned) return;
+        scheduleHide();
+      });
+      document.addEventListener('click', (e) => {
+        const icon = e.target.closest('.info-i');
+        if (icon) {
+          e.preventDefault(); e.stopPropagation();
+          if (pinned && current === icon) hide();
+          else { clearTimeout(showT); clearTimeout(hideT); pinned = true; show(icon); }
+          return;
+        }
+        if (pinned && !e.target.closest('#info-pop')) hide();
+      });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+      window.addEventListener('scroll', () => { if (!pinned) hide(); }, true);
+      window.addEventListener('resize', hide);
     })();
   </script>
 </body>
