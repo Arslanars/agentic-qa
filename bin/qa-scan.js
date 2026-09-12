@@ -60,7 +60,42 @@ async function main() {
     return;
   }
 
-  fail('usage: qa-scan <security|perf|api> <target>');
+  if (mode === 'explore') {
+    if (!arg) return fail('usage: qa-scan explore <base-url> [--guarded] [--max-routes=N] [--headed]');
+    const email = process.env.QA_EMAIL;
+    const password = process.env.QA_PASSWORD;
+    if (!email || !password) {
+      return fail('explore needs credentials: set QA_EMAIL and QA_PASSWORD (the crawl must authenticate)');
+    }
+    const maxFlag = [...flags].find((f) => f.startsWith('--max-routes='));
+    const { runExploration } = require('../lib/explore');
+    const result = await runExploration({
+      root: ROOT,
+      baseUrl: arg,
+      email,
+      password,
+      // Passive (navigate only, zero clicks) is the default on purpose: this
+      // points at a live app. --guarded additionally activates controls the
+      // safety allowlist recognises as navigation.
+      mode: flags.has('--guarded') ? 'guarded' : 'passive',
+      maxRoutes: maxFlag ? Number(maxFlag.split('=')[1]) : undefined,
+      headless: !flags.has('--headed'),
+      startedAt: new Date().toISOString(),
+      onLog,
+    });
+    if (!result.ok) { console.error(`\n✗ ${result.error}`); process.exitCode = 1; return; }
+    const s = result.analysis.summary;
+    console.log(
+      `\n${s.controlsUntested}/${s.controlsSeen} control(s) untested across ${s.routesCrawled} route(s); ` +
+      `${s.routesUncoveredByTests} route(s) no test visits`
+    );
+    console.log('Report: reports/exploration/latest.md');
+    // Informational by design — new untested surface is a backlog item, not a
+    // build break, so this never fails a pipeline.
+    return;
+  }
+
+  fail('usage: qa-scan <security|perf|api|explore> <target>');
 }
 
 function fail(msg) { console.error(msg); process.exit(2); }
