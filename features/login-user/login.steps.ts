@@ -14,7 +14,7 @@ import { InventoryItemsPage } from '../../pages/inventory/InventoryItemsPage';
 // Scope these step definitions to the @login feature tag so the same
 // step phrases (e.g. `I click the {string} link`) can be redefined for
 // other features without colliding with Cucumber's global step pool.
-const { Given, When, Then } = createBdd(undefined, { tags: '@login' });
+const { When, Then } = createBdd(undefined, { tags: '@login' });
 
 const AUTH_API_RE = /security-api\.moontower\.aiimone\.com\/api\/Auth\/Login/i;
 

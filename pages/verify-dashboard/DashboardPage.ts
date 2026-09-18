@@ -49,4 +49,15 @@ export class DashboardPage extends BasePage {
     await this.inventoryTab.waitFor({ state: 'visible', timeout: 30_000 });
     await this.inventoryTab.click();
   }
+
+  /**
+   * Open any sidebar tab by its accessible name. Keeps the generic
+   * `I open the "<x>" tab` step reusable without the step file building its own
+   * locator. exact:true so "Vendors" does not also match "Vendors List".
+   */
+  async openTab(name: string): Promise<void> {
+    const tab = this.page.getByRole('button', { name, exact: true });
+    await tab.waitFor({ state: 'visible', timeout: 30_000 });
+    await tab.click();
+  }
 }

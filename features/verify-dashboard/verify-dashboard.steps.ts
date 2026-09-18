@@ -7,19 +7,16 @@
 
 import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
-import { LoginPage } from '../../pages/login-user/LoginPage';
 import { LocationPickerPage } from '../../pages/verify-dashboard/LocationPickerPage';
-import { DashboardPage } from '../../pages/verify-dashboard/DashboardPage';
 
 // Scope these step definitions to the @dashboard feature tag so the same step
 // phrases (e.g. `I should see the heading {string}`) can also exist in the
 // @login feature without colliding in Cucumber's global step pool.
-const { Given, When, Then } = createBdd(undefined, { tags: '@dashboard' });
-
-// Credentials are read from the environment with safe fallbacks (same
-// convention as the login-user feature) — never hard-coded in the .feature.
-const EMAIL = process.env.MOONTOWER_LOGIN_EMAIL || 'developers@moontower.com';
-const PASSWORD = process.env.MOONTOWER_LOGIN_PASSWORD || '12345678';
+//
+// Login, location choice and the dashboard-URL assertion now come from
+// features/_shared/common.steps.ts, which is why this file no longer needs
+// LoginPage, DashboardPage or the credential constants.
+const { Then } = createBdd(undefined, { tags: '@dashboard' });
 
 
 

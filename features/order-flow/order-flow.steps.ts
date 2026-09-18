@@ -20,7 +20,7 @@ import { InventoryVendorsPage } from '../../pages/order-flow/InventoryVendorsPag
 import { TabletOrderPage } from '../../pages/order-flow/TabletOrderPage';
 import { OrdersListPage } from '../../pages/order-flow/OrdersListPage';
 
-const { Given, When, Then } = createBdd(undefined, { tags: '@order-flow' });
+const { When, Then } = createBdd(undefined, { tags: '@order-flow' });
 
 When('I sign in with email {string} and password {string}', async ({ page }, email: string, password: string) => {
   // Credentials come from the AC; env overrides allow CI to inject a different
