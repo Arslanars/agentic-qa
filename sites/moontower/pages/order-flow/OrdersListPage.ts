@@ -1,5 +1,5 @@
 import { type Locator, type Page, expect } from '@playwright/test';
-import { BasePage } from '../BasePage';
+import { BasePage } from '../../../../pages/BasePage';
 
 /**
  * The Orders List / order-history screen (`/order-history`) reached from the

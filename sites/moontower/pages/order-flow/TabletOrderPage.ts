@@ -1,5 +1,5 @@
 import { type Locator, type Page } from '@playwright/test';
-import { BasePage } from '../BasePage';
+import { BasePage } from '../../../../pages/BasePage';
 
 /**
  * The **tablet POS ordering wizard** — an overlay on `/inventory-vendors` reached

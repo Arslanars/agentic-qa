@@ -1,0 +1,9 @@
+{
+  "id": "moontower",
+  "name": "Moontower",
+  "baseUrl": "https://moontower.aiimone.com",
+  "credentialsEnv": {
+    "email": "MOONTOWER_LOGIN_EMAIL",
+    "password": "MOONTOWER_LOGIN_PASSWORD"
+  }
+}

@@ -14,6 +14,10 @@ const fs = require('fs');
 const { renderReport } = require('./report-renderer');
 const { writeRunReports, featuresFromLastRun, reportMatchesFeature } = require('./report-writer');
 const { ALL_PROJECTS, projectNames, desktopProjectNames } = require('./projects');
+// Multi-site layout. Every features/ and pages/ path in this file resolves
+// through here so a second or third application under test gets its own
+// self-contained folder instead of being mixed into the first one's.
+const sites = require('./sites');
 const { writeTestCasesExcel } = require('./excel-writer');
 // Security / performance / API-test engines (dependency-free; also usable
 // headless via bin/qa-scan.js). Wired to the endpoints below + UI panels.
@@ -42,8 +46,8 @@ function withFastModel(args) {
  * on its tags, so "does this step already exist?" is unanswerable without them.
  */
 function featureTagsFor(feature) {
-  if (!feature || !isSafeName(feature)) return [];
-  const dir = path.join(ROOT, 'features', feature);
+  if (!feature || !isSafeFeatureId(feature)) return [];
+  const dir = featurePaths(feature).featureDir;
   if (!fs.existsSync(dir)) return [];
   try {
     const file = fs.readdirSync(dir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
@@ -98,6 +102,51 @@ function isSafeName(s) {
   return typeof s === 'string' && s.length > 0 && s.length <= 64 && SAFE_NAME_RE.test(s);
 }
 
+/**
+ * A *feature id* is either a bare folder name (legacy top-level layout) or
+ * "<site>/<feature>" (multi-site layout). Each segment is validated with the
+ * same tight character set as isSafeName, so the extra "/" buys addressing
+ * without widening the injection surface — see ui/sites.js.
+ *
+ * Playwright PROJECT names keep using isSafeName: they are a flat namespace
+ * and must never contain a separator.
+ */
+function isSafeFeatureId(s) {
+  return sites.parseFeatureId(s) !== null;
+}
+
+/**
+ * Resolve a feature id to its on-disk paths.
+ *
+ * Never returns null. An id that fails validation resolves to a sentinel path
+ * that cannot exist, so the `fs.existsSync(...)` check every caller already
+ * performs turns bad input into that endpoint's normal 404 instead of a
+ * TypeError that would take the server down. Callers still validate with
+ * isSafeFeatureId first to return a precise 400 — this is the backstop, so a
+ * missed guard degrades to "not found" rather than a crash or a traversal.
+ */
+function featurePaths(id) {
+  const resolved = sites.resolveFeature(ROOT, id);
+  if (resolved) return resolved;
+  const dead = path.join(ROOT, '.invalid-feature-id');
+  return {
+    id: String(id || ''),
+    site: sites.LEGACY_SITE,
+    feature: '',
+    isLegacy: true,
+    invalid: true,
+    featureDir: dead,
+    pagesDir: dead,
+    storiesDir: dead,
+    stepsRoot: dead,
+    relFeatureDir: '.invalid-feature-id',
+    relPagesDir: '.invalid-feature-id',
+    genDir: '.features-gen/.invalid-feature-id/',
+    exists: false,
+    label: String(id || ''),
+  };
+}
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname));
 
@@ -110,16 +159,20 @@ function safeSlug(input) {
     .slice(0, 60) || 'untitled';
 }
 
-// List feature folders. A feature has either .spec.ts files under tests/<name>/
-// or .feature files under features/<name>/ (Gherkin/BDD). Both counts are
-// surfaced in the response so the UI can show a single row per feature.
+// List feature folders across every site. A feature has either .spec.ts files
+// under tests/<name>/ or .feature files under <site>/features/<name>/.
+//
+// `name` is the feature ID the rest of the API expects — bare for the legacy
+// top-level layout, "<site>/<feature>" for a site — so the UI can keep passing
+// this value straight back to /api/run, /api/tags, etc. `site`, `siteName` and
+// `label` are added so the UI can group rows without parsing the id itself.
 app.get('/api/features', (_req, res) => {
   try {
     const featureMap = new Map();
     // Skip underscore-prefixed scaffolding/shared dirs (e.g. _shared/, _TEMPLATE
     // folders) — they hold step helpers, not user-facing features.
     const isFeatureDir = (name) => !name.startsWith('_') && !name.startsWith('.');
-    // 1) Classic POM tests
+    // 1) Classic POM tests — always top-level, no site dimension.
     if (fs.existsSync(CFG_PATHS.tests)) {
       for (const name of fs.readdirSync(CFG_PATHS.tests)) {
         if (!isFeatureDir(name)) continue;
@@ -127,24 +180,42 @@ app.get('/api/features', (_req, res) => {
         if (!stat || !stat.isDirectory()) continue;
         let specs = 0;
         try { specs = fs.readdirSync(path.join(CFG_PATHS.tests, name)).filter((f) => f.endsWith('.spec.ts')).length; } catch (_) {}
-        featureMap.set(name, { name, specs, features: 0 });
+        featureMap.set(name, {
+          name, specs, features: 0,
+          site: sites.LEGACY_SITE, siteName: 'Default', isLegacy: true, feature: name, label: name,
+        });
       }
     }
-    // 2) Gherkin .feature files — only count folders that contain a real
-    // .feature file. _shared/ has step defs only, so it's filtered out by
+    // 2) Gherkin .feature files, per site — only count folders that contain a
+    // real .feature file. _shared/ has step defs only, so it's filtered out by
     // both the underscore guard AND the zero-feature-file guard.
-    const featuresDir = path.join(ROOT, 'features');
-    if (fs.existsSync(featuresDir)) {
+    const siteList = [
+      { id: sites.LEGACY_SITE, name: 'Default', isLegacy: true },
+      ...sites.listSiteIds(ROOT).map((id) => ({ ...sites.readSiteMeta(ROOT, id), id, isLegacy: false })),
+    ];
+    for (const site of siteList) {
+      const featuresDir = sites.featuresRoot(ROOT, site.id);
+      if (!fs.existsSync(featuresDir)) continue;
       for (const name of fs.readdirSync(featuresDir)) {
         if (!isFeatureDir(name)) continue;
         const stat = fs.statSync(path.join(featuresDir, name), { throwIfNoEntry: false });
         if (!stat || !stat.isDirectory()) continue;
         let count = 0;
         try { count = fs.readdirSync(path.join(featuresDir, name)).filter((f) => f.endsWith('.feature')).length; } catch (_) {}
-        if (count === 0 && !featureMap.has(name)) continue; // skip folders with no scenarios
-        const existing = featureMap.get(name);
+        const id = sites.formatFeatureId(site.id, name);
+        if (count === 0 && !featureMap.has(id)) continue; // skip folders with no scenarios
+        const existing = featureMap.get(id);
         if (existing) existing.features = count;
-        else featureMap.set(name, { name, specs: 0, features: count });
+        else featureMap.set(id, {
+          name: id,
+          specs: 0,
+          features: count,
+          site: site.id,
+          siteName: site.name || site.id,
+          isLegacy: !!site.isLegacy,
+          feature: name,
+          label: site.isLegacy ? name : `${site.name || site.id} › ${name}`,
+        });
       }
     }
     res.json(Array.from(featureMap.values()));
@@ -153,10 +224,86 @@ app.get('/api/features', (_req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Sites — one self-contained folder per application under test.
+// ---------------------------------------------------------------------------
+
+// List every site with its metadata and feature folders.
+app.get('/api/sites', (_req, res) => {
+  try {
+    res.json(sites.listSites(ROOT));
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// Which site owns a URL, and where its code lives — WITHOUT creating anything.
+// The UI calls this as the URL field changes so it can show the target folder
+// and build a generation prompt that writes there. Deriving the id server-side
+// keeps one implementation of the rule instead of a copy in the browser that
+// could drift.
+app.get('/api/sites/resolve', (req, res) => {
+  const url = req.query.url;
+  if (!url || !isHttpUrl(String(url))) {
+    return res.status(400).json({ error: 'url must be a valid http(s) URL' });
+  }
+  const id = sites.siteIdFromUrl(String(url));
+  if (!sites.isSafeSegment(id)) {
+    return res.status(400).json({ error: `could not derive a site folder name from "${url}"` });
+  }
+  const exists = sites.listSiteIds(ROOT).includes(id);
+  res.json({
+    site: id,
+    exists,
+    name: exists ? sites.readSiteMeta(ROOT, id).name : id,
+    features: exists ? sites.listFeatures(ROOT, id) : [],
+    paths: {
+      root: `${sites.SITES_DIR}/${id}`,
+      features: sites.relFeaturesRoot(id),
+      pages: sites.relPagesRoot(id),
+      stories: sites.relStoriesRoot(id),
+    },
+  });
+});
+
+// Create (or refresh) a site folder skeleton: sites/<id>/{features,pages,user-stories}
+// plus site.json. Idempotent — posting an existing id updates its metadata and
+// leaves the work inside it untouched.
+app.post('/api/sites', (req, res) => {
+  try {
+    const { id, name, baseUrl, credentialsEnv } = req.body || {};
+    if (!baseUrl && !name && !id) {
+      return res.status(400).json({ error: 'one of id, name or baseUrl is required' });
+    }
+    if (baseUrl && !isHttpUrl(baseUrl)) {
+      return res.status(400).json({ error: 'baseUrl must be a valid http(s) URL' });
+    }
+    const wanted = id || sites.siteIdFromUrl(baseUrl || name);
+    if (!sites.isSafeSegment(wanted)) {
+      return res.status(400).json({ error: `site id must match ${SAFE_NAME_RE} (got "${wanted}")` });
+    }
+    // Reserve the shape the legacy layout occupies so a site can never shadow it.
+    if (wanted === 'features' || wanted === 'pages') {
+      return res.status(400).json({ error: `"${wanted}" is reserved` });
+    }
+    const site = sites.createSite(ROOT, { id: wanted, name, baseUrl, credentialsEnv });
+    res.json({ ok: true, site });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
 // Save a user-story file from form input. Manual authoring path — no AI.
+//
+// This is where a URL becomes a SITE. The story is filed under the site that
+// owns the URL, creating sites/<id>/{features,pages,user-stories} on first use,
+// so adding a second or third application never mixes it into the first one's
+// folders. Pass `site` explicitly to file under a known site; omit it and the
+// id is derived from the URL's host. Pass the legacy id to keep using the
+// original top-level user-stories/ layout.
 app.post('/api/save-story', (req, res) => {
   try {
-    const { url, title, ac, creds, storyId } = req.body || {};
+    const { url, title, ac, creds, storyId, site: siteParam } = req.body || {};
     if (!url || !title || !ac) {
       return res.status(400).json({ error: 'url, title, and ac are required' });
     }
@@ -167,9 +314,31 @@ app.post('/api/save-story', (req, res) => {
     if (rawId && !/^[A-Za-z0-9_-]{1,64}$/.test(rawId)) {
       return res.status(400).json({ error: 'storyId must match /^[A-Za-z0-9_-]{1,64}$/' });
     }
+
+    // Resolve which site owns this story.
+    let siteId;
+    if (siteParam === sites.LEGACY_SITE) {
+      siteId = sites.LEGACY_SITE;
+    } else if (siteParam) {
+      if (!sites.isSafeSegment(siteParam)) {
+        return res.status(400).json({ error: `site must match ${SAFE_NAME_RE}` });
+      }
+      siteId = siteParam;
+    } else {
+      siteId = sites.siteIdFromUrl(url);
+      if (!sites.isSafeSegment(siteId)) {
+        return res.status(400).json({ error: `could not derive a site folder name from "${url}" — pass site explicitly` });
+      }
+    }
+    // Materialise the site skeleton on first use so the generator has somewhere
+    // to write features/ and pages/ before any test exists.
+    if (!sites.isLegacy(siteId)) {
+      sites.createSite(ROOT, { id: siteId, name: siteParam ? undefined : sites.readSiteMeta(ROOT, siteId).name, baseUrl: url });
+    }
+
     const id = rawId || `UI-${Date.now().toString(36).toUpperCase()}`;
     const fileName = `${id}-${slug}.md`;
-    const dir = CFG_PATHS.stories;
+    const dir = sites.isLegacy(siteId) ? CFG_PATHS.stories : sites.storiesRoot(ROOT, siteId);
     fs.mkdirSync(dir, { recursive: true });
     const filePath = path.join(dir, fileName);
     // Defense-in-depth — even after regex validation, refuse to write
@@ -185,7 +354,20 @@ app.post('/api/save-story', (req, res) => {
       `## Acceptance Criteria\n${ac}\n`;
 
     fs.writeFileSync(filePath, content, 'utf8');
-    res.json({ ok: true, file: `user-stories/${fileName}`, storyId: id, slug });
+    res.json({
+      ok: true,
+      file: `${sites.relStoriesRoot(siteId)}/${fileName}`,
+      storyId: id,
+      slug,
+      site: siteId,
+      // Everything the client needs to build a generation prompt that writes
+      // into this site rather than the repo root.
+      paths: {
+        features: sites.relFeaturesRoot(siteId),
+        pages: sites.relPagesRoot(siteId),
+        stories: sites.relStoriesRoot(siteId),
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
@@ -247,7 +429,7 @@ function makeSafeWrite(res) {
 // even on failure (the actual test run will surface any real issue).
 function runBddgen(write) {
   return new Promise((resolve) => {
-    if (!fs.existsSync(path.join(ROOT, 'features'))) return resolve(); // nothing to compile
+    if (!fs.existsSync(path.join(ROOT, 'features')) && sites.listSiteIds(ROOT).length === 0) return resolve(); // nothing to compile
     write({ type: 'log', stream: 'stdout', text: '[ui] compiling .feature files (bddgen)…\n' });
     const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
       ['bddgen', '--config', 'playwright.config.js'],
@@ -447,7 +629,7 @@ app.post('/api/generate-tests', async (req, res) => {
 // prompt gets built.
 app.post('/api/heal', async (req, res) => {
   const { feature, fullTitle, file, line, errorMessage, errorStack, screenshot, category } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!fullTitle || typeof fullTitle !== 'string') {
@@ -463,14 +645,14 @@ app.post('/api/heal', async (req, res) => {
   if (activeGenerate) return res.status(409).json({ error: 'a Claude job is already in progress' });
   if (activeRun) return res.status(409).json({ error: 'a test run is in progress — stop it before healing' });
 
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   const featureFile = fs.existsSync(featureDir)
     ? fs.readdirSync(featureDir).filter((f) => f.endsWith('.feature') && !f.startsWith('_'))[0]
     : null;
   const stepsFile = fs.existsSync(featureDir)
     ? fs.readdirSync(featureDir).filter((f) => f.endsWith('.steps.ts'))[0]
     : null;
-  const pageDir = path.join(ROOT, 'pages', feature);
+  const pageDir = featurePaths(feature).pagesDir;
   const pomFiles = fs.existsSync(pageDir)
     ? fs.readdirSync(pageDir).filter((f) => f.endsWith('.ts'))
     : [];
@@ -987,7 +1169,7 @@ function recordTestHistory({ feature, project } = {}) {
 // /api/scaffold-missing-steps (existing) for any newly-invented steps.
 app.post('/api/coverage/draft-scenario', async (req, res) => {
   const { feature, acId, acText } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   const acN = parseInt(acId, 10);
@@ -1010,7 +1192,7 @@ app.post('/api/coverage/draft-scenario', async (req, res) => {
   let existingSteps = '';
   let sampleScenario = '';
   let existingFeatureFile = '';
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   if (fs.existsSync(featureDir)) {
     const stepsFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.steps.ts'));
     if (stepsFile) {
@@ -1029,7 +1211,7 @@ app.post('/api/coverage/draft-scenario', async (req, res) => {
   }
 
   let pomContent = '';
-  const pomDir = path.join(ROOT, 'pages', feature);
+  const pomDir = featurePaths(feature).pagesDir;
   if (fs.existsSync(pomDir)) {
     const pomFiles = fs.readdirSync(pomDir).filter((f) => f.endsWith('.ts'));
     for (const f of pomFiles) {
@@ -1162,7 +1344,7 @@ app.post('/api/explain-failure', async (req, res) => {
 
   // Validators — feature is path-validated even though we never write to
   // it (defense in depth; the user-story / feature-file reads use it).
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!fullTitle || typeof fullTitle !== 'string') {
@@ -1196,7 +1378,7 @@ app.post('/api/explain-failure', async (req, res) => {
         acsContext = acMatch ? acMatch[1].trim().slice(0, 2000) : '';
       }
     }
-    const featureDir = path.join(ROOT, 'features', feature);
+    const featureDir = featurePaths(feature).featureDir;
     if (fs.existsSync(featureDir)) {
       const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
       if (featureFile) {
@@ -1391,7 +1573,7 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
 // into the right .steps.ts file. NDJSON-streamed so the user sees progress.
 app.post('/api/scaffold-missing-steps', async (req, res) => {
   const { feature } = req.body || {};
-  if (feature && !isSafeName(feature)) {
+  if (feature && !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   const claudeOk = await checkClaudeCli();
@@ -1470,7 +1652,7 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
   for (const [feat, steps] of byFeature) {
     write({ type: 'log', stream: 'stdout', text: `\n[scaffold] feature "${feat}" — ${steps.length} step(s) to implement\n` });
 
-    const stepsDir = path.join(ROOT, 'features', feat);
+    const stepsDir = featurePaths(feat).featureDir;
     if (!fs.existsSync(stepsDir)) {
       write({ type: 'log', stream: 'stderr', text: `[scaffold]   feature folder not found: features/${feat}/\n` });
       continue;
@@ -1484,7 +1666,7 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
     const existingSteps = fs.readFileSync(stepsPath, 'utf8');
 
     // POMs give claude method context — pages/<feat>/*.ts
-    const pomDir = path.join(ROOT, 'pages', feat);
+    const pomDir = featurePaths(feat).pagesDir;
     const pomFiles = fs.existsSync(pomDir)
       ? fs.readdirSync(pomDir).filter((f) => f.endsWith('.ts'))
       : [];
@@ -1761,7 +1943,7 @@ app.post('/api/recorder/convert', async (req, res) => {
   if (!code || typeof code !== 'string' || code.trim().length < 20) {
     return res.status(400).json({ error: 'code (the captured Playwright script) is required' });
   }
-  if (feature && !isSafeName(feature)) {
+  if (feature && !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   const claudeOk = await checkClaudeCli();
@@ -1785,7 +1967,7 @@ app.post('/api/recorder/convert', async (req, res) => {
 
   let existingSteps = '';
   if (feature) {
-    const stepsDir = path.join(ROOT, 'features', feature);
+    const stepsDir = featurePaths(feature).featureDir;
     if (fs.existsSync(stepsDir)) {
       const stepsFile = fs.readdirSync(stepsDir).find((f) => f.endsWith('.steps.ts'));
       if (stepsFile) {
@@ -1927,7 +2109,7 @@ If every step you used already exists in the steps file, return newSteps: [].`;
 // feature, not for scaffolding new ones (that's what Save & Generate is for).
 app.post('/api/recorder/append', (req, res) => {
   const { feature, scenario } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!scenario || typeof scenario !== 'string' || scenario.trim().length < 10) {
@@ -1936,7 +2118,7 @@ app.post('/api/recorder/append', (req, res) => {
   if (scenario.length > 10_000) {
     return res.status(413).json({ error: 'scenario too long' });
   }
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
     return res.status(404).json({ error: `feature folder not found: features/${feature}/` });
   }
@@ -1985,17 +2167,21 @@ app.get('/api/pr-impact', (req, res) => {
   }
   const allChanged = [...new Set([...committed, ...uncommitted])].filter(Boolean);
 
-  const featuresRoot = path.join(ROOT, 'features');
-  let features = [];
-  try {
-    features = fs.readdirSync(featuresRoot)
-      .filter((n) => !n.startsWith('_') && !n.startsWith('.') && fs.statSync(path.join(featuresRoot, n)).isDirectory());
-  } catch { features = []; }
+  // Feature IDs across every site: bare "login-user" for the legacy top-level
+  // layout, "acme/checkout" for a site. Matching below maps a changed path back
+  // to one of these ids, so impact stays scoped to the site that owns the file.
+  const allSiteIds = [sites.LEGACY_SITE, ...sites.listSiteIds(ROOT)];
+  const features = [];
+  for (const siteId of allSiteIds) {
+    for (const name of sites.listFeatures(ROOT, siteId)) {
+      features.push(sites.formatFeatureId(siteId, name));
+    }
+  }
 
   const featureScenarios = new Map();
   const featureSteps = new Map();
   for (const f of features) {
-    const dir = path.join(featuresRoot, f);
+    const dir = featurePaths(f).featureDir;
     try {
       const files = fs.readdirSync(dir);
       const featureFile = files.find((x) => x.endsWith('.feature') && !x.startsWith('_'));
@@ -2042,40 +2228,70 @@ app.get('/api/pr-impact', (req, res) => {
     return _pkgDepsCache;
   }
 
+  // Every path pattern below has two forms — the legacy top-level one and the
+  // site-scoped one. `sitePrefix` captures which site a changed file belongs to
+  // (undefined for legacy) so a POM or story change in one site can never flag
+  // features in another.
+  const F_RE = /^(?:sites\/([^/]+)\/)?features\/([^/]+)\//;
+  const P_RE = /^(?:sites\/([^/]+)\/)?pages\/([^/]+)\//;
+  const S_RE = /^(?:sites\/([^/]+)\/)?user-stories\/(.+)\.md$/i;
+  const SHARED_RE = /^(?:sites\/[^/]+\/)?features\/_shared\//;
+  /** Features belonging to the site a changed file lives under. */
+  const featuresOfSite = (siteId) =>
+    features.filter((f) => featurePaths(f).site === (siteId || sites.LEGACY_SITE));
+
   for (const file of allChanged) {
     const norm = file.replace(/\\/g, '/');
-    const fMatch = norm.match(/^features\/([^/]+)\//);
-    if (fMatch && features.includes(fMatch[1])) {
-      const kind = norm.endsWith('.feature') ? 'scenario file' :
-        norm.endsWith('.steps.ts') ? 'step defs' : 'file';
-      addImpact(fMatch[1], `Direct: ${kind} changed`);
-      continue;
+
+    const fMatch = norm.match(F_RE);
+    if (fMatch) {
+      const id = sites.formatFeatureId(fMatch[1] || sites.LEGACY_SITE, fMatch[2]);
+      if (features.includes(id)) {
+        const kind = norm.endsWith('.feature') ? 'scenario file' :
+          norm.endsWith('.steps.ts') ? 'step defs' : 'file';
+        addImpact(id, `Direct: ${kind} changed`);
+        continue;
+      }
     }
-    const pMatch = norm.match(/^pages\/([^/]+)\//);
+
+    const pMatch = norm.match(P_RE);
     if (pMatch) {
-      const pageDir = pMatch[1];
+      const pageSite = pMatch[1];
+      const pageDir = pMatch[2];
       const fileName = path.basename(norm, path.extname(norm));
-      for (const [feat, stepsCode] of featureSteps.entries()) {
+      for (const feat of featuresOfSite(pageSite)) {
+        const stepsCode = featureSteps.get(feat);
+        if (!stepsCode) continue;
         const importRe = new RegExp(`from\\s+['\"][^'\"]*pages/${pageDir}(?:/[^'\"]*)?['\"]`, 'g');
         const classRe = new RegExp(`\\b${fileName}\\b`, 'g');
         if (importRe.test(stepsCode) || classRe.test(stepsCode)) {
-          addImpact(feat, `POM: pages/${pageDir}/ referenced`);
+          addImpact(feat, `POM: ${sites.relPagesRoot(pageSite || sites.LEGACY_SITE)}/${pageDir}/ referenced`);
         }
       }
       continue;
     }
-    const sMatch = norm.match(/^user-stories\/(.+)\.md$/i);
+
+    const sMatch = norm.match(S_RE);
     if (sMatch) {
-      const storyName = sMatch[1].toLowerCase();
-      for (const f of features) {
-        const slug = f.toLowerCase().replace(/-/g, '');
+      const storyName = sMatch[2].toLowerCase();
+      for (const f of featuresOfSite(sMatch[1])) {
+        const slug = featurePaths(f).feature.toLowerCase().replace(/-/g, '');
         if (storyName.replace(/-/g, '').includes(slug) || slug.includes(storyName.replace(/-/g, ''))) {
-          addImpact(f, `Story changed: ${path.basename(sMatch[1])}`);
+          addImpact(f, `Story changed: ${path.basename(sMatch[2])}`);
         }
       }
       continue;
     }
-    const cfgMatch = norm.match(/^(playwright\.config\.js|package\.json|features\/_shared\/|utils\/)/);
+
+    // A change to a site's own _shared/ steps is cross-cutting WITHIN that
+    // site only; playwright.config.js / package.json / utils/ are global.
+    const sharedMatch = norm.match(SHARED_RE);
+    if (sharedMatch) {
+      const owner = norm.match(/^sites\/([^/]+)\//);
+      for (const f of featuresOfSite(owner && owner[1])) addImpact(f, `Global: ${sharedMatch[0]} changed`);
+      continue;
+    }
+    const cfgMatch = norm.match(/^(playwright\.config\.js|package\.json|utils\/)/);
     if (cfgMatch) {
       // Skip a package.json change that didn't touch dependencies — it isn't
       // genuinely cross-cutting, so it shouldn't mark every feature impacted.
@@ -2147,10 +2363,10 @@ function parseFeatureFileTags(content) {
 // GET /api/tags?feature=X — list all scenarios + their current tags
 app.get('/api/tags', (req, res) => {
   const feature = String(req.query.feature || '').trim();
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
     return res.status(404).json({ error: `features/${feature}/ does not exist` });
   }
@@ -2171,7 +2387,7 @@ app.get('/api/tags', (req, res) => {
 // Passing an empty tags array removes the tag line.
 app.post('/api/tags', (req, res) => {
   const { feature, scenarioName, tags } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!scenarioName || typeof scenarioName !== 'string') {
@@ -2188,7 +2404,7 @@ app.post('/api/tags', (req, res) => {
   if (cleanTags.length > 15) {
     return res.status(400).json({ error: 'max 15 tags per scenario' });
   }
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
     return res.status(404).json({ error: `features/${feature}/ does not exist` });
   }
@@ -2415,7 +2631,7 @@ async function fireScheduledRun(schedule) {
   const logStream = fs.createWriteStream(logPath, { flags: 'a' });
   logStream.write(`\n=== Scheduled run: ${schedule.name} @ ${new Date().toISOString()} ===\n`);
   const args = ['playwright', 'test'];
-  if (schedule.feature) args.push(`.features-gen/features/${schedule.feature}/`);
+  if (schedule.feature) args.push(featurePaths(schedule.feature).genDir);
   if (schedule.project) {
     args.push(`--project=${schedule.project}`);
   } else {
@@ -2596,7 +2812,7 @@ app.post('/api/schedules', (req, res) => {
   if (!name || typeof name !== 'string' || name.length > 80) {
     return res.status(400).json({ error: 'name required (max 80 chars)' });
   }
-  if (feature && !isSafeName(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  if (feature && !isSafeFeatureId(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   if (project && !isSafeName(project)) return res.status(400).json({ error: `project must match ${SAFE_NAME_RE}` });
   if (tagFilter && typeof tagFilter !== 'string') return res.status(400).json({ error: 'tagFilter must be a string' });
   if (tagFilter && tagFilter.length > 200) return res.status(400).json({ error: 'tagFilter too long' });
@@ -2749,7 +2965,7 @@ app.get('/api/schedules/:id/logs/:ts', (req, res) => {
 // covered/uncovered status + which scenarios cover each AC.
 app.get('/api/coverage-gaps', (req, res) => {
   const feature = String(req.query.feature || '').trim();
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   try {
@@ -2763,7 +2979,7 @@ app.get('/api/coverage-gaps', (req, res) => {
       if (matches.length > 0) storyFile = matches[0];
     }
     // Locate the .feature file.
-    const featureDir = path.join(ROOT, 'features', feature);
+    const featureDir = featurePaths(feature).featureDir;
     let featureFile = null;
     if (fs.existsSync(featureDir)) {
       const matches = fs.readdirSync(featureDir).filter((f) => f.endsWith('.feature') && !f.startsWith('_'));
@@ -3024,10 +3240,10 @@ app.post('/api/run', async (req, res) => {
   if (Array.isArray(features) && features.length > 0) {
     if (features.length > 50) return res.status(400).json({ error: 'features array too long (max 50)' });
     for (const f of features) {
-      if (typeof f !== 'string' || !isSafeName(f)) {
+      if (typeof f !== 'string' || !isSafeFeatureId(f)) {
         return res.status(400).json({ error: `each features entry must match ${SAFE_NAME_RE} (got "${f}")` });
       }
-      const inFeatures = fs.existsSync(path.join(ROOT, 'features', f));
+      const inFeatures = fs.existsSync(featurePaths(f).featureDir);
       const inTests = fs.existsSync(path.join(CFG_PATHS.tests, f));
       if (!inFeatures && !inTests) {
         return res.status(404).json({ error: `feature "${f}" does not exist under features/ or tests/` });
@@ -3036,10 +3252,10 @@ app.post('/api/run', async (req, res) => {
     featuresArr = features;
   }
   if (feature !== undefined && feature !== null && feature !== '') {
-    if (!isSafeName(feature)) {
+    if (!isSafeFeatureId(feature)) {
       return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE} (got "${feature}")` });
     }
-    const inFeatures = fs.existsSync(path.join(ROOT, 'features', feature));
+    const inFeatures = fs.existsSync(featurePaths(feature).featureDir);
     const inTests = fs.existsSync(path.join(CFG_PATHS.tests, feature));
     if (!inFeatures && !inTests) {
       return res.status(404).json({ error: `feature "${feature}" does not exist under features/ or tests/` });
@@ -3065,10 +3281,10 @@ app.post('/api/run', async (req, res) => {
   } else if (featuresArr) {
     // Multiple features (e.g. "Run N impacted features") — Playwright accepts
     // several positional test-dir args in one invocation.
-    for (const f of featuresArr) args.push(`.features-gen/features/${f}/`);
+    for (const f of featuresArr) args.push(featurePaths(f).genDir);
   } else if (feature) {
     // Specific feature picked → filter the BDD compiled tests by feature dir.
-    args.push(`.features-gen/features/${feature}/`);
+    args.push(featurePaths(feature).genDir);
   }
   if (project) {
     args.push(`--project=${project}`);
@@ -3462,8 +3678,8 @@ app.post('/api/steps/match', (req, res) => {
 
   if (!src) {
     if (!feature) return res.status(400).json({ error: 'provide feature or gherkin' });
-    if (!isSafeName(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
-    const dir = path.join(CFG_PATHS.features || path.join(ROOT, 'features'), feature);
+    if (!isSafeFeatureId(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+    const dir = featurePaths(feature).featureDir;
     if (!fs.existsSync(dir)) return res.status(404).json({ error: `feature "${feature}" not found` });
     let picked = null;
     try {
@@ -3537,6 +3753,13 @@ app.post('/api/explore/run', async (req, res) => {
   activeExplore = true;
   write({ type: 'start', baseUrl, mode: mode || 'guarded' });
   try {
+    // "What does the suite already cover?" must be answered against the site
+    // that owns this URL — comparing the crawl to another application's page
+    // objects would report every control as untested.
+    const exploreSite = sites.siteIdFromUrl(baseUrl);
+    const known = sites.listSiteIds(ROOT).includes(exploreSite);
+    const corpusSite = known ? exploreSite : sites.LEGACY_SITE;
+    write({ type: 'log', stream: 'stdout', text: `[explore] comparing against ${sites.relFeaturesRoot(corpusSite)}/\n` });
     const result = await explore.runExploration({
       root: ROOT,
       baseUrl,
@@ -3544,6 +3767,8 @@ app.post('/api/explore/run', async (req, res) => {
       password: pw,
       mode: mode || 'guarded',
       maxRoutes: cap,
+      featuresDir: sites.featuresRoot(ROOT, corpusSite),
+      pagesDir: sites.pagesRoot(ROOT, corpusSite),
       reportsDir: CFG_PATHS.reports,
       startedAt: new Date().toISOString(),
       onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),

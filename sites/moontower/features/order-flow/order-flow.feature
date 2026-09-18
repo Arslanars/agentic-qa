@@ -1,4 +1,4 @@
-@order-flow @destructive
+@moontower @order-flow @destructive
 Feature: Order Flow
   As a Moontower user I want to build vendor orders in the tablet POS, send them
   all at once, and then review a sent order in the Orders List — so that I can

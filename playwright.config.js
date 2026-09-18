@@ -13,11 +13,29 @@ import { ALL_PROJECTS } from './ui/projects.js';
  * firefox / webkit.
  */
 const bddTestDir = defineBddConfig({
-  // Author features under features/<feature>/<name>.feature.
-  // Anything starting with `_` (e.g. `_TEMPLATE.feature`) is treated as a
-  // scaffolding source and excluded.
-  features: ['features/**/*.feature', '!features/**/_*.feature'],
-  steps: ['features/**/*.steps.ts'],
+  // Two authoring layouts are supported, and bddgen mirrors the SOURCE path
+  // into .features-gen/, which is what lets the runner filter by site:
+  //
+  //   features/<feature>/<name>.feature
+  //     -> .features-gen/features/<feature>/<name>.feature.spec.js
+  //   sites/<site>/features/<feature>/<name>.feature
+  //     -> .features-gen/sites/<site>/features/<feature>/<name>.feature.spec.js
+  //
+  // `features/` is the original single-site layout and still works. `sites/`
+  // is the multi-site layout: one self-contained folder per application under
+  // test, each with its own features/, pages/ and user-stories/. See
+  // ui/sites.js for the resolver both this config and the UI server share.
+  //
+  // Anything starting with `_` (e.g. `_TEMPLATE.feature`) is scaffolding.
+  features: [
+    'features/**/*.feature',
+    'sites/*/features/**/*.feature',
+    '!**/_*.feature',
+  ],
+  steps: [
+    'features/**/*.steps.ts',
+    'sites/*/features/**/*.steps.ts',
+  ],
 });
 
 /**

@@ -1,4 +1,4 @@
-@dashboard
+@moontower @dashboard
 Feature: Verify Dashboard
   As a registered Moontower user, I want to sign in and choose my location
   so that I land on my restaurant's inventory dashboard.

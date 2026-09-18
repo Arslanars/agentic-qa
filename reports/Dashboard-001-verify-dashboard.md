@@ -2,19 +2,18 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-09-13 00:05:18
+**Last run:** 2026-09-18 18:04:31
 **Browser:** chromium
-**Status:** ❌ FAIL (0/3 — 3 broken)
-**Duration:** 214.6 s
-**Broken (timeout/interrupted):** 3 — 3 timed out
+**Status:** ✅ PASS (3/3)
+**Duration:** 11.2 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | ⏱️ TIMEOUT | 68.6 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ⏱️ TIMEOUT | 75.5 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ⏱️ TIMEOUT | 70.5 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | ✅ PASS | 3.2 s | — |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ✅ PASS | 3.6 s | — |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ✅ PASS | 4.5 s | — |
 
 ## Artifacts
 

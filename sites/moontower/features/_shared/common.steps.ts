@@ -1,25 +1,34 @@
-// Step definitions shared by every feature.
+// Step definitions shared by every MOONTOWER feature.
 //
 // Why this file exists: step definitions in this repo are tag-scoped —
 // `createBdd(undefined, { tags: '@login' })` makes a step available only to
 // @login scenarios. That forced each feature to keep its own copy of common
 // steps, and "I am on the Moontower login page" ended up written four times.
 //
-// These are declared with a bare `createBdd()`, so they are GLOBAL: available
-// to every scenario regardless of tags. Only steps whose implementations were
-// byte-identical across every feature that defined them live here.
+// SCOPE: `@moontower`, a tag carried by every feature file of this site — NOT
+// a bare `createBdd()`. Cucumber's step pool is global across everything bddgen
+// compiles, which now includes every site under sites/. A bare createBdd() here
+// would publish "the URL should match {string}" and "I choose the {string}
+// option" to every other application's scenarios too, and the moment another
+// site defined either phrase that would be an ambiguous-step error. Scoping to
+// the site tag keeps these available to all five Moontower features and
+// invisible everywhere else.
 //
-// Deliberately NOT moved, because their implementations genuinely differ per
-// feature — merging them would change behaviour:
+// Adding a feature to this site? Put `@moontower` on its Feature line or these
+// steps will not bind.
+//
+// Deliberately NOT moved here, because their implementations genuinely differ
+// per feature — merging them would change behaviour:
 //   - "I should be redirected to the location-picker screen"   (3 variants)
 //   - "I should see the heading {string}"                      (2 variants)
 //   - "I sign in with email {string} and password {string}"    (2 variants)
 //   - "I click the {string} link"                              (2 variants)
 //   - "I select the {string} location"                         (2 variants)
 //
-// Adding a step here makes it global. Before doing so, confirm no feature
-// defines the same phrase locally — two definitions of one phrase is an
-// ambiguous-step error at run time, not a silent override.
+// Adding a step here makes it available to every Moontower feature. Before
+// doing so, confirm no feature defines the same phrase locally — two
+// definitions of one phrase is an ambiguous-step error at run time, not a
+// silent override.
 
 import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
@@ -27,7 +36,7 @@ import { LoginPage } from '../../pages/login-user/LoginPage';
 import { LocationPickerPage } from '../../pages/verify-dashboard/LocationPickerPage';
 import { DashboardPage } from '../../pages/verify-dashboard/DashboardPage';
 
-const { Given, When, Then } = createBdd();
+const { Given, When, Then } = createBdd(undefined, { tags: '@moontower' });
 
 // Credentials for the shared login step. Same env vars and same fallbacks the
 // per-feature copies used, so behaviour is unchanged — now in one place, which

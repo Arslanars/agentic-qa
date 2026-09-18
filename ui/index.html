@@ -498,6 +498,30 @@
     }
     .cd-option.selected .cd-option-meta { color: var(--accent); opacity: 0.7; }
 
+    /* Site header inside the feature dropdown. Not selectable — it exists only
+       to separate one application under test from the next. */
+    .cd-optgroup {
+      padding: 8px 12px 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      pointer-events: none;
+      user-select: none;
+    }
+    .cd-optgroup + .cd-option { border-top: none; }
+
+    /* "New site X — will be created at sites/x/" under the URL field. */
+    .site-hint {
+      margin-top: 6px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--text-faint);
+      font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      word-break: break-word;
+    }
+
     /* Custom scrollbar inside the menu for visual polish on long lists. */
     .cd-menu::-webkit-scrollbar { width: 8px; }
     .cd-menu::-webkit-scrollbar-track { background: transparent; }
@@ -2912,6 +2936,10 @@
               <label for="url">Application URL</label>
               <input id="url" type="url" placeholder="https://example.com/login" aria-required="true" aria-describedby="url-err" />
               <div id="url-err" class="field-error">Application URL is required.</div>
+              <!-- Which site folder this URL maps to. Resolved server-side so
+                   the user can see where the generated code will land BEFORE
+                   generating, and can tell a new site from an existing one. -->
+              <div id="site-hint" class="site-hint" hidden></div>
             </div>
             <div class="row r-13">
               <div class="field">
@@ -4226,9 +4254,48 @@
         .replace(/^-+|-+$/g, '')
         .slice(0, 60) || 'untitled';
     }
+    // ---- Sites -------------------------------------------------------------
+    // Each application under test owns a folder. The server derives which site
+    // a URL belongs to (one implementation of the rule, in ui/sites.js) and
+    // tells us where its features/, pages/ and user-stories/ live; everything
+    // the generation prompt writes is anchored to those paths, so adding a
+    // second or third URL never writes into the first site's folders.
+    let currentSite = null;   // { site, exists, paths: {features, pages, stories} }
+
+    function sitePaths() {
+      return currentSite?.paths || { features: 'features', pages: 'pages', stories: 'user-stories' };
+    }
+
+    async function resolveSiteForUrl(url) {
+      const u = (url || '').trim();
+      if (!/^https?:\/\//i.test(u)) { currentSite = null; renderSiteHint(); return; }
+      try {
+        const r = await fetch(`/api/sites/resolve?url=${encodeURIComponent(u)}`);
+        currentSite = r.ok ? await r.json() : null;
+      } catch { currentSite = null; }
+      renderSiteHint();
+    }
+
+    function renderSiteHint() {
+      const el = $('site-hint');
+      if (!el) return;
+      if (!currentSite) { el.hidden = true; return; }
+      const p = currentSite.paths;
+      el.hidden = false;
+      el.textContent = currentSite.exists
+        ? `Site "${currentSite.site}" — adding to ${p.root}/ (${currentSite.features.length} existing feature${currentSite.features.length === 1 ? '' : 's'})`
+        : `New site "${currentSite.site}" — will be created at ${p.root}/`;
+    }
+
+    // Match an existing feature WITHIN the current site only. Two sites may
+    // each have a "login" feature; they are different features and must not
+    // be treated as one, so the comparison uses the per-site folder name and
+    // is scoped to the site the URL resolves to.
     function findExistingFeature(slugOrTitle) {
       const slug = safeSlugClient(slugOrTitle);
-      return loadedFeatures.find((f) => f.name && f.name.toLowerCase() === slug);
+      const site = currentSite?.site || '@root';
+      return loadedFeatures.find((f) =>
+        (f.feature || f.name || '').toLowerCase() === slug && (f.site || '@root') === site);
     }
 
     // Coverage panel — render the analysis for whichever feature is selected.
@@ -4594,7 +4661,22 @@
 
       function rebuildMenu() {
         menu.innerHTML = '';
+        let lastGroup = null;
         Array.from(selectEl.options).forEach((opt, idx) => {
+          // Emit a non-selectable header each time the <optgroup> changes, so
+          // features from different sites read as separate blocks.
+          const group = opt.parentElement && opt.parentElement.tagName === 'OPTGROUP'
+            ? opt.parentElement.label : null;
+          if (group !== lastGroup) {
+            lastGroup = group;
+            if (group) {
+              const head = document.createElement('div');
+              head.className = 'cd-optgroup';
+              head.setAttribute('role', 'presentation');
+              head.textContent = group;
+              menu.appendChild(head);
+            }
+          }
           const item = document.createElement('div');
           item.className = 'cd-option';
           item.setAttribute('role', 'option');
@@ -4650,14 +4732,21 @@
         rebuildMenu();
       }
 
+      // Look an item up by the option index it carries, NOT by its position in
+      // the menu. The menu also contains non-selectable site headers, so
+      // menu.children[i] and selectEl.options[i] are not the same thing.
+      function itemFor(idx) {
+        return idx >= 0 ? menu.querySelector(`.cd-option[data-idx="${idx}"]`) : null;
+      }
+
       function setHighlighted(idx, scroll = true) {
-        if (highlighted >= 0 && menu.children[highlighted]) {
-          menu.children[highlighted].classList.remove('highlighted');
-        }
+        const prev = itemFor(highlighted);
+        if (prev) prev.classList.remove('highlighted');
         highlighted = idx;
-        if (idx >= 0 && menu.children[idx]) {
-          menu.children[idx].classList.add('highlighted');
-          if (scroll) menu.children[idx].scrollIntoView({ block: 'nearest' });
+        const next = itemFor(idx);
+        if (next) {
+          next.classList.add('highlighted');
+          if (scroll) next.scrollIntoView({ block: 'nearest' });
         }
       }
 
@@ -4746,15 +4835,34 @@
         all.value = '';
         all.textContent = 'all features';
         select.appendChild(all);
+
+        // Group by site. `f.name` stays the full feature id ("acme/checkout")
+        // because every other endpoint addresses features by that id — only the
+        // visible text is shortened, since the <optgroup> already names the site.
+        const bySite = new Map();
         for (const f of features) {
-          const opt = document.createElement('option');
-          opt.value = f.name;
-          const parts = [];
-          if (f.specs) parts.push(`${f.specs} spec${f.specs === 1 ? '' : 's'}`);
-          if (f.features) parts.push(`${f.features} .feature`);
-          const suffix = parts.length ? ` (${parts.join(', ')})` : '';
-          opt.textContent = `${f.name}${suffix}`;
-          select.appendChild(opt);
+          const key = f.site || '@root';
+          if (!bySite.has(key)) bySite.set(key, { label: f.siteName || key, isLegacy: !!f.isLegacy, items: [] });
+          bySite.get(key).items.push(f);
+        }
+        const multiSite = bySite.size > 1;
+        for (const [, group] of bySite) {
+          // A single-site project shouldn't sprout a pointless group header.
+          const parent = multiSite ? document.createElement('optgroup') : select;
+          if (multiSite) {
+            parent.label = group.isLegacy ? `${group.label} (top-level)` : group.label;
+            select.appendChild(parent);
+          }
+          for (const f of group.items) {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            const parts = [];
+            if (f.specs) parts.push(`${f.specs} spec${f.specs === 1 ? '' : 's'}`);
+            if (f.features) parts.push(`${f.features} .feature`);
+            const suffix = parts.length ? ` (${parts.join(', ')})` : '';
+            opt.textContent = `${multiSite ? (f.feature || f.name) : f.name}${suffix}`;
+            parent.appendChild(opt);
+          }
         }
         // Refresh the save-mode chip now that features are loaded.
         updateSaveMode();
@@ -5132,10 +5240,10 @@ STORY TITLE (one line):
 ${title}
 
 ${storyId ? `STORY ID:\n${storyId}\n\n` : ''}EXISTING ARTIFACTS:
-- Feature file:      features/${existing.name}/${existing.name}.feature
-- Step definitions:  features/${existing.name}/${existing.name}.steps.ts
-- Page Object:       pages/${existing.name}/*.ts
-- User story:        user-stories/<storyId>-${existing.name}.md (already overwritten with the updated ACs)
+- Feature file:      ${sitePaths().features}/${existing.feature || existing.name}/${existing.feature || existing.name}.feature
+- Step definitions:  ${sitePaths().features}/${existing.feature || existing.name}/${existing.feature || existing.name}.steps.ts
+- Page Object:       ${sitePaths().pages}/${existing.feature || existing.name}/*.ts
+- User story:        ${sitePaths().stories}/<storyId>-${existing.feature || existing.name}.md (already overwritten with the updated ACs)
 
 CREDENTIALS (optional):
 ${creds || ''}
@@ -5168,11 +5276,20 @@ ${creds || ''}
 ACCEPTANCE CRITERIA:
 ${ac || '<ACs>'}
 
+TARGET FOLDERS — this application under test owns its own folder. Write EVERY
+file below and nowhere else, creating directories as needed. Do NOT write into
+another site's folder, and do NOT write into the repo-root features/ or pages/
+unless they are named here:
+- Feature + steps:   ${sitePaths().features}/<feature-slug>/
+- Page Objects:      ${sitePaths().pages}/<feature-slug>/
+- User story:        ${sitePaths().stories}/
+- Shared base class: pages/BasePage.ts (repo root — shared by every site, extend it, do not copy it)
+
 ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
 1. Derive a kebab-case <feature-slug> from the story title.
 2. Use a <STORY-ID> if not provided (e.g. AUTO-001).
 3. Run steps 1-6 of the workflow (skip git commit).
-4. Generate Page Objects + tests using the POM convention.
+4. Generate Page Objects + tests using the POM convention, under the TARGET FOLDERS above.
 5. Do NOT run \`npx bddgen\` — the server compiles the .feature files itself as soon as you finish.
 6. Stream short status updates between steps.`;
     }
@@ -5183,6 +5300,18 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
     ['url', 'title', 'ac', 'creds', 'storyId'].forEach((id) =>
       $(id).addEventListener('input', () => { updateSaveMode(); })
     );
+
+    // Resolve the URL to its site folder as the user types, debounced so a
+    // half-typed host doesn't generate a request per keystroke. updateSaveMode()
+    // re-runs afterwards because create-vs-update is now a per-site question.
+    let siteResolveTimer = null;
+    $('url').addEventListener('input', () => {
+      if (siteResolveTimer) clearTimeout(siteResolveTimer);
+      siteResolveTimer = setTimeout(async () => {
+        await resolveSiteForUrl($('url').value);
+        updateSaveMode();
+      }, 400);
+    });
 
     // Per-field validation: replace the silent toast with real aria-invalid
     // states + visible inline messages + focus-first-invalid.
@@ -5699,13 +5828,24 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
         showToast(missing.length === 1 ? 'Missing required field' : `${missing.length} required fields missing`, 'error');
         return;
       }
+      // Make sure the site is resolved before saving — the debounce may not
+      // have fired yet if the user pasted a URL and clicked straight through.
+      if (!currentSite) await resolveSiteForUrl(body.url);
       const resp = await fetch('/api/save-story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        // Pin the site explicitly so the story and the generated code cannot
+        // land in different folders if the URL were re-derived differently.
+        body: JSON.stringify({ ...body, site: currentSite?.site }),
       });
       const data = await resp.json();
       if (!resp.ok) { showToast(data.error || 'Save failed', 'error'); return; }
+      // Adopt the server's answer — it is authoritative about where it wrote,
+      // and expressPrompt() below anchors every generated path to it.
+      if (data.site && data.paths) {
+        currentSite = { ...(currentSite || {}), site: data.site, exists: true, paths: { ...data.paths, root: currentSite?.paths?.root || `sites/${data.site}` }, features: currentSite?.features || [] };
+        renderSiteHint();
+      }
       showToast(`Saved ${data.file}`);
       appendMeta(`[save] wrote ${data.file}`);
 

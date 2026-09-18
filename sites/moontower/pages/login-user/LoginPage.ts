@@ -1,5 +1,5 @@
 import { type Locator, type Page, expect } from '@playwright/test';
-import { BasePage } from '../BasePage';
+import { BasePage } from '../../../../pages/BasePage';
 
 export class LoginPage extends BasePage {
   readonly url = 'https://moontower.aiimone.com/Login';

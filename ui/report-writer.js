@@ -75,20 +75,32 @@ function flattenSuites(suite, acc = []) {
 }
 
 /**
- * Extract the feature slug from a test file path. Supports two conventions:
- *   - Classic POM:  tests/<feature>/<spec>.spec.ts
- *   - BDD compiled: .features-gen/features/<feature>/<spec>.feature.spec.js
- * Playwright's JSON reporter strips the testDir prefix, so we may see
- * either the full path, a tests/-relative path, or a features-gen-relative
- * path. Handle all three.
+ * Extract the feature slug from a test file path. Supports three conventions:
+ *   - Classic POM:   tests/<feature>/<spec>.spec.ts
+ *   - BDD compiled:  .features-gen/features/<feature>/<spec>.feature.spec.js
+ *   - BDD per site:  .features-gen/sites/<site>/features/<feature>/<spec>.feature.spec.js
+ *
+ * Playwright's JSON reporter strips the testDir prefix, so we may see the full
+ * path, a tests/-relative path, or a features-gen-relative path. Handle all.
+ *
+ * The site segment is deliberately DROPPED from the returned slug: reports are
+ * named after the feature (reports/<STORY-ID>-<feature>.md) and this value is
+ * matched against those filenames. Keeping the site here would stop every
+ * report matching its run and bring back the "reports for tests that were never
+ * executed" bug. Two sites with a same-named feature would share a report name,
+ * which is a naming question for reports/, not for this parser.
  */
 function featureFromPath(file) {
   const norm = (file || '').replace(/\\/g, '/');
-  // Strip a leading ".features-gen/features/" or "features-gen/features/"
-  // (BDD compiled paths) first, then any leading "tests/" (classic).
+  // Playwright's JSON reporter reports paths RELATIVE TO testDir, and testDir
+  // is .features-gen — so the prefix may already be gone and the path can
+  // arrive as "sites/<site>/features/<feature>/…". Peel the prefixes in order
+  // and tolerate each one being absent, rather than matching one fixed shape.
   const stripped = norm
-    .replace(/^(?:.*\/)?\.?features-gen\/features\//, '')
-    .replace(/^(?:.*\/)?tests\//, '');
+    .replace(/^(?:.*\/)?\.?features-gen\//, '')  // absolute or repo-relative compiled path
+    .replace(/^sites\/[^/]+\//, '')              // per-site layout
+    .replace(/^features\//, '')                  // BDD authoring folder
+    .replace(/^(?:.*\/)?tests\//, '');           // classic POM layout
   const m = stripped.match(/^([^/]+)\//);
   return m ? m[1] : null;
 }
@@ -150,19 +162,44 @@ function extractStoryId(filename, slug) {
   return null;
 }
 
+/**
+ * Every folder that can hold user stories: the configured/legacy top-level one
+ * plus one per site. Reports are keyed by the bare feature slug, so a story is
+ * matched by name across all of them.
+ *
+ * KNOWN LIMIT: two sites with an identically-named feature would resolve to
+ * whichever story is found first, and would share one reports/<name>.md. The
+ * report naming convention is feature-scoped, not site-scoped; qualifying it
+ * would also have to change reportMatchesFeature and the reports bar's
+ * contract. Nothing in this repo collides today.
+ */
+function storyDirs(root, paths) {
+  const dirs = [paths?.stories || path.join(root, 'user-stories')];
+  const sitesDir = path.join(root, 'sites');
+  try {
+    for (const entry of fs.readdirSync(sitesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
+      dirs.push(path.join(sitesDir, entry.name, 'user-stories'));
+    }
+  } catch { /* no sites/ — single-site layout */ }
+  return dirs;
+}
+
 function findStoryFile(slug, root, paths) {
-  const dir = paths?.stories || path.join(root, 'user-stories');
-  if (!fs.existsSync(dir)) return null;
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.md') && f !== '_TEMPLATE.md');
-  // Exact convention: <storyId>-<slug>.md
-  const conv = files.find((f) => f.toLowerCase().endsWith(`-${slug.toLowerCase()}.md`));
-  if (conv) {
-    return { storyId: extractStoryId(conv, slug), file: conv };
+  // Exact convention (<storyId>-<slug>.md) wins across ALL story folders before
+  // any fuzzy match is considered — otherwise a loose substring hit in the
+  // first folder would beat the real story in the second.
+  const scanned = [];
+  for (const dir of storyDirs(root, paths)) {
+    if (!fs.existsSync(dir)) continue;
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.md') && f !== '_TEMPLATE.md');
+    scanned.push({ dir, files });
+    const conv = files.find((f) => f.toLowerCase().endsWith(`-${slug.toLowerCase()}.md`));
+    if (conv) return { storyId: extractStoryId(conv, slug), file: conv, dir };
   }
-  // Fallback: any file containing the slug — storyId unknown in this case
-  const fuzzy = files.find((f) => f.toLowerCase().includes(slug.toLowerCase()));
-  if (fuzzy) {
-    return { storyId: null, file: fuzzy };
+  for (const { dir, files } of scanned) {
+    const fuzzy = files.find((f) => f.toLowerCase().includes(slug.toLowerCase()));
+    if (fuzzy) return { storyId: null, file: fuzzy, dir };
   }
   return null;
 }
@@ -352,7 +389,9 @@ function writeRunReports({ root, paths, onLog } = {}) {
     let storyTitle = feature;
     if (storyInfo) {
       try {
-        const md = fs.readFileSync(path.join(storiesDir, storyInfo.file), 'utf8');
+        // storyInfo.dir — the story may live under any site's user-stories/,
+        // not necessarily the top-level storiesDir.
+        const md = fs.readFileSync(path.join(storyInfo.dir || storiesDir, storyInfo.file), 'utf8');
         const h1 = md.match(/^#\s+(?:User Story:\s+)?(.+)$/m);
         if (h1) storyTitle = h1[1].trim();
       } catch (_) { /* fall back to slug */ }

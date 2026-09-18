@@ -1,4 +1,4 @@
-@signup
+@moontower @signup
 Feature: User Signup
   As a new visitor to Moontower, I want to fill in the signup form and register
   a new account so that I can access the platform.

@@ -1,4 +1,4 @@
-@dashboard-tab
+@moontower @dashboard-tab
 Feature: Verify Dashboard with tab
   As a registered Moontower user, I want to sign in, choose my location and
   open the Inventory tab so that I land on my restaurant's inventory dashboard

@@ -65,26 +65,39 @@ function fmtLocalDateTime() {
 
 /**
  * Discover every testcases.json the repo contains. We look under
- * features/<feature>/ (BDD authoring path) AND tests/<feature>/ (classic POM
- * path) so the framework supports a mixed repo. If a feature has both,
- * the features/ version wins — it's the canonical location now.
+ * features/<feature>/ (BDD authoring path), sites/<site>/features/<feature>/
+ * (the same, once a repo tests more than one application) AND tests/<feature>/
+ * (classic POM path), so the framework supports a mixed repo. If a feature has
+ * both, the features/ version wins — it's the canonical location now.
+ *
+ * The dedup key is the feature ID ("<site>/<feature>"), not the bare folder
+ * name: two sites may each have a "login" feature and both sets of test cases
+ * must reach the report.
  */
 function discoverTestcaseFiles(root, paths) {
-  const candidates = new Map(); // feature name → file path
+  const candidates = new Map(); // feature id → file path
 
-  function pickup(dir) {
+  function pickup(dir, sitePrefix = '') {
     if (!dir || !fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const candidate = path.join(dir, entry.name, 'testcases.json');
-      if (fs.existsSync(candidate) && !candidates.has(entry.name)) {
-        candidates.set(entry.name, candidate);
+      const key = sitePrefix ? `${sitePrefix}/${entry.name}` : entry.name;
+      if (fs.existsSync(candidate) && !candidates.has(key)) {
+        candidates.set(key, candidate);
       }
     }
   }
 
-  // features/ first (canonical for BDD), then tests/ as fallback.
+  // features/ first (canonical for BDD), then each site's, then tests/.
   pickup(path.join(root, 'features'));
+  const sitesDir = path.join(root, 'sites');
+  try {
+    for (const entry of fs.readdirSync(sitesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
+      pickup(path.join(sitesDir, entry.name, 'features'), entry.name);
+    }
+  } catch { /* no sites/ — single-site layout */ }
   pickup(paths?.tests || path.join(root, 'tests'));
   return Array.from(candidates.values());
 }
