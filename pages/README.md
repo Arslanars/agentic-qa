@@ -2,6 +2,16 @@
 
 This folder holds **page objects** — one TypeScript class per page or major UI component. Tests interact with the app **through these classes** instead of touching `page.locator(...)` directly. The goal is to keep locators and interaction logic in one place, so a UI change touches one file instead of fifty.
 
+> **Testing more than one application?** Page objects then live per site, at
+> `sites/<site>/pages/<feature>/<PageName>Page.ts`, so two apps can each have a
+> `LoginPage` without colliding. Everywhere below that says `pages/<feature>/`,
+> read `sites/<site>/pages/<feature>/`.
+>
+> **`pages/BasePage.ts` stays here at the repo root** — it is framework
+> infrastructure shared by every site, not the property of any one app. A site's
+> page object imports it as `../../../../pages/BasePage`. This repo uses the
+> multi-site layout; see `sites/moontower/pages/`.
+
 ## Conventions
 
 | Rule | Why |

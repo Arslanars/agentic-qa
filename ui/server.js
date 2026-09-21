@@ -116,6 +116,39 @@ function isSafeFeatureId(s) {
 }
 
 /**
+ * A project name must not just be SHAPED safely — it must be one
+ * playwright.config.js actually defines. Shape-only validation let a typo or a
+ * stale bookmark through to `--project=<typo>`, which Playwright rejects only
+ * after the server has already cleared allure-results/ and pruned
+ * test-results/. The user saw a wiped report set and an opaque failure instead
+ * of a 400. ui/projects.js is the shared source of truth for the list.
+ */
+function isKnownProject(s) {
+  return isSafeName(s) && projectNames.includes(s);
+}
+
+/**
+ * Repo-relative display paths for a feature id — "sites/<site>/features/<f>"
+ * and "sites/<site>/pages/<f>", or legacy "features/<f>" / "pages/<f>".
+ *
+ * These are not cosmetic. They are interpolated into the prompts sent to the
+ * Claude CLI by /api/heal, /api/scaffold-missing-steps and
+ * /api/coverage/draft-scenario. A stale "features/<f>/" there points the model
+ * at a folder that no longer exists, so it either cannot find the file it was
+ * asked to edit or recreates it in the wrong place.
+ */
+function relFeat(id) {
+  return featurePaths(id).relFeatureDir;
+}
+function relPages(id) {
+  return featurePaths(id).relPagesDir;
+}
+/** Bare folder name of a feature id — "login-user" from "moontower/login-user". */
+function featureName(id) {
+  return featurePaths(id).feature;
+}
+
+/**
  * Resolve a feature id to its on-disk paths.
  *
  * Never returns null. An id that fails validation resolves to a sentinel path
@@ -660,7 +693,7 @@ app.post('/api/heal', async (req, res) => {
   const prompt = `A Playwright BDD test just failed. Diagnose the root cause and fix it.
 
 FAILED TEST:
-- Feature folder: features/${feature}/
+- Feature folder: ${relFeat(feature)}/
 - Spec path:      ${file || '(unknown)'}
 - Test title:     ${fullTitle}
 - Status:         ${category === 'broken' ? 'BROKEN (timeout / interrupted)' : 'FAILED (assertion)'}
@@ -670,9 +703,9 @@ ERROR MESSAGE:
 ${String(errorMessage).slice(0, 4000)}
 
 ${errorStack ? `STACK:\n${String(errorStack).slice(0, 4000)}\n\n` : ''}EXISTING FILES TO INSPECT (read these first):
-- Feature:   features/${feature}/${featureFile || '<missing>'}
-- Step defs: features/${feature}/${stepsFile || '<missing>'}
-- POM:       pages/${feature}/${pomFiles.join(', pages/' + feature + '/') || '<missing>'}
+- Feature:   ${relFeat(feature)}/${featureFile || '<missing>'}
+- Step defs: ${relFeat(feature)}/${stepsFile || '<missing>'}
+- POM:       ${pomFiles.length ? pomFiles.map((f) => `${relPages(feature)}/${f}`).join(', ') : '<missing>'}
 
 INSTRUCTIONS FOR CLAUDE:
 1. Read the screenshot if available — visual cues often tell you what the app actually rendered vs what the test expected.
@@ -1215,7 +1248,7 @@ app.post('/api/coverage/draft-scenario', async (req, res) => {
   if (fs.existsSync(pomDir)) {
     const pomFiles = fs.readdirSync(pomDir).filter((f) => f.endsWith('.ts'));
     for (const f of pomFiles) {
-      pomContent += `\n// ----- pages/${feature}/${f} -----\n${fs.readFileSync(path.join(pomDir, f), 'utf8').slice(0, 4000)}\n`;
+      pomContent += `\n// ----- ${relPages(feature)}/${f} -----\n${fs.readFileSync(path.join(pomDir, f), 'utf8').slice(0, 4000)}\n`;
     }
   }
 
@@ -1232,7 +1265,7 @@ RULES for the scenario name — the FIRST scenario naming rule matters most:
 3. Then a "—" separator and a short human-readable description.
    Example valid names: "${acId}-POS-01 — successful login with valid credentials"
 
-EXISTING STEP DEFINITIONS (features/${feature}/${feature}.steps.ts — REUSE these phrasings when they fit; only invent new steps when nothing matches):
+EXISTING STEP DEFINITIONS (${relFeat(feature)}/${featureName(feature)}.steps.ts — REUSE these phrasings when they fit; only invent new steps when nothing matches):
 \`\`\`typescript
 ${existingSteps.slice(0, 15000) || '(no existing step definitions)'}
 \`\`\`
@@ -1242,7 +1275,7 @@ ${sampleScenario ? `SAMPLE SCENARIO from the same .feature file (match its style
 ${sampleScenario}
 \`\`\`
 ` : ''}
-POM (pages/${feature}/) — reuse existing methods where they exist:
+POM (${relPages(feature)}/) — reuse existing methods where they exist:
 \`\`\`typescript
 ${pomContent.slice(0, 12000) || '(no POM found)'}
 \`\`\`
@@ -1313,7 +1346,7 @@ If every step you use already exists in the steps file, return "newSteps": [].`;
         scenario: String(parsed.scenario).slice(0, 5000),
         name: String(parsed.name || '').slice(0, 200),
         newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
-        featureFile: existingFeatureFile ? `features/${feature}/${existingFeatureFile}` : `features/${feature}/`,
+        featureFile: existingFeatureFile ? `${relFeat(feature)}/${existingFeatureFile}` : `${relFeat(feature)}/`,
       });
     }
     const errText = stderr.trim();
@@ -1654,12 +1687,12 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
 
     const stepsDir = featurePaths(feat).featureDir;
     if (!fs.existsSync(stepsDir)) {
-      write({ type: 'log', stream: 'stderr', text: `[scaffold]   feature folder not found: features/${feat}/\n` });
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   feature folder not found: ${relFeat(feat)}/\n` });
       continue;
     }
     const stepsFileName = fs.readdirSync(stepsDir).find((f) => f.endsWith('.steps.ts'));
     if (!stepsFileName) {
-      write({ type: 'log', stream: 'stderr', text: `[scaffold]   no .steps.ts in features/${feat}/ — recorder/Save&Generate normally creates this\n` });
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   no .steps.ts in ${relFeat(feat)}/ — recorder/Save&Generate normally creates this\n` });
       continue;
     }
     const stepsPath = path.join(stepsDir, stepsFileName);
@@ -1673,7 +1706,7 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
     let pomContent = '';
     for (const f of pomFiles) {
       const txt = fs.readFileSync(path.join(pomDir, f), 'utf8');
-      pomContent += `\n// ----- pages/${feat}/${f} -----\n${txt.slice(0, 6000)}\n`;
+      pomContent += `\n// ----- ${relPages(feat)}/${f} -----\n${txt.slice(0, 6000)}\n`;
     }
 
     const stepList = steps.map((s, i) => `${i + 1}. ${s.keyword}: "${s.phrase}"`).join('\n');
@@ -1682,12 +1715,12 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
 MISSING STEPS:
 ${stepList}
 
-EXISTING STEP-DEFINITIONS FILE (features/${feat}/${stepsFileName}) — match its imports, createBdd tag-scoping, and POM-wrapping style:
+EXISTING STEP-DEFINITIONS FILE (${relFeat(feat)}/${stepsFileName}) — match its imports, createBdd tag-scoping, and POM-wrapping style:
 \`\`\`typescript
 ${existingSteps.slice(0, 18000)}
 \`\`\`
 
-EXISTING PAGE OBJECT FILES under pages/${feat}/ — reuse these methods where they fit:
+EXISTING PAGE OBJECT FILES under ${relPages(feat)}/ — reuse these methods where they fit:
 \`\`\`typescript
 ${pomContent.slice(0, 14000)}
 \`\`\`
@@ -1768,7 +1801,7 @@ OUTPUT EXACTLY this JSON shape:
       phrase: s.phrase || '',
       code: String(s.code || '').trim(),
     }));
-    write({ type: 'log', stream: 'stdout', text: `[scaffold]   wrote ${parsed.steps.length} step(s) → features/${feat}/${stepsFileName}\n` });
+    write({ type: 'log', stream: 'stdout', text: `[scaffold]   wrote ${parsed.steps.length} step(s) → ${relFeat(feat)}/${stepsFileName}\n` });
     if (parsed.summary) write({ type: 'log', stream: 'stdout', text: `[scaffold]   ${parsed.summary}\n` });
   }
 
@@ -2120,11 +2153,11 @@ app.post('/api/recorder/append', (req, res) => {
   }
   const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
-    return res.status(404).json({ error: `feature folder not found: features/${feature}/` });
+    return res.status(404).json({ error: `feature folder not found: ${relFeat(feature)}/` });
   }
   const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
   if (!featureFile) {
-    return res.status(404).json({ error: `no .feature file in features/${feature}/` });
+    return res.status(404).json({ error: `no .feature file in ${relFeat(feature)}/` });
   }
   const filePath = path.join(featureDir, featureFile);
   try {
@@ -2133,7 +2166,7 @@ app.post('/api/recorder/append', (req, res) => {
     const trimmed = existing.replace(/\s+$/, '');
     const appended = `${trimmed}\n\n${scenario.replace(/^\s+/, '').trimEnd()}\n`;
     fs.writeFileSync(filePath, appended, 'utf8');
-    res.json({ ok: true, file: `features/${feature}/${featureFile}`, scenarioBytes: scenario.length });
+    res.json({ ok: true, file: `${relFeat(feature)}/${featureFile}`, scenarioBytes: scenario.length });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
@@ -2368,7 +2401,7 @@ app.get('/api/tags', (req, res) => {
   }
   const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
-    return res.status(404).json({ error: `features/${feature}/ does not exist` });
+    return res.status(404).json({ error: `${relFeat(feature)}/ does not exist` });
   }
   const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
   if (!featureFile) return res.json({ feature, scenarios: [] });
@@ -2379,7 +2412,7 @@ app.get('/api/tags', (req, res) => {
   // Collate the union of tags across the file so the UI can offer them as
   // quick-pick suggestions (common existing tags).
   const knownTags = [...new Set(scenarios.flatMap((s) => s.tags))].sort();
-  res.json({ feature, featureFile: `features/${feature}/${featureFile}`, scenarios, knownTags });
+  res.json({ feature, featureFile: `${relFeat(feature)}/${featureFile}`, scenarios, knownTags });
 });
 
 // POST /api/tags — replace the tag line above a scenario. Body:
@@ -2406,7 +2439,7 @@ app.post('/api/tags', (req, res) => {
   }
   const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
-    return res.status(404).json({ error: `features/${feature}/ does not exist` });
+    return res.status(404).json({ error: `${relFeat(feature)}/ does not exist` });
   }
   const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
   if (!featureFile) return res.status(404).json({ error: 'no .feature file found' });
@@ -2435,7 +2468,7 @@ app.post('/api/tags', (req, res) => {
   const out = lines.join(content.includes('\r\n') ? '\r\n' : '\n');
   try { fs.writeFileSync(filePath, out, 'utf8'); }
   catch (err) { return res.status(500).json({ error: String(err.message) }); }
-  res.json({ ok: true, feature, scenarioName, tags: cleanTags, file: `features/${feature}/${featureFile}` });
+  res.json({ ok: true, feature, scenarioName, tags: cleanTags, file: `${relFeat(feature)}/${featureFile}` });
 });
 
 // ------------------- Scheduled Runs -----------------------------------------
@@ -2813,7 +2846,7 @@ app.post('/api/schedules', (req, res) => {
     return res.status(400).json({ error: 'name required (max 80 chars)' });
   }
   if (feature && !isSafeFeatureId(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
-  if (project && !isSafeName(project)) return res.status(400).json({ error: `project must match ${SAFE_NAME_RE}` });
+  if (project && !isKnownProject(project)) return res.status(400).json({ error: `unknown project "${project}" — expected one of: ${projectNames.join(", ")}` });
   if (tagFilter && typeof tagFilter !== 'string') return res.status(400).json({ error: 'tagFilter must be a string' });
   if (tagFilter && tagFilter.length > 200) return res.status(400).json({ error: 'tagFilter too long' });
   if (tagFilter && !/^[@A-Za-z0-9_.\s\-()!&|]+$/.test(tagFilter)) {
@@ -3034,7 +3067,7 @@ app.get('/api/coverage-gaps', (req, res) => {
     res.json({
       feature,
       storyFile: storyFile ? `user-stories/${storyFile}` : null,
-      featureFile: featureFile ? `features/${feature}/${featureFile}` : null,
+      featureFile: featureFile ? `${relFeat(feature)}/${featureFile}` : null,
       coverage,
       orphanScenarios,
       summary: {
@@ -3262,8 +3295,10 @@ app.post('/api/run', async (req, res) => {
     }
   }
   if (project !== undefined && project !== null && project !== '') {
-    if (!isSafeName(project)) {
-      return res.status(400).json({ error: `project must match ${SAFE_NAME_RE} (got "${project}")` });
+    if (!isKnownProject(project)) {
+      return res.status(400).json({
+        error: `unknown project "${project}" — expected one of: ${projectNames.join(', ')}`,
+      });
     }
   }
 
@@ -3736,7 +3771,7 @@ app.post('/api/steps/match', (req, res) => {
     try {
       picked = fs.readdirSync(dir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
     } catch { /* handled below */ }
-    if (!picked) return res.status(404).json({ error: `no .feature file in features/${feature}` });
+    if (!picked) return res.status(404).json({ error: `no .feature file in ${relFeat(feature)}` });
     try { src = fs.readFileSync(path.join(dir, picked), 'utf8'); }
     catch (err) { return res.status(500).json({ error: String(err && err.message) }); }
   }

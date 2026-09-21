@@ -215,10 +215,34 @@ function formatFeatureId(site, feature) {
  * Resolve a feature id to every path a caller might need. Returns null for an
  * invalid id. Does NOT check existence — callers that care use `exists`.
  */
+/**
+ * A bare feature id ("login-user") saved BEFORE the multi-site migration — in
+ * a schedule, a bookmark, a script — used to mean features/login-user/. After
+ * the migration that folder is gone, and the id would resolve to a path that
+ * does not exist: Playwright is handed the missing directory and runs zero
+ * tests, reporting success-ish nothing rather than an error. A saved schedule
+ * would quietly stop testing anything.
+ *
+ * So when a bare id has no legacy folder and EXACTLY ONE site owns a feature
+ * of that name, resolve to that site. Exactly one, never a guess between two:
+ * with an ambiguous name we leave it unresolved so the caller 404s honestly
+ * instead of silently running the wrong application's tests.
+ */
+function resolveLegacyAlias(root, feature) {
+  const owners = listSiteIds(root).filter((s) =>
+    fs.existsSync(path.join(featuresRoot(root, s), feature))
+  );
+  return owners.length === 1 ? owners[0] : null;
+}
+
 function resolveFeature(root, id) {
   const parsed = parseFeatureId(id);
   if (!parsed) return null;
-  const { site, feature } = parsed;
+  let { site, feature } = parsed;
+  if (isLegacy(site) && !fs.existsSync(path.join(featuresRoot(root, site), feature))) {
+    const alias = resolveLegacyAlias(root, feature);
+    if (alias) site = alias;
+  }
   const featureDir = path.join(featuresRoot(root, site), feature);
   const pagesDir = path.join(pagesRoot(root, site), feature);
   return {

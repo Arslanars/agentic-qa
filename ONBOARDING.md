@@ -145,6 +145,14 @@ This uses your Claude Code subscription — no separate API key needed.
 
 Full BDD authoring guide: [features/README.md on GitHub](https://github.com/Arslanars/agentic-qa/blob/main/features/README.md). When chromium is picked in the UI, both classic and Gherkin scenarios run together.
 
+> **Testing several applications?** Each one gets its own self-contained folder
+> and the paths in Paths C and D gain a `sites/<site>/` prefix —
+> `sites/<site>/features/<slug>/`, `sites/<site>/pages/<slug>/`,
+> `sites/<site>/user-stories/`. Entering a new URL in the UI creates that
+> folder for you and shows you where the code will land before generating.
+> Features are then listed grouped by site and addressed as `<site>/<feature>`.
+> `pages/BasePage.ts` stays at the repo root, shared by every site.
+
 ### Path D: Full hand-author from template
 
 1. Copy `user-stories/_TEMPLATE.md` to `user-stories/<STORY-ID>-<slug>.md`.

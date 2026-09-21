@@ -2,17 +2,17 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-09-21 12:32:42
+**Last run:** 2026-09-21 13:20:27
 **Browser:** chromium
 **Status:** ✅ PASS (2/2)
-**Duration:** 3.9 s
+**Duration:** 3.4 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `login.feature.spec.js` | Sauce Demo sign-in › SAUCE-001-POS-01 — a standard user reaches the product list | ✅ PASS | 2.3 s | — |
-| `login.feature.spec.js` | Sauce Demo sign-in › SAUCE-001-NEG-01 — a locked-out user is rejected | ✅ PASS | 1.7 s | — |
+| `login.feature.spec.js` | Sauce Demo sign-in › SAUCE-001-POS-01 — a standard user reaches the product list | ✅ PASS | 1.9 s | — |
+| `login.feature.spec.js` | Sauce Demo sign-in › SAUCE-001-NEG-01 — a locked-out user is rejected | ✅ PASS | 1.5 s | — |
 
 ## Artifacts
 

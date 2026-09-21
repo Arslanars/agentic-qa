@@ -69,11 +69,21 @@ async function main() {
     }
     const maxFlag = [...flags].find((f) => f.startsWith('--max-routes='));
     const { runExploration } = require('../lib/explore');
+    // "What does the suite already cover?" must be answered against the site
+    // that owns this URL. Without these the corpus falls back to the repo-root
+    // features/ + pages/, which in a multi-site project hold only shared
+    // infrastructure — so every control would be reported as untested.
+    const sites = require('../ui/sites');
+    const siteId = sites.siteIdFromUrl(arg);
+    const corpusSite = sites.listSiteIds(ROOT).includes(siteId) ? siteId : sites.LEGACY_SITE;
+    onLog(`[explore] comparing against ${sites.relFeaturesRoot(corpusSite)}/`);
     const result = await runExploration({
       root: ROOT,
       baseUrl: arg,
       email,
       password,
+      featuresDir: sites.featuresRoot(ROOT, corpusSite),
+      pagesDir: sites.pagesRoot(ROOT, corpusSite),
       // Passive (navigate only, zero clicks) is the default on purpose: this
       // points at a live app. --guarded additionally activates controls the
       // safety allowlist recognises as navigation.

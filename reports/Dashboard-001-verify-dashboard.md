@@ -2,18 +2,18 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-09-18 18:04:31
+**Last run:** 2026-09-21 13:21:57
 **Browser:** chromium
 **Status:** ✅ PASS (3/3)
-**Duration:** 11.2 s
+**Duration:** 12.6 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | ✅ PASS | 3.2 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ✅ PASS | 3.6 s | — |
-| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ✅ PASS | 4.5 s | — |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC1-POS-01 — valid credentials log in and reach the location picker | ✅ PASS | 3.4 s | — |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC2-POS-01 — the "Select Your Location" prompt is shown after login | ✅ PASS | 3.8 s | — |
+| `verify-dashboard.feature.spec.js` | Verify Dashboard › AC3-POS-01 — choosing "Main Location" opens the inventory-vendors dashboard | ✅ PASS | 5.4 s | — |
 
 ## Artifacts
 

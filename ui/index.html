@@ -4266,6 +4266,22 @@
       return currentSite?.paths || { features: 'features', pages: 'pages', stories: 'user-stories' };
     }
 
+    // Repo-relative folder for a feature ID, for display only.
+    //   "moontower/login-user" -> "sites/moontower/features/login-user"
+    //   "login-user"           -> "features/login-user"   (legacy layout)
+    // Interpolating the raw id into `features/${id}/` produces
+    // "features/moontower/login-user/", which is not a real path.
+    function featureDirLabel(id) {
+      const s = String(id || '');
+      const slash = s.indexOf('/');
+      return slash < 0 ? `features/${s}` : `sites/${s.slice(0, slash)}/features/${s.slice(slash + 1)}`;
+    }
+    /** Bare folder name of a feature ID — used to build a file name. */
+    function featureBaseName(id) {
+      const s = String(id || '');
+      return s.slice(s.indexOf('/') + 1);
+    }
+
     async function resolveSiteForUrl(url) {
       const u = (url || '').trim();
       if (!/^https?:\/\//i.test(u)) { currentSite = null; renderSiteHint(); return; }
@@ -7605,7 +7621,7 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
           scaffoldLog.textContent += `[scaffold] network error: ${err?.message || err}\n`;
         }
         // Transition to review with everything we have
-        $('rec-review-feature-path').textContent = appendFile || `features/${targetFeature}/`;
+        $('rec-review-feature-path').textContent = appendFile || `${featureDirLabel(targetFeature)}/`;
         $('rec-review-scenario').textContent = finalScenario;
 
         const featSteps = generatedSteps[targetFeature] || [];
@@ -7615,7 +7631,7 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
         if (featSteps.length > 0) {
           stepsWrap.hidden = false;
           nothing.hidden = true;
-          $('rec-review-steps-path').textContent = `features/${targetFeature}/${targetFeature}.steps.ts`;
+          $('rec-review-steps-path').textContent = `${featureDirLabel(targetFeature)}/${featureBaseName(targetFeature)}.steps.ts`;
           stepsCode.textContent = featSteps.map((s) => s.code).join('\n\n');
         } else {
           stepsWrap.hidden = true;
