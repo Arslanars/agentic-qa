@@ -18,7 +18,7 @@
       "testData": "Restaurant: MoonGherkinDestr<ts>\nEmail: arslan.moon+destr-<ts>@yopmail.com\nPassword: TestPass!2025",
       "expectedResult": "URL leaves /signup; server accepted the registration",
       "postCondition": "New tenant created",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "AC1-POS-01 — successful 2-step signup creates a new tenant"
     },
     {
@@ -35,7 +35,7 @@
       "testData": "Restaurant: MoonGherkinDestr<ts>\nEmail: arslan.moon+destr-<ts>@yopmail.com",
       "expectedResult": "All three signals hold simultaneously",
       "postCondition": "Registration confirmed end-to-end",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "AC2-POS-01 — after registration the post-signup screen confirms the new restaurant"
     },
     {
@@ -51,7 +51,7 @@
       "testData": "Restaurant Name: (empty)",
       "expectedResult": "Form does not advance; step-1 heading still visible",
       "postCondition": "User remains on step 1",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NEG-01 — Restaurant Name empty: Next does not advance"
     },
     {
@@ -81,7 +81,7 @@
       "testData": "Business Email: (empty)",
       "expectedResult": "Form does not advance; step-1 heading still visible",
       "postCondition": "User remains on step 1",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NEG-03 — Business Email empty: Next does not advance"
     },
     {
@@ -96,7 +96,7 @@
       "testData": "Business Email: arslan-yopmail.com",
       "expectedResult": "Email field reports HTML5 typeMismatch; form does not advance",
       "postCondition": "User remains on step 1",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NEG-04 — Invalid email format is rejected by HTML5 validity"
     },
     {
@@ -143,7 +143,7 @@
       "testData": "Restaurant Name: My Eatery 42",
       "expectedResult": "Subdomain ∈ /^[a-z0-9-]+$/; contains 'my' + 'eatery'",
       "postCondition": "n/a",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only"
     },
     {
@@ -160,7 +160,7 @@
       "testData": "Password: TestPass!2025\nConfirm Password: DifferentTestPass!2025",
       "expectedResult": "URL stays on /signup; step-2 heading still visible",
       "postCondition": "User remains on step 2",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NEG-08 — Create Account does not submit when passwords mismatch"
     },
     {
@@ -191,7 +191,7 @@
       "testData": "Terms: unchecked",
       "expectedResult": "Create Account button is disabled",
       "postCondition": "User remains on step 2",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NEG-10 — Create Account is disabled when Terms checkbox is unchecked"
     },
     {
@@ -205,7 +205,7 @@
       "testData": "n/a",
       "expectedResult": "All three have the readonly attribute",
       "postCondition": "n/a",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "UI-01 — Subdomain, Location Name, and Address fields are read-only"
     },
     {
@@ -237,7 +237,7 @@
       "testData": "Password: Secret!2025",
       "expectedResult": "Click 1: type='text'; click 2: type='password'",
       "postCondition": "n/a",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "UI-03 — Show/Hide password toggle works on step 2"
     },
     {
@@ -266,7 +266,7 @@
       "testData": "n/a",
       "expectedResult": "URL ends with /login",
       "postCondition": "User on the login screen",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NAV-01 — \"Sign in\" link navigates to /login"
     },
     {
@@ -280,7 +280,7 @@
       "testData": "n/a",
       "expectedResult": "Browser navigates to /",
       "postCondition": "User on homepage",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "NAV-02 — \"← Back\" link navigates to the homepage"
     },
     {
@@ -354,7 +354,7 @@
       "testData": "n/a",
       "expectedResult": "Both default to type='password'",
       "postCondition": "n/a",
-      "linkedSpec": ".features-gen/features/user-signup/signup.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/user-signup/signup.feature.spec.js",
       "linkedTestTitle": "UI-03 — Show/Hide password toggle works on step 2"
     },
     {

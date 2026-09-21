@@ -18,7 +18,7 @@
       "testData": "Email: developers@moontower.com\nPassword: 12345678",
       "expectedResult": "Redirect to /select-location with 'Select Your Location' heading and 'Restaurant: …' paragraph",
       "postCondition": "User authenticated; session cookie set",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-POS-01 — successful login with valid credentials"
     },
     {
@@ -34,7 +34,7 @@
       "testData": "Email: developers@moontower.com\nPassword: WrongPassword!2025",
       "expectedResult": "Auth API returns non-2xx; URL stays on /login",
       "postCondition": "User NOT authenticated",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-NEG-01 — wrong password is rejected"
     },
     {
@@ -50,7 +50,7 @@
       "testData": "Email: no-such-user-<ts>@example.com\nPassword: AnyPass!1234",
       "expectedResult": "Auth API returns non-2xx; URL stays on /login",
       "postCondition": "User NOT authenticated",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-NEG-02 — non-existent email is rejected"
     },
     {
@@ -66,7 +66,7 @@
       "testData": "Email: (empty)\nPassword: Whatever!2025",
       "expectedResult": "Form does not navigate to /select-location",
       "postCondition": "User remains on /Login",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-NEG-03 — empty email is rejected"
     },
     {
@@ -82,7 +82,7 @@
       "testData": "Email: developers@moontower.com\nPassword: (empty)",
       "expectedResult": "Form does not navigate to /select-location",
       "postCondition": "User remains on /Login",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-NEG-04 — empty password is rejected"
     },
     {
@@ -97,7 +97,7 @@
       "testData": "Email: (empty)\nPassword: (empty)",
       "expectedResult": "Form does not navigate to /select-location",
       "postCondition": "User remains on /Login",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-NEG-05 — both fields empty are rejected"
     },
     {
@@ -112,7 +112,7 @@
       "testData": "Email: developersmoontower.com\nPassword: Whatever!2025",
       "expectedResult": "Email field reports HTML5 typeMismatch validity; no redirect",
       "postCondition": "User remains on /Login",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-NEG-06 — invalid email format (no @) flags typeMismatch"
     },
     {
@@ -127,7 +127,7 @@
       "testData": "Email: developers@\nPassword: Whatever!2025",
       "expectedResult": "Email field reports HTML5 typeMismatch validity; no redirect",
       "postCondition": "User remains on /Login",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch"
     },
     {
@@ -141,7 +141,7 @@
       "testData": "n/a",
       "expectedResult": "Password input has attribute type='password'",
       "postCondition": "n/a",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "UI-01 — password field is masked by default"
     },
     {
@@ -157,7 +157,7 @@
       "testData": "Password: Secret!2025",
       "expectedResult": "Click 1: type='text'; click 2: type='password'",
       "postCondition": "n/a",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "UI-02 — show/hide password button toggles the input type"
     },
     {
@@ -172,7 +172,7 @@
       "testData": "Email: developers@moontower.com\nPassword: 12345678",
       "expectedResult": "Redirect to /select-location",
       "postCondition": "User signed in",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "UI-03 — Enter key in the password field submits the form"
     },
     {
@@ -200,7 +200,7 @@
       "testData": "n/a",
       "expectedResult": "Browser navigates to /forgot-password",
       "postCondition": "User on the forgot-password screen",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "NAV-01 — \"Forgot password?\" link navigates to /forgot-password"
     },
     {
@@ -214,7 +214,7 @@
       "testData": "n/a",
       "expectedResult": "Browser navigates to /signup",
       "postCondition": "User on the signup screen",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "NAV-02 — \"Sign up\" link navigates to /signup"
     },
     {
@@ -228,7 +228,7 @@
       "testData": "n/a",
       "expectedResult": "Browser navigates to /",
       "postCondition": "User on homepage",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "NAV-03 — \"← Back\" link navigates to the homepage"
     },
     {
@@ -289,7 +289,7 @@
       "testData": "n/a",
       "expectedResult": "input has attribute type='password'",
       "postCondition": "n/a",
-      "linkedSpec": ".features-gen/features/login-user/login.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/login-user/login.feature.spec.js",
       "linkedTestTitle": "UI-01 — password field is masked by default"
     },
     {

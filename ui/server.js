@@ -3396,15 +3396,24 @@ app.post('/api/run', async (req, res) => {
       write({ type: 'log', stream: 'stderr', text: `[history] failed to record per-test history: ${err.message}\n` });
     }
 
-    // Regenerate consolidated test-case Excel (reports/Test-Cases.xlsx)
-    // joining tests/<feature>/testcases.json with the latest run results.
+    // Regenerate the test-case Excel — one workbook per site
+    // (reports/Test-Cases-<site>.xlsx), joining each site's testcases.json with
+    // the latest run results. Sites that did not run keep their existing
+    // workbook rather than having their result columns blanked.
     try {
       const excel = await writeTestCasesExcel({
         root: ROOT,
         paths: CFG_PATHS,
         onLog: (msg) => write({ type: 'log', stream: 'stdout', text: msg + '\n' }),
       });
-      if (excel) write({ type: 'excel_written', file: excel.path, features: excel.features });
+      if (excel) {
+        write({
+          type: 'excel_written',
+          file: excel.path,          // first workbook — kept for older clients
+          features: excel.features,
+          files: excel.files,        // every workbook written by this run
+        });
+      }
     } catch (err) {
       write({ type: 'log', stream: 'stderr', text: `[excel] generation failed: ${err.message}\n` });
     }
@@ -3540,6 +3549,38 @@ app.get('/api/projects', (_req, res) => {
   });
 });
 
+/** reports/ filename of a site's test-case workbook. Mirrors ui/excel-writer.js. */
+function excelWorkbookName(site) {
+  return sites.isLegacy(site) ? 'Test-Cases.xlsx' : `Test-Cases-${site}.xlsx`;
+}
+
+/**
+ * Sites represented in the latest run, or null when that is unknown (no
+ * results.json, or a run still in flight). null must not be read as "nothing
+ * ran" — the UI shows every workbook in that case rather than hiding one.
+ */
+function sitesFromLastRun() {
+  const jsonPath = path.join(CFG_PATHS.testResults, 'results.json');
+  try {
+    if (!fs.existsSync(jsonPath)) return null;
+    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    const out = new Set();
+    (function walk(suites) {
+      for (const suite of suites || []) {
+        for (const spec of suite.specs || []) {
+          const norm = String(spec.file || suite.file || '').replace(/\\/g, '/');
+          const m = norm.replace(/^(?:.*\/)?\.?features-gen\//, '').match(/^sites\/([^/]+)\//);
+          out.add(m ? m[1] : sites.LEGACY_SITE);
+        }
+        walk(suite.suites);
+      }
+    })(data.suites);
+    return out.size ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 app.get('/api/report-status', (_req, res) => {
   try {
     const allReports = fs.existsSync(CFG_PATHS.reports) ? fs.readdirSync(CFG_PATHS.reports) : [];
@@ -3554,6 +3595,14 @@ app.get('/api/report-status', (_req, res) => {
       // null (not []) when the last run is unknown — no results.json yet, or a
       // run in flight. The UI must show everything rather than hide reports.
       : null;
+
+    // The same for Excel: there is now one workbook per site, so lead with the
+    // one belonging to the site that just ran and fold the others away.
+    const ranSites = sitesFromLastRun();
+    const excelReports = allReports.filter((f) => f.endsWith('.xlsx'));
+    const lastRunExcel = ranSites
+      ? excelReports.filter((f) => [...ranSites].some((s) => f === excelWorkbookName(s)))
+      : null;
     const reportTimes = {};
     for (const f of allReports) {
       const stat = fs.statSync(path.join(CFG_PATHS.reports, f), { throwIfNoEntry: false });
@@ -3563,9 +3612,11 @@ app.get('/api/report-status', (_req, res) => {
       playwright: fs.existsSync(path.join(CFG_PATHS.playwrightReport, 'index.html')),
       allure: fs.existsSync(path.join(CFG_PATHS.allureReport, 'index.html')),
       aiReports: mdReports,
-      excelReports: allReports.filter((f) => f.endsWith('.xlsx')),
+      excelReports,
+      lastRunExcel,
       lastRunReports,
       lastRunFeatures: features ? [...features] : null,
+      lastRunSites: ranSites ? [...ranSites] : null,
       reportTimes,
     });
   } catch (err) {

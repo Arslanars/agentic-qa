@@ -1,15 +1,42 @@
-// Excel writer — generates reports/Test-Cases.xlsx using the canonical
+// Excel writer — generates one test-case workbook PER SITE using the canonical
 // 10-column format (TEST CASE ID, TEST SCENARIO, TEST CASE, PRE-CONDITION,
 // TEST STEPS, TEST DATA, EXPECTED RESULT, POST CONDITION, ACTUAL RESULT,
 // STATUS (PASS/FAIL)).
 //
-// Source of truth for columns 1-8 = tests/<feature>/testcases.json (authored
-// alongside the tests). Columns 9-10 are filled from the latest Playwright
-// run (test-results/results.json).
+//   reports/Test-Cases-moontower.xlsx      sites/moontower/**/testcases.json
+//   reports/Test-Cases-saucedemo.xlsx      sites/saucedemo/**/testcases.json
+//   reports/Test-Cases.xlsx                legacy top-level features/ + tests/
+//
+// One workbook per site rather than one merged file, because the ACTUAL RESULT
+// and STATUS columns come from the LAST RUN. A merged workbook rewritten after
+// running site B would reset every one of site A's rows to "not run" — the
+// results wouldn't just be mixed, they'd be destroyed. Splitting by site means
+// running one application only touches that application's workbook.
+//
+// For the same reason a site's workbook is only rewritten when that site
+// actually appears in the latest run (or has no workbook yet). See
+// sitesInLastRun().
+//
+// Source of truth for columns 1-8 = <site>/features/<feature>/testcases.json
+// (authored alongside the tests). Columns 9-10 are filled from the latest
+// Playwright run (test-results/results.json).
 
 const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
+
+/**
+ * Id of the implicit site backed by the top-level features/ + tests/ folders.
+ * Matches ui/sites.js. Not required from there: this module is also loaded by
+ * bin/ scripts that have no UI dependency, and the only thing it needs is the
+ * sentinel value.
+ */
+const LEGACY_SITE = '@root';
+
+/** reports/Test-Cases.xlsx for the legacy layout, Test-Cases-<site>.xlsx otherwise. */
+function workbookNameFor(site) {
+  return site === LEGACY_SITE ? 'Test-Cases.xlsx' : `Test-Cases-${site}.xlsx`;
+}
 
 const COLUMN_DEFS = [
   { header: 'TEST CASE ID',         key: 'id',             width: 22 },
@@ -75,31 +102,75 @@ function fmtLocalDateTime() {
  * must reach the report.
  */
 function discoverTestcaseFiles(root, paths) {
-  const candidates = new Map(); // feature id → file path
+  const candidates = new Map(); // feature id → { site, file }
 
-  function pickup(dir, sitePrefix = '') {
+  function pickup(dir, site) {
     if (!dir || !fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const candidate = path.join(dir, entry.name, 'testcases.json');
-      const key = sitePrefix ? `${sitePrefix}/${entry.name}` : entry.name;
+      const key = site === LEGACY_SITE ? entry.name : `${site}/${entry.name}`;
       if (fs.existsSync(candidate) && !candidates.has(key)) {
-        candidates.set(key, candidate);
+        candidates.set(key, { site, file: candidate });
       }
     }
   }
 
   // features/ first (canonical for BDD), then each site's, then tests/.
-  pickup(path.join(root, 'features'));
-  const sitesDir = path.join(root, 'sites');
-  try {
-    for (const entry of fs.readdirSync(sitesDir, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
-      pickup(path.join(sitesDir, entry.name, 'features'), entry.name);
-    }
-  } catch { /* no sites/ — single-site layout */ }
-  pickup(paths?.tests || path.join(root, 'tests'));
+  pickup(path.join(root, 'features'), LEGACY_SITE);
+  for (const site of listSiteIds(root)) {
+    pickup(path.join(root, 'sites', site, 'features'), site);
+  }
+  pickup(paths?.tests || path.join(root, 'tests'), LEGACY_SITE);
   return Array.from(candidates.values());
+}
+
+/** Site folders under sites/ — scaffolding (_, .) excluded. */
+function listSiteIds(root) {
+  try {
+    return fs.readdirSync(path.join(root, 'sites'), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return []; // no sites/ — single-site layout
+  }
+}
+
+/**
+ * Which site a Playwright-reported spec path belongs to. Playwright reports
+ * paths relative to testDir (.features-gen), so a site spec arrives as
+ * "sites/<site>/features/…" — with or without the .features-gen prefix, and
+ * with either separator.
+ */
+function siteFromSpecPath(file) {
+  const norm = (file || '').replace(/\\/g, '/');
+  const m = norm.replace(/^(?:.*\/)?\.?features-gen\//, '').match(/^sites\/([^/]+)\//);
+  return m ? m[1] : LEGACY_SITE;
+}
+
+/**
+ * Sites represented in the latest run. Returns null when the run is unknown
+ * (no results.json, or it is unreadable) — callers must treat null as "don't
+ * know", never as "nothing ran", or they would skip every workbook.
+ */
+function sitesInLastRun(root, paths) {
+  const testResultsDir = paths?.testResults || path.join(root, 'test-results');
+  const jsonPath = path.join(testResultsDir, 'results.json');
+  try {
+    if (!fs.existsSync(jsonPath)) return null;
+    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    const out = new Set();
+    (function walk(suites) {
+      for (const suite of suites || []) {
+        for (const spec of suite.specs || []) out.add(siteFromSpecPath(spec.file || suite.file));
+        walk(suite.suites);
+      }
+    })(data.suites);
+    return out.size ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -136,6 +207,26 @@ function buildResultMap(root, paths) {
   return map;
 }
 
+/**
+ * Reduce a spec path to the part that identifies the test, independent of
+ * layout: drop the .features-gen/ prefix (Playwright reports paths relative to
+ * testDir, so it may already be gone) and any sites/<site>/ segment.
+ *
+ *   .features-gen/features/login-user/login.feature.spec.js   ->  features/login-user/login.feature.spec.js
+ *   sites/moontower/features/login-user/login.feature.spec.js ->  features/login-user/login.feature.spec.js
+ *
+ * This is what lets a testcases.json written before the per-site migration
+ * keep matching its results. Without it every ACTUAL RESULT / STATUS cell
+ * silently reverts to "not run" — silently, because a missing result is
+ * indistinguishable from a test that never ran.
+ */
+function canonicalSpecPath(p) {
+  return (p || '')
+    .replace(/\\/g, '/')
+    .replace(/^(?:.*\/)?\.?features-gen\//, '')
+    .replace(/^sites\/[^/]+\//, '');
+}
+
 function lookupResult(resultMap, linkedSpec, linkedTestTitle) {
   // Test the exact key first, then walk all keys for a path-suffix match (so
   // a testcases.json `linkedSpec: "login-user/login.spec.ts"` matches whatever
@@ -147,15 +238,19 @@ function lookupResult(resultMap, linkedSpec, linkedTestTitle) {
   // Strict-ish suffix match: require a directory separator in the linkedSpec
   // and anchor at '/' to avoid false positives where one feature name is a
   // suffix of another (e.g., 'login.spec.ts' matching 'other-login.spec.ts').
+  // Both sides are canonicalised so the comparison survives the layout the
+  // path was written in.
   if (!norm.includes('/')) return null;
+  const canonNorm = canonicalSpecPath(norm);
   const matches = [];
-  const suffix = '/' + norm;
   for (const [key, val] of resultMap) {
     const sepIdx = key.indexOf('::');
     if (sepIdx < 0) continue;
     const file = key.slice(0, sepIdx);
     const title = key.slice(sepIdx + 2);
-    if (title === linkedTestTitle && (file === norm || file.endsWith(suffix))) {
+    if (title !== linkedTestTitle) continue;
+    const canonFile = canonicalSpecPath(file);
+    if (canonFile === canonNorm || canonFile.endsWith('/' + canonNorm) || canonNorm.endsWith('/' + canonFile)) {
       matches.push(val);
     }
   }
@@ -343,20 +438,10 @@ function buildSummarySheet(workbook, perFeatureStats) {
 }
 
 /**
- * Main entry — discovers all testcases.json files, joins with the latest run
- * results, writes reports/Test-Cases.xlsx. Returns metadata about what was
- * written so callers can log it.
+ * Build and write ONE site's workbook. Returns its stats, or null when the
+ * site has no usable testcases.json.
  */
-async function writeTestCasesExcel({ root, paths, onLog } = {}) {
-  const log = (msg) => { if (onLog) onLog(msg); };
-  const files = discoverTestcaseFiles(root, paths);
-  if (files.length === 0) {
-    log('[excel] no tests/<feature>/testcases.json files found — skipping Excel export.');
-    return null;
-  }
-
-  const resultMap = buildResultMap(root, paths);
-  const lastRun = fmtLocalDateTime();
+async function writeSiteWorkbook({ root, paths, site, entries, resultMap, lastRun, log }) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'agentic-qa';
   workbook.created = new Date();
@@ -367,7 +452,7 @@ async function writeTestCasesExcel({ root, paths, onLog } = {}) {
   // build Summary at the end, then clone everything into a final workbook
   // in the desired tab order (Summary first, then features).
   const featureStats = [];
-  for (const file of files) {
+  for (const { file } of entries) {
     let meta;
     try {
       meta = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -386,13 +471,10 @@ async function writeTestCasesExcel({ root, paths, onLog } = {}) {
       ...stats,
       lastRun: stats.passed + stats.failed + stats.skipped > 0 ? lastRun : 'never',
     });
-    log(`[excel] sheet ${meta.storyId || meta.feature}: ${stats.passed} passed, ${stats.failed} failed, ${stats.skipped} skipped (${stats.total} total)`);
+    log(`[excel] ${site} / ${meta.storyId || meta.feature}: ${stats.passed} passed, ${stats.failed} failed, ${stats.skipped} skipped (${stats.total} total)`);
   }
 
-  if (featureStats.length === 0) {
-    log('[excel] nothing to write — no valid testcases.json files.');
-    return null;
-  }
+  if (featureStats.length === 0) return null;
 
   // Build Summary with the collected stats, then rebuild the workbook with
   // Summary as sheet #1 (sheets land in tabs in creation order).
@@ -409,13 +491,69 @@ async function writeTestCasesExcel({ root, paths, onLog } = {}) {
   }
 
   const reportsDir = paths?.reports || path.join(root, 'reports');
-  const outPath = path.join(reportsDir, 'Test-Cases.xlsx');
+  const outPath = path.join(reportsDir, workbookNameFor(site));
   fs.mkdirSync(reportsDir, { recursive: true });
   await finalWb.xlsx.writeFile(outPath);
   const bytes = fs.statSync(outPath).size;
   const relPath = path.relative(root, outPath).split(path.sep).join('/');
   log(`[excel] wrote ${relPath} (${(bytes / 1024).toFixed(1)} KB, ${featureStats.length} sheet${featureStats.length === 1 ? '' : 's'} + summary)`);
-  return { path: relPath, features: featureStats };
+  return { site, path: relPath, file: path.basename(outPath), features: featureStats };
+}
+
+/**
+ * Main entry — discovers every testcases.json, groups it by the site that owns
+ * it, joins with the latest run results and writes ONE workbook per site.
+ *
+ * A site's workbook is rewritten only when that site took part in the latest
+ * run, or when it has no workbook yet. Rewriting an untouched site would blank
+ * its ACTUAL RESULT / STATUS columns, because those come from the current
+ * results.json — which after a single-site run contains nothing for any other
+ * site. Skipping leaves that site's last real results on disk.
+ *
+ * Returns { files: [...], path, features } — `path` and `features` describe
+ * the first workbook written, so older single-site callers keep working.
+ */
+async function writeTestCasesExcel({ root, paths, onLog } = {}) {
+  const log = (msg) => { if (onLog) onLog(msg); };
+  const discovered = discoverTestcaseFiles(root, paths);
+  if (discovered.length === 0) {
+    log('[excel] no <site>/features/<feature>/testcases.json files found — skipping Excel export.');
+    return null;
+  }
+
+  const bySite = new Map();
+  for (const entry of discovered) {
+    if (!bySite.has(entry.site)) bySite.set(entry.site, []);
+    bySite.get(entry.site).push(entry);
+  }
+
+  const resultMap = buildResultMap(root, paths);
+  const lastRun = fmtLocalDateTime();
+  const ranSites = sitesInLastRun(root, paths); // null === unknown
+  const reportsDir = paths?.reports || path.join(root, 'reports');
+
+  const written = [];
+  const skipped = [];
+  for (const [site, entries] of bySite) {
+    const exists = fs.existsSync(path.join(reportsDir, workbookNameFor(site)));
+    // null (unknown run) means write everything — better a refreshed workbook
+    // than a stale one when we cannot tell what ran.
+    if (ranSites && !ranSites.has(site) && exists) {
+      skipped.push(site);
+      continue;
+    }
+    const result = await writeSiteWorkbook({ root, paths, site, entries, resultMap, lastRun, log });
+    if (result) written.push(result);
+  }
+
+  if (skipped.length) {
+    log(`[excel] left ${skipped.map(workbookNameFor).join(', ')} untouched — ${skipped.length === 1 ? 'that site' : 'those sites'} did not run, so ${skipped.length === 1 ? 'its' : 'their'} last results are preserved.`);
+  }
+  if (written.length === 0) {
+    log('[excel] nothing to write — no valid testcases.json files.');
+    return null;
+  }
+  return { files: written, path: written[0].path, features: written[0].features };
 }
 
 /**

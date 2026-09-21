@@ -30,7 +30,7 @@
       "testData": "Email: testing@yopmail.com\nPassword: 12345678\nExpected confirmation: 5 vendors show 'Sent ✓'\nProduct sought in order details: Sprite",
       "expectedResult": "Orders are submitted (5 vendors → 'Sent ✓'); the Orders List shows the new Submitted orders; the opened order's details list its product lines",
       "postCondition": "5 new 'Submitted' vendor orders exist in /order-history",
-      "linkedSpec": ".features-gen/features/order-flow/order-flow.feature.spec.js",
+      "linkedSpec": ".features-gen/sites/moontower/features/order-flow/order-flow.feature.spec.js",
       "linkedTestTitle": "ORDER-01 — send all vendor orders from the tablet POS and review them",
       "knownDiscrepancies": [
         "Confirmation: the literal toast 'Sent 5 orders across 5' is not rendered by the live app; the real confirmation is 5x 'Sent ✓'.",

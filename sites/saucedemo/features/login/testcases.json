@@ -1,0 +1,42 @@
+{
+  "feature": "login",
+  "storyId": "SAUCE-001",
+  "storyTitle": "Sauce Demo sign-in",
+  "applicationUrl": "https://www.saucedemo.com/",
+  "testCases": [
+    {
+      "id": "SAUCE-001-POS-01",
+      "scenario": "AC1: a valid user can sign in and lands on the product list",
+      "testCase": "Sign in as standard_user and reach the product list",
+      "preCondition": "Browser open at https://www.saucedemo.com/; the demo account 'standard_user' is not locked",
+      "testSteps": [
+        "Navigate to https://www.saucedemo.com/",
+        "Enter 'standard_user' into the Username field",
+        "Enter the shared demo password into the Password field",
+        "Click 'Login'"
+      ],
+      "testData": "Username: standard_user\nPassword: (SAUCEDEMO_PASSWORD, defaults to the published demo password)",
+      "expectedResult": "App navigates to /inventory.html and the 'Products' heading is visible",
+      "postCondition": "User authenticated; session cookie set",
+      "linkedSpec": ".features-gen/sites/saucedemo/features/login/login.feature.spec.js",
+      "linkedTestTitle": "SAUCE-001-POS-01 — a standard user reaches the product list"
+    },
+    {
+      "id": "SAUCE-001-NEG-01",
+      "scenario": "AC1: a locked-out account is refused with a clear message",
+      "testCase": "Sign in as locked_out_user and see the lock-out error",
+      "preCondition": "Browser open at https://www.saucedemo.com/; the demo account 'locked_out_user' is locked by design",
+      "testSteps": [
+        "Navigate to https://www.saucedemo.com/",
+        "Enter 'locked_out_user' into the Username field",
+        "Enter the shared demo password into the Password field",
+        "Click 'Login'"
+      ],
+      "testData": "Username: locked_out_user\nPassword: (SAUCEDEMO_PASSWORD, defaults to the published demo password)",
+      "expectedResult": "Stays on the sign-in page and shows 'Epic sadface: Sorry, this user has been locked out.'",
+      "postCondition": "No session established",
+      "linkedSpec": ".features-gen/sites/saucedemo/features/login/login.feature.spec.js",
+      "linkedTestTitle": "SAUCE-001-NEG-01 — a locked-out user is rejected"
+    }
+  ]
+}

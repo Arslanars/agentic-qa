@@ -5141,27 +5141,54 @@
         for (const f of current) {
           addLink(`/reports-view/${encodeURIComponent(f)}`, f, reportIcon());
         }
-        for (const f of status.excelReports || []) {
-          addLink(`/reports/${encodeURIComponent(f)}`, f, excelIcon(), { download: true });
+
+        // Test-case workbooks — one per site. Lead with the site that just ran
+        // and fold the rest in with the older reports, so a repo testing four
+        // applications doesn't show four .xlsx chips after every run.
+        const xlsx = status.excelReports || [];
+        const xlsxFromRun = status.lastRunExcel;
+        const currentXlsx = xlsxFromRun ? xlsx.filter((f) => xlsxFromRun.includes(f)) : xlsx;
+        const olderXlsx = xlsxFromRun ? xlsx.filter((f) => !xlsxFromRun.includes(f)) : [];
+        // "Test-Cases-moontower.xlsx" reads better as "Test cases — moontower".
+        const xlsxLabel = (f) => {
+          const m = f.match(/^Test-Cases-(.+)\.xlsx$/i);
+          return m ? `Test cases — ${m[1]}` : f;
+        };
+        for (const f of currentXlsx) {
+          addLink(`/reports/${encodeURIComponent(f)}`, xlsxLabel(f), excelIcon(), { download: true });
         }
-        if (older.length) {
+
+        if (older.length || olderXlsx.length) {
           const chip = document.createElement('button');
           chip.type = 'button';
           chip.className = 'report-older-chip';
           chip.setAttribute('aria-expanded', 'false');
           chip.title = 'Reports from earlier runs — not part of the run you just executed';
           reportsEl.appendChild(chip);
-          const olderLinks = older.map((f) => {
-            const when = status.reportTimes?.[f];
-            return addLink(`/reports-view/${encodeURIComponent(f)}`, f, reportIcon(), {
-              stale: true,
-              title: when ? `From an earlier run — last written ${new Date(when).toLocaleString()}` : 'From an earlier run',
-            });
-          });
+          const olderLinks = [
+            ...older.map((f) => {
+              const when = status.reportTimes?.[f];
+              return addLink(`/reports-view/${encodeURIComponent(f)}`, f, reportIcon(), {
+                stale: true,
+                title: when ? `From an earlier run — last written ${new Date(when).toLocaleString()}` : 'From an earlier run',
+              });
+            }),
+            // A workbook for a site this run didn't touch still holds that
+            // site's last real results — it is stale, not wrong.
+            ...olderXlsx.map((f) => {
+              const when = status.reportTimes?.[f];
+              return addLink(`/reports/${encodeURIComponent(f)}`, xlsxLabel(f), excelIcon(), {
+                download: true,
+                stale: true,
+                title: when ? `This site did not run — results from ${new Date(when).toLocaleString()}` : 'This site did not run in the latest run',
+              });
+            }),
+          ];
+          const totalOlder = older.length + olderXlsx.length;
           const sync = () => {
             const open = chip.getAttribute('aria-expanded') === 'true';
             olderLinks.forEach((a) => { a.hidden = !open; });
-            chip.textContent = open ? 'hide older' : `+${older.length} older`;
+            chip.textContent = open ? 'hide older' : `+${totalOlder} older`;
           };
           chip.addEventListener('click', () => {
             chip.setAttribute('aria-expanded', chip.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
