@@ -5438,9 +5438,13 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
         // fresh from disk — so after a code change the browser can be running
         // a newer front-end than the server it is talking to. That mismatch
         // surfaces as an endpoint rejecting a parameter it has never heard of,
-        // which reads like a broken feature rather than a stale process. Say
-        // so plainly instead.
-        if (data.stale) showStaleServerBanner();
+        // which reads like a broken feature rather than a stale process.
+        //
+        // Note the `in` check. A server too old to KNOW about staleness cannot
+        // report it, and that is precisely the server the warning exists for —
+        // testing `data.stale` alone would stay silent in the one case that
+        // matters. A missing field is therefore itself the signal.
+        if (!('stale' in data) || data.stale) showStaleServerBanner();
         const lbl = $('save-label');
         if (lbl) lbl.textContent = claudeCliAvailable ? 'Save & Generate Tests' : 'Save Story';
         // The prompt-preview panel used to carry this explanation. With that
