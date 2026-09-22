@@ -3211,14 +3211,21 @@
     <div class="rec-body" id="rec-body">
       <!-- STATE: idle/setup -->
       <div id="rec-state-setup" data-state="setup">
-        <p>Drive the app yourself in a real browser; the recorder watches what you do and converts it into a Gherkin scenario. The new scenario is appended to an existing feature's <code>.feature</code> file.</p>
+        <p>Drive the app yourself in a real browser; the recorder watches what you do and converts it into a Gherkin scenario. Append it to an existing feature, or start a brand-new one — including for an application this project has never tested before.</p>
         <div class="field">
           <label for="rec-url">Start URL</label>
           <input id="rec-url" type="url" placeholder="https://your-app.example.com/login" />
         </div>
         <div class="field">
-          <label for="rec-feature">Append to feature</label>
+          <label for="rec-feature">Target feature</label>
           <select id="rec-feature"></select>
+        </div>
+        <!-- Shown only when "＋ New feature…" is picked. The site is derived
+             from the Start URL, so recording a new app creates its folder. -->
+        <div class="field" id="rec-new-wrap" hidden>
+          <label for="rec-new-name">New feature name</label>
+          <input id="rec-new-name" type="text" placeholder="checkout-flow" />
+          <div id="rec-new-hint" class="site-hint"></div>
         </div>
         <div class="field">
           <label for="rec-browser">Browser</label>
@@ -7351,6 +7358,11 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
       let proposedScenario = '';
       let pollTimer = null;
       let recordingFeature = null;
+      // True when this recording is bootstrapping a feature that does not exist
+      // yet — the only case in which the append endpoint is allowed to create
+      // files. Captured at Start, not read at Append, so changing the picker
+      // mid-recording cannot retarget the write.
+      let recordingCreatesFeature = false;
 
       // Live elapsed-time ticker for the long Claude states (converting /
       // scaffolding). The progress bar animates on its own via CSS; this adds
@@ -7394,28 +7406,79 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
         else if (state === 'review')   { actionBtn.textContent = 'Done'; actionBtn.disabled = false; }
       }
 
+      // Sentinel value for the "start a new feature" option. Not a legal
+      // feature id (ids are [A-Za-z0-9._-] segments), so it can never collide
+      // with a real one.
+      const NEW_FEATURE = '__new__';
+
+      /** Are we recording into a feature that does not exist yet? */
+      function isNewFeatureMode() {
+        return $('rec-feature').value === NEW_FEATURE;
+      }
+
+      /**
+       * The feature id the recording will be written to. In new-feature mode
+       * that is "<site>/<slug>", with the site derived from the Start URL —
+       * which is what lets recording bootstrap an application the project has
+       * never tested. recorderNewSite is filled by refreshNewFeatureHint().
+       */
+      let recorderNewSite = null;
+      function recorderTargetId() {
+        if (!isNewFeatureMode()) return $('rec-feature').value;
+        const slug = safeSlugClient($('rec-new-name').value);
+        if (!slug) return '';
+        return recorderNewSite ? `${recorderNewSite}/${slug}` : slug;
+      }
+
+      // Resolve the Start URL to its site and show exactly where the files will
+      // land, before any browser opens.
+      async function refreshNewFeatureHint() {
+        const wrap = $('rec-new-wrap');
+        const hint = $('rec-new-hint');
+        wrap.hidden = !isNewFeatureMode();
+        if (wrap.hidden) return;
+        const url = $('rec-url').value.trim();
+        recorderNewSite = null;
+        if (/^https?:\/\//i.test(url)) {
+          try {
+            const r = await fetch(`/api/sites/resolve?url=${encodeURIComponent(url)}`);
+            if (r.ok) {
+              const d = await r.json();
+              recorderNewSite = d.site;
+              const slug = safeSlugClient($('rec-new-name').value) || '<name>';
+              hint.textContent = d.exists
+                ? `→ sites/${d.site}/features/${slug}/  (existing site "${d.site}")`
+                : `→ sites/${d.site}/features/${slug}/  (new site — will be created)`;
+              return;
+            }
+          } catch { /* fall through to the prompt below */ }
+        }
+        hint.textContent = 'Enter a Start URL above — the site folder is derived from it.';
+      }
+
       function openModal() {
         // Mirror the current feature dropdown options into the modal's picker
         const recFeature = $('rec-feature');
         recFeature.innerHTML = '';
+        // Always first: recording is how you bootstrap a feature (or a whole
+        // application) you have not written a story for yet.
+        const neu = document.createElement('option');
+        neu.value = NEW_FEATURE;
+        neu.textContent = '＋ New feature…';
+        recFeature.appendChild(neu);
         const opts = Array.from($('feature').options).filter((o) => o.value);
-        if (opts.length === 0) {
-          const o = document.createElement('option');
-          o.value = '';
-          o.textContent = '(no features yet — create one with Save & Generate first)';
-          o.disabled = true;
-          recFeature.appendChild(o);
-        } else {
-          for (const o of opts) {
-            const clone = document.createElement('option');
-            clone.value = o.value;
-            clone.textContent = o.textContent;
-            recFeature.appendChild(clone);
-          }
-          // Default to whatever's currently selected in the main dropdown.
-          const cur = $('feature').value;
-          if (cur && opts.some((o) => o.value === cur)) recFeature.value = cur;
+        for (const o of opts) {
+          const clone = document.createElement('option');
+          clone.value = o.value;
+          clone.textContent = o.textContent;
+          recFeature.appendChild(clone);
         }
+        // Default to whatever's currently selected in the main dropdown; with
+        // no features at all, New feature is the only sensible starting point.
+        const cur = $('feature').value;
+        recFeature.value = (cur && opts.some((o) => o.value === cur)) ? cur : (opts.length ? opts[0].value : NEW_FEATURE);
+        $('rec-new-name').value = '';
+        refreshNewFeatureHint();
         // Pre-fill URL from the story form if non-empty.
         $('rec-url').value = $('url').value || '';
         capturedCode = '';
@@ -7449,11 +7512,22 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
 
       async function startRecording() {
         const url = $('rec-url').value.trim();
-        const feature = $('rec-feature').value;
         const browser = $('rec-browser').value;
         if (!url) { showToast('Start URL is required', 'error'); return; }
-        if (!feature) { showToast('Pick a feature to append to', 'error'); return; }
+        if (isNewFeatureMode()) {
+          // Resolve the site now rather than at append time, so a bad URL is
+          // reported before a browser window opens and work is recorded.
+          await refreshNewFeatureHint();
+          if (!safeSlugClient($('rec-new-name').value)) {
+            showToast('Name the new feature first', 'error');
+            $('rec-new-name').focus();
+            return;
+          }
+        }
+        const feature = recorderTargetId();
+        if (!feature) { showToast('Pick a feature, or name a new one', 'error'); return; }
         recordingFeature = feature;
+        recordingCreatesFeature = isNewFeatureMode();
         actionBtn.disabled = true;
         try {
           const resp = await fetch('/api/recorder/start', {
@@ -7562,12 +7636,21 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
           const resp = await fetch('/api/recorder/append', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ feature: targetFeature, scenario: finalScenario }),
+            body: JSON.stringify({
+              feature: targetFeature,
+              scenario: finalScenario,
+              // Only the recorder's own new-feature flow may create files. The
+              // Coverage Gap Closer reuses this modal to fill a gap in an
+              // EXISTING feature — it must still 404 on a typo rather than
+              // silently scaffold a stray feature folder.
+              createIfMissing: recordingCreatesFeature && !window.__recorderOverrideFeature,
+              url: $('rec-url').value.trim() || undefined,
+            }),
           });
           const data = await resp.json().catch(() => ({}));
           if (!resp.ok) { showToast(data.error || `HTTP ${resp.status}`, 'error'); actionBtn.disabled = false; return; }
           appendFile = data.file || '';
-          showToast(`Appended to ${appendFile}`);
+          showToast(data.created ? `Created ${appendFile}` : `Appended to ${appendFile}`);
           loadFeatures();
         } catch (err) {
           showToast('Append failed: ' + (err?.message || err), 'error');
@@ -7658,6 +7741,14 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
       });
       cancelBtn.addEventListener('click', closeModal);
       closeBtn.addEventListener('click', closeModal);
+
+      // Keep the "where will this land?" hint honest as the picker, the Start
+      // URL and the new-feature name change.
+      $('rec-feature').addEventListener('change', refreshNewFeatureHint);
+      $('rec-url').addEventListener('input', () => {
+        if (isNewFeatureMode()) refreshNewFeatureHint();
+      });
+      $('rec-new-name').addEventListener('input', refreshNewFeatureHint);
       backdrop.addEventListener('click', closeModal);
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();

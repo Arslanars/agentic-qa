@@ -2140,8 +2140,113 @@ If every step you used already exists in the steps file, return newSteps: [].`;
 // Append a Gherkin scenario to the target feature's .feature file. The file
 // must already exist — recorder is for ADDING scenarios to an existing
 // feature, not for scaffolding new ones (that's what Save & Generate is for).
+/**
+ * Normalise a recorded scenario block to the repo's Gherkin indentation:
+ * outermost line (the `@tag` or `Scenario:`) at 2 spaces, inner lines keeping
+ * their relative depth.
+ *
+ * The previous `scenario.replace(/^\s+/, '')` stripped the leading newline AND
+ * the first line's indent in one go, so an appended scenario landed with
+ * `Scenario:` hard against the left margin while its steps stayed indented.
+ * Gherkin parses either way, which is why it went unnoticed — it just looked
+ * wrong next to every hand-authored scenario in the same file.
+ */
+function normalizeScenarioBlock(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^[ \t]*/)[0].length);
+  const base = indents.length ? Math.min(...indents) : 0;
+  return lines.map((l) => (l.trim() ? '  ' + l.slice(base) : '')).join('\n');
+}
+
+/**
+ * Write a placeholder <slug>.steps.ts for a freshly-created feature.
+ *
+ * Why this is not optional: `bddgen` EXITS 1 when a scenario has a step with no
+ * definition, and when it fails it compiles nothing — `.features-gen/` keeps
+ * the previous run's specs. So a recorded feature with no steps file would not
+ * just be unrunnable itself, it would break `npm test` for the whole repo and
+ * leave every other feature running stale compiled specs. The recorder chains
+ * straight into /api/scaffold-missing-steps, but that needs the Claude CLI; if
+ * it is missing or the user closes the modal, the broken build is what's left.
+ *
+ * Each stub THROWS rather than passing. A stub that quietly passed would make
+ * the new scenario green while proving nothing, which is the one outcome this
+ * framework treats as worse than a red suite (see CLAUDE.md, strict-AC rule).
+ * Scaffolding overwrites this file with real implementations.
+ */
+function writeStubSteps(featureDir, slug, tag, featureSrc) {
+  const stepsPath = path.join(featureDir, `${slug}.steps.ts`);
+  if (fs.existsSync(stepsPath)) return null; // never clobber real work
+
+  // Keyword per step, resolving And/But to whatever they continue.
+  const emitted = new Map(); // pattern -> keyword
+  let last = 'Given';
+  for (const line of stepIndex.featureStepLines(featureSrc)) {
+    const kw = (line.match(/^\s*(Given|When|Then|And|But|\*)\b/) || [])[1] || 'Given';
+    if (kw === 'Given' || kw === 'When' || kw === 'Then') last = kw;
+    // Quoted literals become {string} parameters, matching how bddgen's own
+    // snippets and the rest of this repo's steps are written.
+    const pattern = stepIndex.stripKeyword(line).replace(/"[^"]*"/g, '{string}');
+    if (pattern && !emitted.has(pattern)) emitted.set(pattern, last);
+  }
+  if (emitted.size === 0) return null;
+
+  // Two constraints pull in opposite directions here:
+  //  - playwright-bdd VALIDATES the argument count at bddgen time: a step
+  //    whose pattern has two {string}s must declare the fixtures object plus
+  //    two parameters, or bddgen fails with "Function has 0 arguments, but
+  //    expected 3" — the exact failure this stub exists to prevent.
+  //  - this repo type-checks with noUnusedLocals AND noUnusedParameters, so
+  //    declaring them and not using them is also an error.
+  // An empty `{}` fixtures pattern binds nothing, and TypeScript exempts
+  // parameters prefixed with `_` from the unused check. Both satisfied.
+  const body = [...emitted.entries()].map(([pattern, kw]) => {
+    const esc = pattern.replace(/'/g, "\\'");
+    const argc = (pattern.match(/\{string\}/g) || []).length;
+    const args = Array.from({ length: argc }, (_, i) => `_arg${i + 1}: string`);
+    const sig = ['{}', ...args].join(', ');
+    return `${kw}('${esc}', async (${sig}) => {\n` +
+      `  throw new Error('Step not implemented yet: ${esc}');\n});`;
+  }).join('\n\n');
+
+  const src =
+    `// PLACEHOLDER step definitions for ${slug}, written when this feature was\n` +
+    `// created by the Test Recorder. Every step throws on purpose: the scenario\n` +
+    `// must fail honestly until it is implemented, and bddgen needs a definition\n` +
+    `// for each step or it refuses to compile ANY feature in the repo.\n` +
+    `//\n` +
+    `// Replace these with real implementations that wrap page objects — put the\n` +
+    `// locators on a POM under ../../pages/${slug}/, never in this file.\n` +
+    `// "Scaffold missing steps" in the UI does this for you.\n\n` +
+    `import { createBdd } from 'playwright-bdd';\n\n` +
+    `// Tag-scoped so these phrases stay invisible to every other feature.\n` +
+    `const { Given, When, Then } = createBdd(undefined, { tags: '${tag}' });\n\n` +
+    `${body}\n`;
+
+  fs.writeFileSync(stepsPath, src, 'utf8');
+  return `${slug}.steps.ts`;
+}
+
+/** "vendor-order-flow" -> "Vendor Order Flow", for a new Feature: line. */
+function titleFromSlug(slug) {
+  return String(slug || '')
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+// Append a recorded scenario to a feature — creating the feature, and the site
+// that owns it, when `createIfMissing` is set.
+//
+// The recorder used to be append-only: its picker listed existing features and
+// this endpoint 404'd on anything else, so a brand-new application could never
+// be started by recording it. You had to hand-write a story and generate first,
+// which is the opposite of what recording is for.
 app.post('/api/recorder/append', (req, res) => {
-  const { feature, scenario } = req.body || {};
+  const { feature, scenario, createIfMissing, url, title } = req.body || {};
   if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
@@ -2151,22 +2256,83 @@ app.post('/api/recorder/append', (req, res) => {
   if (scenario.length > 10_000) {
     return res.status(413).json({ error: 'scenario too long' });
   }
-  const featureDir = featurePaths(feature).featureDir;
+  if (url && !isHttpUrl(url)) {
+    return res.status(400).json({ error: 'url must be a valid http(s) URL' });
+  }
+
+  const fp = featurePaths(feature);
+  let featureDir = fp.featureDir;
+  let created = false;
+
   if (!fs.existsSync(featureDir)) {
-    return res.status(404).json({ error: `feature folder not found: ${relFeat(feature)}/` });
+    if (!createIfMissing) {
+      return res.status(404).json({ error: `feature folder not found: ${relFeat(feature)}/` });
+    }
+    // Refuse to scaffold a new feature at the repo root in a project that has
+    // already moved to per-site folders: it would be invisible in the grouped
+    // UI and would mix one app's tests into the shared namespace.
+    if (fp.isLegacy && sites.listSiteIds(ROOT).length > 0) {
+      return res.status(400).json({
+        error: 'this project uses per-site folders — pass the feature as "<site>/<feature>"',
+      });
+    }
+    try {
+      if (!fp.isLegacy) {
+        // Materialise the site skeleton (idempotent) so features/, pages/ and
+        // user-stories/ all exist before anything is written into them.
+        sites.createSite(ROOT, { id: fp.site, baseUrl: url || undefined });
+      }
+      fs.mkdirSync(featureDir, { recursive: true });
+      created = true;
+    } catch (err) {
+      return res.status(500).json({ error: `could not create ${relFeat(feature)}/: ${err.message}` });
+    }
   }
-  const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
-  if (!featureFile) {
-    return res.status(404).json({ error: `no .feature file in ${relFeat(feature)}/` });
-  }
-  const filePath = path.join(featureDir, featureFile);
+
+  let featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+
   try {
+    if (!featureFile) {
+      if (!createIfMissing) {
+        return res.status(404).json({ error: `no .feature file in ${relFeat(feature)}/` });
+      }
+      // A brand-new feature file needs the Feature: header AND a tag, because
+      // step definitions are tag-scoped — without one the steps scaffolded next
+      // would have no scope to bind to, and generic phrases would leak into
+      // every other feature's pool.
+      const slug = fp.feature;
+      featureFile = `${slug}.feature`;
+      const header =
+        `@${slug}\n` +
+        `Feature: ${title && String(title).trim() ? String(title).trim().slice(0, 120) : titleFromSlug(slug)}\n`;
+      const featureSrc = `${header}\n${normalizeScenarioBlock(scenario)}\n`;
+      fs.writeFileSync(path.join(featureDir, featureFile), featureSrc, 'utf8');
+      // Placeholder steps so bddgen can compile — see writeStubSteps.
+      const stubFile = writeStubSteps(featureDir, slug, `@${slug}`, featureSrc);
+      return res.json({
+        ok: true,
+        file: `${relFeat(feature)}/${featureFile}`,
+        scenarioBytes: scenario.length,
+        created: true,
+        site: fp.site,
+        tag: `@${slug}`,
+        stubSteps: stubFile ? `${relFeat(feature)}/${stubFile}` : null,
+      });
+    }
+
+    const filePath = path.join(featureDir, featureFile);
     const existing = fs.readFileSync(filePath, 'utf8');
     // Ensure exactly one blank line between the previous content and the new scenario.
     const trimmed = existing.replace(/\s+$/, '');
-    const appended = `${trimmed}\n\n${scenario.replace(/^\s+/, '').trimEnd()}\n`;
+    const appended = `${trimmed}\n\n${normalizeScenarioBlock(scenario)}\n`;
     fs.writeFileSync(filePath, appended, 'utf8');
-    res.json({ ok: true, file: `${relFeat(feature)}/${featureFile}`, scenarioBytes: scenario.length });
+    res.json({
+      ok: true,
+      file: `${relFeat(feature)}/${featureFile}`,
+      scenarioBytes: scenario.length,
+      created,
+      site: fp.site,
+    });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }

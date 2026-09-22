@@ -5,15 +5,17 @@ import { BasePage } from '../../../../pages/BasePage';
 export class InventoryPage extends BasePage {
   readonly url = 'https://www.saucedemo.com/inventory.html';
 
-  readonly title: Locator;
+  /** Named productsHeading, not `title`: BasePage already defines a title()
+   *  method, and a Locator property of the same name does not satisfy it. */
+  readonly productsHeading: Locator;
 
   constructor(page: Page) {
     super(page);
-    this.title = page.getByText('Products', { exact: true });
+    this.productsHeading = page.getByText('Products', { exact: true });
   }
 
   async expectLoaded(): Promise<void> {
     await expect(this.page).toHaveURL(this.url, { timeout: 20_000 });
-    await expect(this.title).toBeVisible({ timeout: 15_000 });
+    await expect(this.productsHeading).toBeVisible({ timeout: 15_000 });
   }
 }

@@ -20,6 +20,12 @@
       "@features/*": ["./features/*"]
     }
   },
-  "include": ["pages/**/*.ts", "features/**/*.ts", "playwright.config.js"],
+  "include": [
+    "pages/**/*.ts",
+    "features/**/*.ts",
+    "sites/*/pages/**/*.ts",
+    "sites/*/features/**/*.ts",
+    "playwright.config.js"
+  ],
   "exclude": ["node_modules", "test-results", "playwright-report", ".features-gen", "allure-results", "allure-report"]
 }
