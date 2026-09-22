@@ -2,6 +2,7 @@
 Feature: Oc Login
 
   Scenario: AC1-01 — User logs in with remember me and signs out
+    Given I am on the testai start page
     When the user closes the initial overlay
     And the user logs in as "admin" with password "Test123!" with remember me checked
     And the user selects the user "Salman"

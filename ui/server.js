@@ -1831,6 +1831,11 @@ PAGE OBJECT RULES (this framework's hard rules — a step file with a raw locato
 STEP RULES:
 1. ONE complete step block per step listed above, in that order. Use the SAME { Given, When, Then } binding already in the steps file (tag-scoped createBdd — keep the tag).
 2. Each step body constructs the page object and calls ONE intent method. Keep bodies 1-4 lines.
+2b. A step that says the user IS ON / OPENS / GOES TO a page must actually
+   NAVIGATE — its page-object method calls this.goto() (BasePage) or
+   page.goto(this.url) and then waits for the page to be ready. Nothing else in
+   the scenario navigates, so if this step does not, the run stays on
+   about:blank and every later step fails on an element that never loaded.
 3. {string} / {int} args map to typed parameters (string / number) in the order they appear in the phrase.
 4. Assertions belong in Then steps; use expect from '@playwright/test'.
 5. Do not import anything you do not use — this repo compiles with noUnusedLocals and noUnusedParameters.
@@ -2180,6 +2185,28 @@ app.post('/api/recorder/convert', async (req, res) => {
   if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
   if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
 
+  // Does this feature already have a step that opens the app?
+  //
+  // `playwright codegen` always starts its script with page.goto(startUrl), and
+  // the conversion used to drop that unconditionally as "Background". For a
+  // feature that already has a login/landing step that is right. For a NEW
+  // feature there is no Background to inherit, so the scenario ended up with
+  // nothing that navigates: the run began on about:blank and every step failed
+  // on an element that had never loaded. Decide per feature.
+  const NAV_PHRASE_RE = /\b(i am on|i open|i go to|i navigate to the .* page|visit)\b/i;
+  let featureHasNavigation = false;
+  try {
+    const fp = featurePaths(feature);
+    if (feature && fs.existsSync(fp.featureDir)) {
+      for (const f of fs.readdirSync(fp.featureDir)) {
+        if (!f.endsWith('.steps.ts') && !f.endsWith('.feature')) continue;
+        const src = fs.readFileSync(path.join(fp.featureDir, f), 'utf8');
+        if (/\.goto\(/.test(src) || NAV_PHRASE_RE.test(src)) { featureHasNavigation = true; break; }
+      }
+    }
+  } catch { /* treat as "no navigation" — adding one is the safe default */ }
+  const recordedUrl = (activeRecorder && activeRecorder.url) || (req.body && req.body.url) || '';
+
   // What steps already exist, so claude reuses a phrase instead of inventing one.
   //
   // Two parts, on purpose:
@@ -2227,7 +2254,9 @@ ${existingSteps}
 INSTRUCTIONS:
 1. Output ONE Scenario block in Gherkin. Start with a one-line "Scenario:" name that describes what the user just did, then Given/When/Then steps.
 2. Prefer existing step phrasings from the list above when they match.
-3. Skip browser navigation that just goes back to the start URL (treat that as the Background — don't add a Given for it unless the existing steps already have one).
+3. ${featureHasNavigation
+  ? `Skip browser navigation that just goes back to the start URL — this feature already has a step that opens the app, so treat navigation as Background and don't add a Given for it.`
+  : `THIS FEATURE HAS NO STEP THAT OPENS THE APP YET, so the scenario MUST start with a Given that navigates to ${recordedUrl || 'the start URL'} — e.g. "Given I am on the <app> login page". Without it the run begins on about:blank and every later step fails on an element that was never loaded. Do NOT omit it.`}
 4. Group multiple consecutive clicks/fills on the same form into a higher-level When step where it makes sense ("When I fill the sign-in form and submit" instead of 5 separate fill/click whens) — but only IF that matches the existing-step style.
 5. Output STRICT JSON with this exact shape, nothing else:
 
@@ -2281,6 +2310,29 @@ If every step you used already exists in the steps file, return newSteps: [].`;
     if (parsed && parsed.scenario) {
       if (exitCode !== 0 && stderr.trim()) {
         console.warn(`[recorder/convert] claude exited ${exitCode} but produced a usable scenario; stderr: ${stderr.trim().slice(0, 300)}`);
+      }
+      // Backstop for instruction 3. A scenario with nothing that opens the app
+      // is not merely imperfect — it cannot pass, because the run starts on
+      // about:blank. Too important to leave to the model complying, so it is
+      // enforced here: if neither the feature nor the new scenario navigates,
+      // prepend a Given that does. The scaffolder then implements it like any
+      // other step, against the site's own URL.
+      if (!featureHasNavigation && !NAV_PHRASE_RE.test(parsed.scenario)) {
+        const siteLabel = featurePaths(feature).site;
+        const navPhrase = `I am on the ${sites.isLegacy(siteLabel) ? 'application' : siteLabel} start page`;
+        parsed.scenario = String(parsed.scenario).replace(
+          /^(\s*Scenario(?: Outline)?:[^\n]*\n)/,
+          `$1    Given ${navPhrase}\n`,
+        );
+        const already = (Array.isArray(parsed.newSteps) ? parsed.newSteps : [])
+          .some((s) => (typeof s === 'string' ? s : (s && s.phrase) || '').includes(navPhrase));
+        if (!already) {
+          parsed.newSteps = [
+            { phrase: `Given ${navPhrase}`, rationale: 'opens the app — without it the run starts on about:blank' },
+            ...(Array.isArray(parsed.newSteps) ? parsed.newSteps : []),
+          ];
+        }
+        console.log(`[recorder/convert] added a navigation Given — the scenario had none and neither does the feature`);
       }
       // Verify the model's "this step is new" claim against the index rather
       // than trusting it. A false positive here is expensive: it scaffolds a

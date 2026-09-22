@@ -6,7 +6,11 @@ import { createBdd } from 'playwright-bdd';
 import { LoginPage } from '../../pages/oc-login/LoginPage';
 import { DashboardPage } from '../../pages/oc-login/DashboardPage';
 
-const { When, Then } = createBdd(undefined, { tags: '@oc-login' });
+const { Given, When, Then } = createBdd(undefined, { tags: '@oc-login' });
+
+Given('I am on the testai start page', async ({ page }) => {
+  await new LoginPage(page).open();
+});
 
 When('the user closes the initial overlay', async ({ page }) => {
   await new LoginPage(page).closeInitialOverlay();

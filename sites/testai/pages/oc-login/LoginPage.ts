@@ -36,6 +36,19 @@ export class LoginPage extends BasePage {
   }
 
   /**
+   * Open the app and wait for the sign-in form to be interactive.
+   *
+   * Nothing else in this scenario navigates, so without this the run stays on
+   * about:blank and every later step times out on an element that was never
+   * loaded. Waiting for the username field rather than a load event because the
+   * form is client-rendered.
+   */
+  async open(): Promise<void> {
+    await this.page.goto(this.url);
+    await this.usernameInput.waitFor({ state: 'visible', timeout: 30_000 });
+  }
+
+  /**
    * Dismiss the first-visit overlay if one is showing. It is not always present
    * (never in a fresh automated session across an 18s probe), so this is a
    * no-op when there is nothing to close: it clears a precondition, it is not an
