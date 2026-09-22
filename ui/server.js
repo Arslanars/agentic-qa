@@ -615,9 +615,41 @@ function checkClaudeCli() {
   });
 }
 
+/**
+ * When this process started. Node loads ui/server.js once, but express.static
+ * serves ui/index.html fresh from disk on every request — so after a `git pull`
+ * the browser gets the NEW front-end while the server keeps running the OLD
+ * handlers. The mismatch shows up as a front-end calling an endpoint (or
+ * sending a parameter) the running server has never heard of, and the error it
+ * produces looks like a bug in the feature rather than a stale process.
+ */
+const SERVER_STARTED_AT = Date.now();
+
+/** Server-side files whose edits only take effect after a restart. */
+const RESTART_SENSITIVE = ['server.js', 'sites.js', 'projects.js', 'excel-writer.js', 'report-writer.js']
+  .map((f) => path.join(__dirname, f));
+
+/**
+ * True when any server-side source on disk is newer than this process — i.e.
+ * the code was changed after the server was started and a restart is due.
+ */
+function serverIsStale() {
+  for (const f of RESTART_SENSITIVE) {
+    try {
+      if (fs.statSync(f).mtimeMs > SERVER_STARTED_AT) return true;
+    } catch { /* file gone or unreadable — not a staleness signal */ }
+  }
+  return false;
+}
+
 app.get('/api/generate-status', async (_req, res) => {
   const available = await checkClaudeCli();
-  res.json({ available, running: !!activeGenerate });
+  res.json({
+    available,
+    running: !!activeGenerate,
+    stale: serverIsStale(),
+    startedAt: SERVER_STARTED_AT,
+  });
 });
 
 // Drive `claude --print` with a prompt piped via stdin. Streams NDJSON the

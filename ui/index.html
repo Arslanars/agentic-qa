@@ -512,6 +512,31 @@
     }
     .cd-optgroup + .cd-option { border-top: none; }
 
+    /* Stale-server warning. Pinned bottom-centre, above everything, amber so it
+       reads as "act on this" rather than as an error the app already handled. */
+    #stale-server-banner {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      z-index: 9999;
+      max-width: min(720px, calc(100vw - 32px));
+      padding: 11px 16px;
+      border-radius: 8px;
+      background: #3B2A05;
+      border: 1px solid #A97A16;
+      color: #FFE8B0;
+      font-size: 12.5px;
+      line-height: 1.5;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    }
+    #stale-server-banner code {
+      background: rgba(0, 0, 0, 0.35);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
     /* "New site X — will be created at sites/x/" under the URL field. */
     .site-hint {
       margin-top: 6px;
@@ -3267,7 +3292,7 @@
 
       <!-- STATE: proposed -->
       <div id="rec-state-proposed" data-state="proposed" hidden>
-        <p>Proposed Gherkin scenario. Review (and edit if needed), then click <b>Append</b> to add it to the feature file.</p>
+        <p id="rec-proposed-hint">Proposed Gherkin scenario. Review (and edit if needed), then use the button below to save it.</p>
         <textarea id="rec-scenario" class="rec-scenario" spellcheck="false" style="width:100%;min-height:180px;"></textarea>
         <div id="rec-new-steps" class="rec-new-steps" hidden></div>
       </div>
@@ -5382,6 +5407,23 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
     });
 
     // ---- Test generation via local Claude Code CLI ----
+    /**
+     * Pinned banner telling the user their server predates the code on disk.
+     * Deliberately not dismissible-and-forgotten: every feature added since the
+     * server started will fail in a confusing way until it is restarted.
+     */
+    function showStaleServerBanner() {
+      if (document.getElementById('stale-server-banner')) return;
+      const bar = document.createElement('div');
+      bar.id = 'stale-server-banner';
+      bar.setAttribute('role', 'status');
+      bar.innerHTML =
+        '<b>This server is running older code than what is on disk.</b> ' +
+        'Restart it to pick up the latest changes — stop the process and run ' +
+        '<code>npm run ui</code> again. Until then, anything added since it started will fail.';
+      document.body.appendChild(bar);
+    }
+
     // On page load we ping the server to find out if `claude` is on PATH;
     // that flips the Save button's secondary label so users see what's
     // about to happen ("Save Story" vs "Save & Generate Tests").
@@ -5392,6 +5434,13 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
         if (!resp.ok) return;
         const data = await resp.json();
         claudeCliAvailable = !!data.available;
+        // The server loads its code once at startup, but this page is served
+        // fresh from disk — so after a code change the browser can be running
+        // a newer front-end than the server it is talking to. That mismatch
+        // surfaces as an endpoint rejecting a parameter it has never heard of,
+        // which reads like a broken feature rather than a stale process. Say
+        // so plainly instead.
+        if (data.stale) showStaleServerBanner();
         const lbl = $('save-label');
         if (lbl) lbl.textContent = claudeCliAvailable ? 'Save & Generate Tests' : 'Save Story';
         // The prompt-preview panel used to carry this explanation. With that
@@ -7401,7 +7450,20 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
         else if (state === 'recording'){ actionBtn.textContent = '■ Stop Recording'; actionBtn.disabled = false; }
         else if (state === 'captured') { actionBtn.textContent = '✨ Convert to Gherkin'; actionBtn.disabled = capturedCode.length < 20; }
         else if (state === 'converting'){ actionBtn.textContent = 'Working…'; actionBtn.disabled = true; }
-        else if (state === 'proposed') { actionBtn.textContent = '✓ Append + implement'; actionBtn.disabled = false; }
+        // "Append" is a lie when the feature is being created — say what the
+        // click will actually do. The coverage-gap flow always targets an
+        // existing feature, so it keeps the append wording.
+        else if (state === 'proposed') {
+          const creating = recordingCreatesFeature && !window.__recorderOverrideFeature;
+          actionBtn.textContent = creating ? '✓ Create feature + implement' : '✓ Append + implement';
+          actionBtn.disabled = false;
+          const hint = $('rec-proposed-hint');
+          if (hint) {
+            hint.textContent = creating
+              ? `Proposed Gherkin scenario. Review (and edit if needed), then create ${recordingFeature} — the folder and step file are made for you.`
+              : 'Proposed Gherkin scenario. Review (and edit if needed), then append it to the feature file.';
+          }
+        }
         else if (state === 'scaffolding'){ actionBtn.textContent = 'Working…'; actionBtn.disabled = true; }
         else if (state === 'review')   { actionBtn.textContent = 'Done'; actionBtn.disabled = false; }
       }
@@ -7651,7 +7713,14 @@ ${stepLibrarySection()}INSTRUCTIONS FOR CLAUDE:
           if (!resp.ok) { showToast(data.error || `HTTP ${resp.status}`, 'error'); actionBtn.disabled = false; return; }
           appendFile = data.file || '';
           showToast(data.created ? `Created ${appendFile}` : `Appended to ${appendFile}`);
-          loadFeatures();
+          await loadFeatures();
+          // Select what was just created so the next click can run it, rather
+          // than leaving the dropdown on whatever was selected before.
+          const sel = $('feature');
+          if (sel && [...sel.options].some((o) => o.value === targetFeature)) {
+            sel.value = targetFeature;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+          }
         } catch (err) {
           showToast('Append failed: ' + (err?.message || err), 'error');
           actionBtn.disabled = false;
