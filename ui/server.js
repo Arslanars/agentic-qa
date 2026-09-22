@@ -1688,10 +1688,26 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
     // Un-escape: \' → '   \\ → \   (drop other backslash escapes back to the raw char)
     const phrase = escapedPhrase.replace(/\\(.)/g, '$1');
     const srcNorm = String(source).replace(/\\/g, '/');
-    const featMatch = srcNorm.match(/features\/([^/]+)\//);
-    const detectedFeature = featMatch ? featMatch[1] : null;
+    const detectedFeature = featureIdFromSourcePath(srcNorm);
     if (feature && detectedFeature !== feature) continue;
     missingSteps.push({ keyword, phrase, params: params.trim(), source: srcNorm, feature: detectedFeature });
+  }
+
+  // bddgen only reports a step with NO definition. A placeholder written by the
+  // recorder IS a definition, so a freshly-recorded feature looks fully
+  // implemented to the check above and nothing would ever be generated for it.
+  // Fold those phrases in explicitly.
+  for (const id of feature ? [feature] : allFeatureIds()) {
+    const dir = featurePaths(id).featureDir;
+    if (!fs.existsSync(dir)) continue;
+    const stepsFile = fs.readdirSync(dir).find((f) => f.endsWith('.steps.ts'));
+    if (!stepsFile) continue;
+    let src = '';
+    try { src = fs.readFileSync(path.join(dir, stepsFile), 'utf8'); } catch { continue; }
+    for (const s of stubbedPhrases(src)) {
+      if (missingSteps.some((m) => m.feature === id && m.phrase === s.phrase)) continue;
+      missingSteps.push({ keyword: s.keyword, phrase: s.phrase, params: '', source: `${relFeat(id)}/${stepsFile}`, feature: id, fromStub: true });
+    }
   }
 
   if (missingSteps.length === 0) {
@@ -1742,42 +1758,83 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
     }
 
     const stepList = steps.map((s, i) => `${i + 1}. ${s.keyword}: "${s.phrase}"`).join('\n');
-    const prompt = `Generate Playwright-BDD step definition implementations for these missing Gherkin steps. Return STRICT JSON, no markdown fences, no preamble.
+    const stubbing = isStubFile(existingSteps);
+    const featureSrcForPrompt = (() => {
+      try {
+        const ff = fs.readdirSync(stepsDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+        return ff ? fs.readFileSync(path.join(stepsDir, ff), 'utf8').slice(0, 6000) : '';
+      } catch { return ''; }
+    })();
+    // Depth from sites/<site>/pages/<feature>/X.ts back to the repo root differs
+    // from the legacy pages/<feature>/X.ts, and an import one level out is a
+    // compile error rather than something the model can be expected to guess.
+    const basePageImport = featurePaths(feat).isLegacy ? '../BasePage' : '../../../../pages/BasePage';
+    const appUrl = (() => {
+      try {
+        const meta = sites.readSiteMeta(ROOT, featurePaths(feat).site);
+        return meta && meta.baseUrl ? meta.baseUrl : '';
+      } catch { return ''; }
+    })();
 
-MISSING STEPS:
+    const prompt = `Generate Playwright-BDD step definitions for these Gherkin steps, AND the page object they wrap. Return STRICT JSON, no markdown fences, no preamble.
+
+STEPS TO IMPLEMENT:
 ${stepList}
 
-EXISTING STEP-DEFINITIONS FILE (${relFeat(feat)}/${stepsFileName}) — match its imports, createBdd tag-scoping, and POM-wrapping style:
+THE FEATURE FILE they come from (for context — what the scenario is trying to do):
+\`\`\`gherkin
+${featureSrcForPrompt}
+\`\`\`
+
+${stubbing
+  ? `CURRENT STEP-DEFINITIONS FILE (${relFeat(feat)}/${stepsFileName}) — these are PLACEHOLDERS that throw. You are REPLACING every one of them. Keep the same createBdd tag scope:`
+  : `EXISTING STEP-DEFINITIONS FILE (${relFeat(feat)}/${stepsFileName}) — match its imports, createBdd tag-scoping, and POM-wrapping style:`}
 \`\`\`typescript
 ${existingSteps.slice(0, 18000)}
 \`\`\`
 
-EXISTING PAGE OBJECT FILES under ${relPages(feat)}/ — reuse these methods where they fit:
-\`\`\`typescript
-${pomContent.slice(0, 14000)}
-\`\`\`
+${pomFiles.length
+  ? `EXISTING PAGE OBJECT FILES under ${relPages(feat)}/ — reuse these methods where they fit, and extend them rather than duplicating:\n\`\`\`typescript\n${pomContent.slice(0, 14000)}\n\`\`\``
+  : `THERE ARE NO PAGE OBJECTS YET for this feature. You MUST create one under ${relPages(feat)}/.`}
 
-INSTRUCTIONS:
-1. Generate ONE complete step block per missing step. Use the SAME { Given, When, Then } binding pattern already in the steps file (e.g. tag-scoped createBdd).
-2. PREFER calling existing POM methods. If a needed method doesn't exist, use inline page.click / page.fill / page.getByRole / expect(...).toBeVisible — do NOT invent POM methods that aren't already in the POM files above.
-3. {string} or {int} args from the Gherkin phrase map to function parameters; type them as string / number.
-4. Each step should be 3-12 lines. Add no comments except where logic is non-obvious.
-5. If the same import would already be present in the existing steps file, omit it from newImports.
+PAGE OBJECT RULES (this framework's hard rules — a step file with a raw locator in it is a defect):
+- Every locator lives on a page object. NEVER call page.locator / page.getByRole / page.getByLabel inside a step definition.
+- A page object extends BasePage: \`import { BasePage } from '${basePageImport}';\`
+- It declares \`readonly url = '...'\`${appUrl ? ` (the app is at ${appUrl})` : ''} and \`readonly <name>: Locator\` properties initialised in the constructor.
+- Locate by ROLE + ACCESSIBLE NAME first: page.getByRole('button', { name: 'Save' }). Use getByLabel / getByPlaceholder for form fields. Resort to CSS only when nothing else identifies the element.
+- Methods are named for user intent (login(), addProduct()), not for selectors.
+- This app is live and may be slow to render: give first-paint assertions a generous timeout (15000).
+
+STEP RULES:
+1. ONE complete step block per step listed above, in that order. Use the SAME { Given, When, Then } binding already in the steps file (tag-scoped createBdd — keep the tag).
+2. Each step body constructs the page object and calls ONE intent method. Keep bodies 1-4 lines.
+3. {string} / {int} args map to typed parameters (string / number) in the order they appear in the phrase.
+4. Assertions belong in Then steps; use expect from '@playwright/test'.
+5. Do not import anything you do not use — this repo compiles with noUnusedLocals and noUnusedParameters.
 
 OUTPUT EXACTLY this JSON shape:
 {
-  "steps": [
-    { "keyword": "When", "phrase": "I navigate to the Vendors List under Quick Inventory", "code": "When('I navigate to the Vendors List under Quick Inventory', async ({ page }) => {\\n  // ...\\n});" }
+  "pages": [
+    { "file": "ProductsPage.ts", "code": "import { type Locator, type Page, expect } from '@playwright/test';\\nimport { BasePage } from '${basePageImport}';\\n\\nexport class ProductsPage extends BasePage {\\n  readonly url = '...';\\n  readonly addButton: Locator;\\n  constructor(page: Page) {\\n    super(page);\\n    this.addButton = page.getByRole('button', { name: 'Add New Product' });\\n  }\\n  async openNewProductForm(): Promise<void> {\\n    await this.addButton.click();\\n  }\\n}\\n" }
   ],
-  "newImports": [],
-  "summary": "Implemented 4 steps using DashboardPage + page.getByRole."
+  "steps": [
+    { "keyword": "When", "phrase": "I click the {string} button", "code": "When('I click the {string} button', async ({ page }, name: string) => {\\n  await new ProductsPage(page).clickButton(name);\\n});" }
+  ],
+  "newImports": ["import { ProductsPage } from '../../pages/${featurePaths(feat).feature}/ProductsPage';"],
+  "summary": "Created ProductsPage and implemented 8 steps against it."
 }`;
 
     const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
     const claudeArgs = ['--print', '--dangerously-skip-permissions'];
-    write({ type: 'log', stream: 'stdout', text: `[scaffold]   calling claude…\n` });
+    write({ type: 'log', stream: 'stdout', text: `[scaffold]   calling claude… (prompt ${prompt.length} bytes)\n` });
+    // Set AGENTIC_QA_DUMP_PROMPT=<path> to inspect exactly what was sent. A
+    // prompt this large is assembled from several files, so when the CLI
+    // rejects one there is no other way to see what it actually received.
+    if (process.env.AGENTIC_QA_DUMP_PROMPT) {
+      try { fs.writeFileSync(process.env.AGENTIC_QA_DUMP_PROMPT, prompt, 'utf8'); } catch (_) { /* best effort */ }
+    }
 
-    const result = await new Promise((resolve) => {
+    const callClaude = () => new Promise((resolve) => {
       let p;
       try {
         p = spawn(cmd, claudeArgs, { cwd: ROOT, env: process.env, shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -1794,8 +1851,26 @@ OUTPUT EXACTLY this JSON shape:
       p.on('error', (e) => { clearTimeout(timer); activeGenerate = null; resolve({ code: 1, out: '', err: e.message }); });
     });
 
+    let result = await callClaude();
+    // Retry once on a silent failure — exit non-zero with nothing on either
+    // stream. Observed in practice: the same prompt failed twice and then
+    // succeeded unchanged, so it is a transient CLI/service hiccup rather than
+    // anything wrong with the request. A refusal or a usage error DOES print,
+    // and is not retried — repeating it would just burn a second call.
+    if (result.code !== 0 && !result.out.trim() && !result.err.trim()) {
+      write({ type: 'log', stream: 'stdout', text: `[scaffold]   claude exited ${result.code} with no output — retrying once…\n` });
+      result = await callClaude();
+    }
+
     if (result.code !== 0) {
-      write({ type: 'log', stream: 'stderr', text: `[scaffold]   claude exited ${result.code}: ${result.err.slice(0, 400)}\n` });
+      // Report BOTH streams. The CLI writes refusals and usage errors to
+      // stdout, so logging only stderr produced "claude exited 1:" with
+      // nothing after it — a dead end when diagnosing a failed scaffold.
+      const detail = [
+        result.err && result.err.trim() ? `stderr: ${result.err.trim().slice(0, 400)}` : '',
+        result.out && result.out.trim() ? `stdout: ${result.out.trim().slice(0, 400)}` : '',
+      ].filter(Boolean).join(' | ') || '(no output on either stream)';
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   claude exited ${result.code} — ${detail}\n` });
       continue;
     }
     const parsed = extractJsonObject(result.out);
@@ -1804,9 +1879,42 @@ OUTPUT EXACTLY this JSON shape:
       continue;
     }
 
+    // Write the page objects first — the steps about to be written import them,
+    // so a half-applied result should at worst leave an unused POM rather than
+    // steps referencing a file that does not exist.
+    const pomsWritten = [];
+    for (const p of Array.isArray(parsed.pages) ? parsed.pages : []) {
+      const name = path.basename(String(p.file || ''));
+      const code = String(p.code || '').trim();
+      if (!name.endsWith('.ts') || !/^[A-Za-z0-9._-]+$/.test(name) || !code) {
+        write({ type: 'log', stream: 'stderr', text: `[scaffold]   skipped a page object with a bad name or empty body\n` });
+        continue;
+      }
+      const target = path.join(pomDir, name);
+      // Defence in depth: basename() plus the charset check above should make
+      // this impossible, but a POM path is attacker-adjacent (it comes back
+      // from a model) and writing outside pages/ would be severe.
+      if (!path.resolve(target).startsWith(path.resolve(pomDir) + path.sep)) {
+        write({ type: 'log', stream: 'stderr', text: `[scaffold]   refused a page-object path outside ${relPages(feat)}/\n` });
+        continue;
+      }
+      if (fs.existsSync(target)) {
+        write({ type: 'log', stream: 'stdout', text: `[scaffold]   kept existing ${relPages(feat)}/${name} (not overwritten)\n` });
+        continue;
+      }
+      fs.mkdirSync(pomDir, { recursive: true });
+      fs.writeFileSync(target, code.endsWith('\n') ? code : code + '\n', 'utf8');
+      pomsWritten.push(name);
+      write({ type: 'log', stream: 'stdout', text: `[scaffold]   wrote page object → ${relPages(feat)}/${name}\n` });
+    }
+
     // Update the .steps.ts file: add new imports + append step blocks under
     // a clearly-marked banner so the user can find/audit what was generated.
-    let updated = existingSteps;
+    //
+    // A placeholder file is REPLACED, not appended to: its stubs already define
+    // every phrase, so appending would register each one twice and Cucumber
+    // would fail the run with an ambiguous-step error.
+    let updated = stubbing ? stubHeaderReplacement(existingSteps) : existingSteps;
     const newImports = Array.isArray(parsed.newImports) ? parsed.newImports : [];
     for (const imp of newImports) {
       const trimmed = String(imp).trim();
@@ -1820,7 +1928,9 @@ OUTPUT EXACTLY this JSON shape:
         updated = trimmed + '\n' + updated;
       }
     }
-    const banner = `\n\n// ---- auto-generated step definitions (scaffold-missing-steps) ----\n`;
+    const banner = stubbing
+      ? `\n\n`
+      : `\n\n// ---- auto-generated step definitions (scaffold-missing-steps) ----\n`;
     const stepBlocks = parsed.steps.map((s) => String(s.code || '').trim()).filter(Boolean).join('\n\n');
     updated = updated.trimEnd() + banner + stepBlocks + '\n';
     fs.writeFileSync(stepsPath, updated, 'utf8');
@@ -2208,6 +2318,97 @@ function normalizeScenarioBlock(text) {
  * framework treats as worse than a red suite (see CLAUDE.md, strict-AC rule).
  * Scaffolding overwrites this file with real implementations.
  */
+/**
+ * Marker written into placeholder step files. The scaffolder looks for it:
+ * bddgen only reports a step as "missing" when NOTHING defines it, and a stub
+ * is a definition — so without this marker the stubs would make the scaffolder
+ * believe the work was already done and the feature would stay unimplemented
+ * forever. It also tells the scaffolder to REPLACE the file rather than append
+ * to it, which would otherwise register each phrase twice (an ambiguous-step
+ * error at run time).
+ */
+const STUB_MARKER = 'agentic-qa:stub';
+
+/** Body text that identifies a step as an unimplemented placeholder. */
+const STUB_BODY_RE = /Step not implemented yet/;
+
+/**
+ * Phrases in a steps file that are still placeholders, in file order.
+ *
+ * Detection is per-BLOCK and keys off what the body actually does, not off the
+ * marker alone: files written by an earlier version of the stub generator carry
+ * no marker, and a partially-scaffolded file can hold real and placeholder
+ * steps side by side. Both must still be picked up.
+ */
+function stubbedPhrases(src) {
+  const text = String(src || '');
+  const out = [];
+  const re = /\b(Given|When|Then)\(\s*'((?:[^'\\]|\\.)*)'\s*,/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    // Look only as far as the next step registration, so one placeholder
+    // cannot make every step after it look unimplemented.
+    const rest = text.slice(m.index + m[0].length);
+    const next = rest.search(/\b(Given|When|Then)\(\s*'/);
+    const body = next === -1 ? rest : rest.slice(0, next);
+    if (STUB_BODY_RE.test(body)) {
+      out.push({ keyword: m[1], phrase: m[2].replace(/\\(.)/g, '$1') });
+    }
+  }
+  return out;
+}
+
+/** Does this steps file still contain placeholders? */
+function isStubFile(src) {
+  const text = String(src || '');
+  return text.includes(STUB_MARKER) || STUB_BODY_RE.test(text);
+}
+
+/**
+ * Feature id from a path bddgen reports, in either layout:
+ *   sites/acme/features/checkout/checkout.feature:6:5 -> "acme/checkout"
+ *   features/login-user/login.feature:3:1             -> "login-user"
+ * Matching only /features\/([^/]+)\// returned the bare folder name for a site
+ * path, which never equalled the "<site>/<feature>" id the caller passes — so
+ * every step of every site-scoped feature was filtered out and scaffolding
+ * silently did nothing.
+ */
+function featureIdFromSourcePath(p) {
+  const norm = String(p || '').replace(/\\/g, '/');
+  const m = norm.match(/(?:^|\/)(?:sites\/([^/]+)\/)?features\/([^/]+)\//);
+  if (!m) return null;
+  return sites.formatFeatureId(m[1] || sites.LEGACY_SITE, m[2]);
+}
+
+/**
+ * Strip a placeholder file down to the parts worth keeping — its imports and
+ * the tag-scoped createBdd binding — discarding the stub bodies and the
+ * placeholder banner. What the scaffolder generates is then appended to this,
+ * so the file ends up with exactly one definition per phrase.
+ */
+function stubHeaderReplacement(src) {
+  const lines = String(src).replace(/\r\n/g, '\n').split('\n');
+  const kept = [];
+  for (const line of lines) {
+    if (/^\s*\/\//.test(line)) continue;                 // drop the stub banner
+    if (/^\s*(Given|When|Then)\(/.test(line)) break;      // stop at the first stub
+    kept.push(line);
+  }
+  const head = kept.join('\n').trimEnd();
+  return `// Step definitions generated by "Scaffold missing steps".\n` +
+    `// Locators belong on the page object, not here — see the imports below.\n\n` +
+    `${head}\n`;
+}
+
+/** Every feature id in the repo, across all sites. */
+function allFeatureIds() {
+  const out = [];
+  for (const site of [sites.LEGACY_SITE, ...sites.listSiteIds(ROOT)]) {
+    for (const name of sites.listFeatures(ROOT, site)) out.push(sites.formatFeatureId(site, name));
+  }
+  return out;
+}
+
 function writeStubSteps(featureDir, slug, tag, featureSrc) {
   const stepsPath = path.join(featureDir, `${slug}.steps.ts`);
   if (fs.existsSync(stepsPath)) return null; // never clobber real work
@@ -2244,14 +2445,14 @@ function writeStubSteps(featureDir, slug, tag, featureSrc) {
   }).join('\n\n');
 
   const src =
-    `// PLACEHOLDER step definitions for ${slug}, written when this feature was\n` +
-    `// created by the Test Recorder. Every step throws on purpose: the scenario\n` +
-    `// must fail honestly until it is implemented, and bddgen needs a definition\n` +
-    `// for each step or it refuses to compile ANY feature in the repo.\n` +
+    `// ${STUB_MARKER} — PLACEHOLDER step definitions for ${slug}, written when this\n` +
+    `// feature was created by the Test Recorder. Every step throws on purpose: the\n` +
+    `// scenario must fail honestly until it is implemented, and bddgen needs a\n` +
+    `// definition for each step or it refuses to compile ANY feature in the repo.\n` +
     `//\n` +
-    `// Replace these with real implementations that wrap page objects — put the\n` +
-    `// locators on a POM under ../../pages/${slug}/, never in this file.\n` +
-    `// "Scaffold missing steps" in the UI does this for you.\n\n` +
+    `// "Scaffold missing steps" replaces this whole file with real implementations\n` +
+    `// and creates the page object they wrap. Do not delete the marker on the first\n` +
+    `// line until then — it is how the scaffolder knows there is work left to do.\n\n` +
     `import { createBdd } from 'playwright-bdd';\n\n` +
     `// Tag-scoped so these phrases stay invisible to every other feature.\n` +
     `const { Given, When, Then } = createBdd(undefined, { tags: '${tag}' });\n\n` +
