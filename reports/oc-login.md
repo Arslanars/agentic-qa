@@ -1,24 +1,24 @@
-# Execution Report — SAUCE-001 - Standard user login
+# Execution Report — oc-login
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-09-22 16:03:07
+**Last run:** 2026-09-22 16:10:46
 **Browser:** chromium
-**Status:** ✅ PASS (2/2)
-**Duration:** 4.2 s
+**Status:** ❌ FAIL (0/1 — 1 failed)
+**Duration:** 13 ms
+**Failed (assertion):** 1
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `login.feature.spec.js` | Sauce Demo sign-in › SAUCE-001-POS-01 — a standard user reaches the product list | ✅ PASS | 2.1 s | — |
-| `login.feature.spec.js` | Sauce Demo sign-in › SAUCE-001-NEG-01 — a locked-out user is rejected | ✅ PASS | 2.1 s | — |
+| `oc-login.feature.spec.js` | Oc Login › AC1-01 — User logs in with remember me and signs out | ❌ FAIL | 13 ms | `Error: Step not implemented yet: the user closes the initial overlay` |
 
 ## Artifacts
 
 - [Playwright HTML report](../playwright-report/index.html)
 - [Allure dashboard](../allure-report/index.html)
-- Per-test screenshots under `test-results/login-*/`
+- Per-test screenshots under `test-results/oc-login-*/`
 
 > This block is regenerated on every run. Edit anywhere outside the markers to add notes that persist across runs.
 

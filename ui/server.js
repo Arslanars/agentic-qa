@@ -1834,6 +1834,10 @@ STEP RULES:
 3. {string} / {int} args map to typed parameters (string / number) in the order they appear in the phrase.
 4. Assertions belong in Then steps; use expect from '@playwright/test'.
 5. Do not import anything you do not use — this repo compiles with noUnusedLocals and noUnusedParameters.
+6. Driving the live app to confirm a selector is encouraged, but CLEAN UP AFTER
+   YOURSELF: delete every scratch/exploration script you create before you
+   answer. Nothing you write outside the page object and the steps file should
+   survive. Do not modify any existing file.
 
 OUTPUT EXACTLY this JSON shape:
 {
@@ -1857,6 +1861,18 @@ OUTPUT EXACTLY this JSON shape:
       try { fs.writeFileSync(process.env.AGENTIC_QA_DUMP_PROMPT, prompt, 'utf8'); } catch (_) { /* best effort */ }
     }
 
+    // This job asks for a page object AND every step implementation, so it is
+    // the longest-running Claude call in the app — minutes, not seconds. The
+    // old 120s ceiling killed it mid-thought, and because the process was
+    // killed before writing anything the failure surfaced as "exited 1" with
+    // nothing on either stream, which looks like a crash rather than a
+    // timeout. That is what left recorded features stuck as placeholders.
+    // 15 minutes, not 10: a measured 5-step feature took 7m20s because the
+    // model drives the live app to verify its selectors before answering, and a
+    // feature with more steps has further to go. The heartbeat below is what
+    // makes a wait this long legible.
+    const SCAFFOLD_TIMEOUT_MS = Number(process.env.AGENTIC_QA_SCAFFOLD_TIMEOUT_MS) || 15 * 60_000;
+
     const callClaude = () => new Promise((resolve) => {
       let p;
       try {
@@ -1866,23 +1882,39 @@ OUTPUT EXACTLY this JSON shape:
       }
       activeGenerate = { proc: p, startedAt: Date.now() };
       let out = '', err = '';
+      let timedOut = false;
       p.stdout.on('data', (d) => { out += d.toString(); });
       p.stderr.on('data', (d) => { err += d.toString(); });
       try { p.stdin.write(prompt); p.stdin.end(); } catch (_) {}
-      const timer = setTimeout(() => { if (!p.killed) killProcessTree(p); }, 120_000);
-      p.on('close', (code) => { clearTimeout(timer); activeGenerate = null; resolve({ code, out, err }); });
-      p.on('error', (e) => { clearTimeout(timer); activeGenerate = null; resolve({ code: 1, out: '', err: e.message }); });
+      // Heartbeat so a multi-minute generation doesn't look like a hang.
+      const started = Date.now();
+      const beat = setInterval(() => {
+        write({ type: 'log', stream: 'stdout', text: `[scaffold]   still working… ${Math.round((Date.now() - started) / 1000)}s\n` });
+      }, 20_000);
+      const timer = setTimeout(() => {
+        timedOut = true;
+        if (!p.killed) killProcessTree(p);
+      }, SCAFFOLD_TIMEOUT_MS);
+      const finish = (r) => { clearTimeout(timer); clearInterval(beat); activeGenerate = null; resolve({ ...r, timedOut }); };
+      p.on('close', (code) => finish({ code, out, err }));
+      p.on('error', (e) => finish({ code: 1, out: '', err: e.message }));
     });
 
     let result = await callClaude();
     // Retry once on a silent failure — exit non-zero with nothing on either
-    // stream. Observed in practice: the same prompt failed twice and then
-    // succeeded unchanged, so it is a transient CLI/service hiccup rather than
-    // anything wrong with the request. A refusal or a usage error DOES print,
-    // and is not retried — repeating it would just burn a second call.
-    if (result.code !== 0 && !result.out.trim() && !result.err.trim()) {
+    // stream. NOT on a timeout: that is not transient, and a second attempt
+    // would just burn another full timeout before failing the same way.
+    if (result.code !== 0 && !result.timedOut && !result.out.trim() && !result.err.trim()) {
       write({ type: 'log', stream: 'stdout', text: `[scaffold]   claude exited ${result.code} with no output — retrying once…\n` });
       result = await callClaude();
+    }
+    if (result.timedOut) {
+      write({
+        type: 'log',
+        stream: 'stderr',
+        text: `[scaffold]   claude did not finish within ${Math.round(SCAFFOLD_TIMEOUT_MS / 1000)}s and was stopped. ` +
+          `Set AGENTIC_QA_SCAFFOLD_TIMEOUT_MS to allow longer, or implement the steps by hand.\n`,
+      });
     }
 
     if (result.code !== 0) {
@@ -1955,7 +1987,7 @@ OUTPUT EXACTLY this JSON shape:
       ? `\n\n`
       : `\n\n// ---- auto-generated step definitions (scaffold-missing-steps) ----\n`;
     const stepBlocks = parsed.steps.map((s) => String(s.code || '').trim()).filter(Boolean).join('\n\n');
-    updated = updated.trimEnd() + banner + stepBlocks + '\n';
+    updated = pruneBddBindings(updated.trimEnd() + banner + stepBlocks + '\n');
     fs.writeFileSync(stepsPath, updated, 'utf8');
 
     totalGenerated += parsed.steps.length;
@@ -2421,6 +2453,35 @@ function stubHeaderReplacement(src) {
   return `// Step definitions generated by "Scaffold missing steps".\n` +
     `// Locators belong on the page object, not here — see the imports below.\n\n` +
     `${head}\n`;
+}
+
+/**
+ * Drop unused names from a `const { Given, When, Then } = createBdd(...)`
+ * binding so the file satisfies noUnusedLocals.
+ *
+ * The header is carried over verbatim from the placeholder file, which always
+ * destructures all three, while the generated steps may use only some. Asking
+ * the model to get this right is unreliable — it reported having dropped
+ * `Given` in its summary while still emitting it — so it is decided here from
+ * what the finished file actually calls.
+ */
+function pruneBddBindings(src) {
+  const text = String(src);
+  return text.replace(
+    /const\s*\{([^}]*)\}\s*=\s*createBdd\(/,
+    (whole, names) => {
+      const declared = names.split(',').map((n) => n.trim()).filter(Boolean);
+      // Count registrations only after the binding line, so the binding itself
+      // is never mistaken for a use.
+      const body = text.slice(text.indexOf(whole) + whole.length);
+      const used = declared.filter((n) => new RegExp(`\\b${n}\\s*\\(`).test(body));
+      // Never produce an empty binding — that is a syntax error. If nothing
+      // matched, something is off with the generated file; leave it alone and
+      // let the type-checker report the truth.
+      if (used.length === 0 || used.length === declared.length) return whole;
+      return `const { ${used.join(', ')} } = createBdd(`;
+    },
+  );
 }
 
 /** Every feature id in the repo, across all sites. */
