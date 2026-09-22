@@ -2,17 +2,17 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-09-22 15:22:54
+**Last run:** 2026-09-22 15:52:14
 **Browser:** chromium
-**Status:** ❌ FAIL (0/1 — 1 failed)
-**Duration:** 15 ms
-**Failed (assertion):** 1
+**Status:** ❌ FAIL (0/1 — 1 broken)
+**Duration:** 62.2 s
+**Broken (timeout/interrupted):** 1 — 1 timed out
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `ordercircle-signup.feature.spec.js` | Ordercircle Signup › Create a new product with inventory tracking | ❌ FAIL | 15 ms | `Error: Step not implemented yet: I am logged in as admin` |
+| `ordercircle-signup.feature.spec.js` | Ordercircle Signup › Create a new product with inventory tracking | ⏱️ TIMEOUT | 62.2 s | `[31mTest timeout of 60000ms exceeded.[39m` |
 
 ## Artifacts
 

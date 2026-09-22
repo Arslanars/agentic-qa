@@ -2,31 +2,31 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-09-21 12:40:22
+**Last run:** 2026-09-22 15:52:14
 **Browser:** chromium
 **Status:** ✅ PASS (16/16)
-**Duration:** 187.2 s
+**Duration:** 129.8 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | ✅ PASS | 4.9 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | ✅ PASS | 3.6 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | ✅ PASS | 5.1 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | ✅ PASS | 12.0 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | ✅ PASS | 13.3 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | ✅ PASS | 31.7 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | ✅ PASS | 14.3 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | ✅ PASS | 25.2 s | — |
-| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | ✅ PASS | 3.3 s | — |
-| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | ✅ PASS | 4.5 s | — |
-| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | ✅ PASS | 18.0 s | — |
-| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 3.5 s | — |
-| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | ✅ PASS | 14.0 s | — |
-| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 7.8 s | — |
-| `login.feature.spec.js` | Login User › Attempt to sign in with a malformed email and no password | ✅ PASS | 15.2 s | — |
-| `login.feature.spec.js` | Login User › Set the pack size for the American Sliced Cheese inventory item | ✅ PASS | 10.6 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | ✅ PASS | 3.6 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | ✅ PASS | 4.1 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | ✅ PASS | 3.1 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | ✅ PASS | 13.0 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | ✅ PASS | 12.3 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | ✅ PASS | 12.2 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | ✅ PASS | 14.9 s | — |
+| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | ✅ PASS | 12.7 s | — |
+| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | ✅ PASS | 2.6 s | — |
+| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | ✅ PASS | 14.4 s | — |
+| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | ✅ PASS | 3.0 s | — |
+| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 4.7 s | — |
+| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | ✅ PASS | 2.7 s | — |
+| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 4.2 s | — |
+| `login.feature.spec.js` | Login User › Attempt to sign in with a malformed email and no password | ✅ PASS | 12.4 s | — |
+| `login.feature.spec.js` | Login User › Set the pack size for the American Sliced Cheese inventory item | ✅ PASS | 10.0 s | — |
 
 ## Artifacts
 

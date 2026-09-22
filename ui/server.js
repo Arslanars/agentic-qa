@@ -406,6 +406,29 @@ app.post('/api/save-story', (req, res) => {
   }
 });
 
+/**
+ * Environment for every child process this server spawns.
+ *
+ * NO_COLOR is stripped. Playwright's runner hard-sets `FORCE_COLOR: "1"` on
+ * each worker it forks (playwright/lib/runner/index.js), and Node prints
+ *
+ *   Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+ *
+ * once per worker whenever both are present — so a run started from any shell
+ * that exports NO_COLOR (CI images and several terminal wrappers do) buries its
+ * own output in warnings. There is no way to stop Playwright setting
+ * FORCE_COLOR, so the conflict has to be resolved on this side.
+ *
+ * Measured on this suite: with NO_COLOR inherited, 4 warnings and 14 ANSI
+ * escapes; with it removed, 0 warnings and 6 escapes. Dropping it is better on
+ * both counts — the log viewer renders plain text and does not parse ANSI.
+ */
+function childEnv(extra) {
+  const env = { ...process.env, ...(extra || {}) };
+  delete env.NO_COLOR;
+  return env;
+}
+
 // Locate a JDK install on Windows so allure (a Java tool) can run from this
 // process even if JAVA_HOME isn't set in the parent shell yet. When multiple
 // jdk-N.x.x directories exist, pick the highest version.
@@ -466,7 +489,7 @@ function runBddgen(write) {
     write({ type: 'log', stream: 'stdout', text: '[ui] compiling .feature files (bddgen)…\n' });
     const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
       ['bddgen', '--config', 'playwright.config.js'],
-      { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+      { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32' });
     proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
     proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
     proc.on('close', (code) => {
@@ -487,7 +510,7 @@ function runPlaywrightProcess(args, write, onProcCreated) {
   return new Promise((resolve) => {
     const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
     });
     onProcCreated?.(proc);
@@ -513,7 +536,7 @@ function rebuildAllure(write, onProcCreated) {
     const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
       ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
         '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
-      { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
+      { cwd: ROOT, env: childEnv(envWithJava()), shell: process.platform === 'win32' });
     onProcCreated?.(proc);
     proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
     proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
@@ -819,7 +842,7 @@ Be strict but fair — flag only real testability problems, not stylistic nits. 
   try {
     proc = spawn(cmd, args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -942,7 +965,7 @@ async function streamClaudeWithPrompt(res, prompt, opts = {}) {
   try {
     proc = spawn(cmd, args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -1336,7 +1359,7 @@ If every step you use already exists in the steps file, return "newSteps": [].`;
   let proc;
   try {
     proc = spawn(cmd, args, {
-      cwd: ROOT, env: process.env,
+      cwd: ROOT, env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -1535,7 +1558,7 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
   let proc;
   try {
     proc = spawn(cmd, args, {
-      cwd: ROOT, env: process.env,
+      cwd: ROOT, env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -1659,7 +1682,7 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
       let buf = '';
       const p = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
         ['bddgen', '--config', 'playwright.config.js'],
-        { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+        { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32' });
       p.stdout.on('data', (d) => { buf += d.toString(); });
       p.stderr.on('data', (d) => { buf += d.toString(); });
       p.on('close', () => resolve(buf));
@@ -1837,7 +1860,7 @@ OUTPUT EXACTLY this JSON shape:
     const callClaude = () => new Promise((resolve) => {
       let p;
       try {
-        p = spawn(cmd, claudeArgs, { cwd: ROOT, env: process.env, shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
+        p = spawn(cmd, claudeArgs, { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
       } catch (err) {
         return resolve({ code: 1, out: '', err: err.message });
       }
@@ -2017,7 +2040,7 @@ app.post('/api/recorder/start', (req, res) => {
   try {
     proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -2194,7 +2217,7 @@ If every step you used already exists in the steps file, return newSteps: [].`;
   try {
     proc = spawn(cmd, args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -3879,7 +3902,7 @@ app.post('/api/allure-generate', (req, res) => {
   const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
     ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
       '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
-    { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
+    { cwd: ROOT, env: childEnv(envWithJava()), shell: process.platform === 'win32' });
 
   let finished = false;
   res.on('close', () => {

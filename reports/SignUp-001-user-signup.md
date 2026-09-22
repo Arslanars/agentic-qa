@@ -2,27 +2,25 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-09-13 00:05:18
+**Last run:** 2026-09-22 15:52:14
 **Browser:** chromium
-**Status:** ❌ FAIL (1/10 — 1 failed, 8 broken)
-**Duration:** 602.9 s
-**Failed (assertion):** 1
-**Broken (timeout/interrupted):** 8 — 8 timed out
+**Status:** ✅ PASS (10/10)
+**Duration:** 90.9 s
 
 ## Results
 
 | Spec | Test | Status | Duration | Error |
 |------|------|--------|---------:|-------|
-| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | ⏱️ TIMEOUT | 69.4 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | ⏱️ TIMEOUT | 66.2 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | ✅ PASS | 40.2 s | — |
-| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | ⏱️ TIMEOUT | 69.8 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ⏱️ TIMEOUT | 70.0 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | ❌ FAIL | 22.6 s | `Error: page.goto: net::ERR_CONNECTION_TIMED_OUT at https://moontower.aiimone.com/signup` |
-| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | ⏱️ TIMEOUT | 66.6 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | ⏱️ TIMEOUT | 69.1 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | ⏱️ TIMEOUT | 62.7 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
-| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | ⏱️ TIMEOUT | 66.4 s | `[31mTest timeout of 60000ms exceeded while running "beforeEach" hook.[39m` |
+| `signup.feature.spec.js` | User Signup › NEG-01 — Restaurant Name empty: Next does not advance | ✅ PASS | 5.6 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-03 — Business Email empty: Next does not advance | ✅ PASS | 17.8 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-04 — Invalid email format is rejected by HTML5 validity | ✅ PASS | 2.6 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-07 — Subdomain auto-derives from Restaurant Name and is read-only | ✅ PASS | 15.7 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-10 — Create Account is disabled when Terms checkbox is unchecked | ✅ PASS | 18.8 s | — |
+| `signup.feature.spec.js` | User Signup › NEG-08 — Create Account does not submit when passwords mismatch | ✅ PASS | 17.7 s | — |
+| `signup.feature.spec.js` | User Signup › UI-01 — Subdomain, Location Name, and Address fields are read-only | ✅ PASS | 2.9 s | — |
+| `signup.feature.spec.js` | User Signup › UI-03 — Show/Hide password toggle works on step 2 | ✅ PASS | 4.0 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-01 — "Sign in" link navigates to /login | ✅ PASS | 3.2 s | — |
+| `signup.feature.spec.js` | User Signup › NAV-02 — "← Back" link navigates to the homepage | ✅ PASS | 2.5 s | — |
 
 ## Artifacts
 
