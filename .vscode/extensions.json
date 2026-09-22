@@ -2,6 +2,11 @@
     "recommendations": [
         "myml.vscode-markdown-plantuml-preview",
         "esbenp.prettier-vscode",
-        "jebbs.plantuml"
+        "jebbs.plantuml",
+        // Resolves Gherkin steps to their definitions — without it every step
+        // in a .feature file is underlined as "Undefined step". Configured by
+        // cucumber.features / cucumber.glue in settings.json.
+        "CucumberOpen.cucumber-official",
+        "ms-playwright.playwright"
     ]
 }

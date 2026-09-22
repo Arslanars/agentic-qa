@@ -429,6 +429,48 @@ function childEnv(extra) {
   return env;
 }
 
+/**
+ * Local CLIs, resolved to the JS file their bin entry points at.
+ *
+ * These used to be spawned as `npx <tool>` with `shell: true` on Windows, which
+ * Node 22+ deprecates:
+ *
+ *   [DEP0190] DeprecationWarning: Passing args to a child process with shell
+ *   option true can lead to security vulnerabilities, as the arguments are not
+ *   escaped, only concatenated.
+ *
+ * The warning is printed once per spawn and lands in the run log the user
+ * reads. Running the entry point with this same Node binary needs no shell at
+ * all, which removes the deprecation AND the argv-injection surface the
+ * warning is about — argv is passed as a real array, so a feature or project
+ * name can never be re-parsed as shell syntax. It also skips npx's resolution
+ * step, so every run starts fractionally sooner.
+ */
+const LOCAL_CLI = {
+  playwright: path.join(ROOT, 'node_modules', '@playwright', 'test', 'cli.js'),
+  bddgen: path.join(ROOT, 'node_modules', 'playwright-bdd', 'dist', 'cli', 'index.js'),
+  // allure-commandline's bin is itself a Node script that shells out to the
+  // bundled Java launcher, so running it with this Node binary is equivalent.
+  allure: path.join(ROOT, 'node_modules', 'allure-commandline', 'bin', 'allure'),
+};
+
+/**
+ * Spawn a local CLI without a shell, falling back to npx when the package is
+ * not where we expect it (a consumer using this as a package may hoist
+ * node_modules differently, and a missing file must not take the runner down).
+ */
+function spawnLocalCli(tool, args, opts = {}) {
+  const entry = LOCAL_CLI[tool];
+  if (entry && fs.existsSync(entry)) {
+    return spawn(process.execPath, [entry, ...args], { cwd: ROOT, env: childEnv(), ...opts });
+  }
+  return spawn(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    [tool, ...args],
+    { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32', ...opts },
+  );
+}
+
 // Locate a JDK install on Windows so allure (a Java tool) can run from this
 // process even if JAVA_HOME isn't set in the parent shell yet. When multiple
 // jdk-N.x.x directories exist, pick the highest version.
@@ -487,9 +529,7 @@ function runBddgen(write) {
   return new Promise((resolve) => {
     if (!fs.existsSync(path.join(ROOT, 'features')) && sites.listSiteIds(ROOT).length === 0) return resolve(); // nothing to compile
     write({ type: 'log', stream: 'stdout', text: '[ui] compiling .feature files (bddgen)…\n' });
-    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      ['bddgen', '--config', 'playwright.config.js'],
-      { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32' });
+    const proc = spawnLocalCli('bddgen', ['--config', 'playwright.config.js']);
     proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
     proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
     proc.on('close', (code) => {
@@ -508,11 +548,8 @@ function runBddgen(write) {
 // (via onProcCreated) so it can be killed if the response disconnects.
 function runPlaywrightProcess(args, write, onProcCreated) {
   return new Promise((resolve) => {
-    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
-      cwd: ROOT,
-      env: childEnv(),
-      shell: process.platform === 'win32',
-    });
+    // args[0] is 'playwright'; the CLI entry takes the rest.
+    const proc = spawnLocalCli('playwright', args.slice(1));
     onProcCreated?.(proc);
     proc.stdout.on('data', (data) => write({ type: 'log', stream: 'stdout', text: data.toString() }));
     proc.stderr.on('data', (data) => write({ type: 'log', stream: 'stderr', text: data.toString() }));
@@ -533,10 +570,10 @@ function rebuildAllure(write, onProcCreated) {
       return resolve();
     }
     write({ type: 'log', stream: 'stdout', text: '[ui] rebuilding Allure HTML report…\n' });
-    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
+    const proc = spawnLocalCli('allure',
+      ['generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
         '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
-      { cwd: ROOT, env: childEnv(envWithJava()), shell: process.platform === 'win32' });
+      { env: childEnv(envWithJava()) });
     onProcCreated?.(proc);
     proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
     proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
@@ -1680,9 +1717,7 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
   async function captureBddgen() {
     return new Promise((resolve) => {
       let buf = '';
-      const p = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        ['bddgen', '--config', 'playwright.config.js'],
-        { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32' });
+      const p = spawnLocalCli('bddgen', ['--config', 'playwright.config.js']);
       p.stdout.on('data', (d) => { buf += d.toString(); });
       p.stderr.on('data', (d) => { buf += d.toString(); });
       p.on('close', () => resolve(buf));
@@ -2075,12 +2110,7 @@ app.post('/api/recorder/start', (req, res) => {
   ];
   let proc;
   try {
-    proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
-      cwd: ROOT,
-      env: childEnv(),
-      shell: process.platform === 'win32',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    proc = spawnLocalCli('playwright', args.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (err) {
     return res.status(500).json({ error: `failed to spawn codegen: ${err.message}` });
   }
@@ -4012,10 +4042,10 @@ app.post('/api/allure-generate', (req, res) => {
   const write = makeSafeWrite(res);
   write({ type: 'start', cmd: 'npx allure generate allure-results --clean -o allure-report' });
 
-  const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
+  const proc = spawnLocalCli('allure',
+    ['generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
       '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
-    { cwd: ROOT, env: childEnv(envWithJava()), shell: process.platform === 'win32' });
+    { env: childEnv(envWithJava()) });
 
   let finished = false;
   res.on('close', () => {
