@@ -8,6 +8,35 @@ This folder is the **BDD authoring path**. Author scenarios in plain-English Ghe
 | `features/<feature>/<name>.steps.ts` | Step definitions — map each step phrase to code. **Re-use existing POMs** from `pages/<feature>/<Name>Page.ts`. |
 | `features/_TEMPLATE.feature` | Copy this to scaffold a new feature |
 
+## Two layouts — which one am I in?
+
+The paths above are the **single-site layout**: one application under test, its
+features at the repo root. That is what `npx agentic-qa init` scaffolds and it
+is fully supported.
+
+Once a project tests **more than one application**, each gets a self-contained
+folder and every path above gains a `sites/<site>/` prefix:
+
+| Single-site | Multi-site |
+|---|---|
+| `features/<feature>/` | `sites/<site>/features/<feature>/` |
+| `pages/<feature>/` | `sites/<site>/pages/<feature>/` |
+| `user-stories/` | `sites/<site>/user-stories/` |
+| `features/_shared/` | `sites/<site>/features/_shared/` (that site only) |
+
+Both compile — `playwright.config.js` globs `features/**` *and*
+`sites/*/features/**`. `pages/BasePage.ts` and `features/_shared/visual.steps.ts`
+stay at the repo root either way: they are framework infrastructure shared by
+every site. In the UI and its API a feature is then addressed as
+`<site>/<feature>` (e.g. `moontower/login-user`).
+
+**This repo uses the multi-site layout** — see `sites/moontower/`.
+
+One caveat when you have several sites: a bare `createBdd()` in a site's
+`_shared/` publishes those steps to **every** site's scenarios, because
+Cucumber's step pool is global across everything bddgen compiles. Scope shared
+steps to a site-level tag unless they are genuinely app-agnostic.
+
 ## Conventions
 
 | Rule | Why |

@@ -2,6 +2,7 @@
 # Playwright
 node_modules/
 /test-results/
+/test-results-scheduled/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
@@ -29,8 +30,27 @@ node_modules/
 # Scheduled Runs — personal cron-like schedules stored per-machine, and the
 # log output from each fired run. Both are user-local state.
 /.claude/schedules.json
+# ...and the write-then-rename staging file, in case a crash leaves one behind.
+/.claude/schedules.json.tmp
 /reports/scheduled-runs/
+
+# Security scan + performance run outputs — ephemeral, regenerated per scan.
+/reports/security/
+/reports/perf/
+
+# Exploratory crawl output — regenerated per crawl.
+/reports/exploration/
+
+# From origin — local scratch files.
 branch_structure.json
 temp_auto_push.bat
 temp_interactive_push.bat
 .gitignore
+
+# Office lock/owner files (created whenever a doc is opened)
+~$*
+
+# Scratch exploration scripts an agent may leave behind while scaffolding steps.
+# The prompt tells it to clean up; this is the backstop so they never get committed.
+_explore-*
+_scratch-*

@@ -1,4 +1,36 @@
 {
+  // ---- Gherkin / Cucumber -------------------------------------------------
+  // Without these, every step in a .feature file is underlined as "Undefined
+  // step": the extension has no idea where the definitions live. Both layouts
+  // are listed (top-level features/ and the per-site sites/<site>/features/),
+  // and the settings for BOTH common extensions are present so it works
+  // whichever one is installed — an unrecognised key is simply ignored.
+  //
+  // Step definitions are TAG-SCOPED in this repo (createBdd(undefined, { tags:
+  // '@login' })), which neither extension models. So a step can still be shown
+  // as resolved while not actually binding in that scenario's tag scope —
+  // `npx bddgen` remains the authority on that.
+
+  // CucumberOpen.cucumber-official
+  "cucumber.features": [
+    "features/**/*.feature",
+    "sites/*/features/**/*.feature"
+  ],
+  "cucumber.glue": [
+    "features/**/*.steps.ts",
+    "sites/*/features/**/*.steps.ts"
+  ],
+
+  // alexkrechik.cucumberautocomplete
+  "cucumberautocomplete.steps": [
+    "features/**/*.steps.ts",
+    "sites/*/features/**/*.steps.ts"
+  ],
+  "cucumberautocomplete.syncfeatures": "sites/*/features/**/*.feature",
+  "cucumberautocomplete.strictGherkinCompletion": false,
+  "cucumberautocomplete.smartSnippets": true,
+  "cucumberautocomplete.stepsInvariants": true,
+
   "search.exclude": {
     "**/.sst": true
   },

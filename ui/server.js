@@ -12,8 +12,51 @@ const { spawn, exec, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { renderReport } = require('./report-renderer');
-const { writeRunReports } = require('./report-writer');
+const { writeRunReports, featuresFromLastRun, reportMatchesFeature } = require('./report-writer');
+const { ALL_PROJECTS, projectNames, desktopProjectNames } = require('./projects');
+// Multi-site layout. Every features/ and pages/ path in this file resolves
+// through here so a second or third application under test gets its own
+// self-contained folder instead of being mixed into the first one's.
+const sites = require('./sites');
 const { writeTestCasesExcel } = require('./excel-writer');
+// Security / performance / API-test engines (dependency-free; also usable
+// headless via bin/qa-scan.js). Wired to the endpoints below + UI panels.
+const security = require('../lib/security');
+const perfEngine = require('../lib/perf/lighthouse');
+const apiTesting = require('../lib/api-testing/runner');
+const explore = require('../lib/explore');
+const stepIndex = require('../lib/steps');
+
+// Model for short, mechanical Claude jobs (converting a recording, explaining a
+// failure). These do not need a frontier model and latency is what you feel, so
+// a fast one is pinned. Set AGENTIC_QA_CLAUDE_MODEL to override, or to the
+// literal "default" to pass no --model flag at all and keep the CLI's own
+// setting. Generation, healing and review are deliberately NOT pinned.
+const FAST_MODEL = process.env.AGENTIC_QA_CLAUDE_MODEL || 'haiku';
+
+/** Append --model only when a fast model is wanted and not disabled. */
+function withFastModel(args) {
+  if (!FAST_MODEL || FAST_MODEL === 'default') return args;
+  return args.concat(['--model', FAST_MODEL]);
+}
+
+/**
+ * Tags declared by a feature's .feature file. Needed because step definitions
+ * are tag-scoped — the set of phrases available to a scenario depends entirely
+ * on its tags, so "does this step already exist?" is unanswerable without them.
+ */
+function featureTagsFor(feature) {
+  if (!feature || !isSafeFeatureId(feature)) return [];
+  const dir = featurePaths(feature).featureDir;
+  if (!fs.existsSync(dir)) return [];
+  try {
+    const file = fs.readdirSync(dir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+    if (!file) return [];
+    return stepIndex.featureTags(fs.readFileSync(path.join(dir, file), 'utf8'));
+  } catch {
+    return [];
+  }
+}
 
 const app = express();
 const PORT = process.env.UI_PORT ? Number(process.env.UI_PORT) : 3001;
@@ -59,6 +102,84 @@ function isSafeName(s) {
   return typeof s === 'string' && s.length > 0 && s.length <= 64 && SAFE_NAME_RE.test(s);
 }
 
+/**
+ * A *feature id* is either a bare folder name (legacy top-level layout) or
+ * "<site>/<feature>" (multi-site layout). Each segment is validated with the
+ * same tight character set as isSafeName, so the extra "/" buys addressing
+ * without widening the injection surface — see ui/sites.js.
+ *
+ * Playwright PROJECT names keep using isSafeName: they are a flat namespace
+ * and must never contain a separator.
+ */
+function isSafeFeatureId(s) {
+  return sites.parseFeatureId(s) !== null;
+}
+
+/**
+ * A project name must not just be SHAPED safely — it must be one
+ * playwright.config.js actually defines. Shape-only validation let a typo or a
+ * stale bookmark through to `--project=<typo>`, which Playwright rejects only
+ * after the server has already cleared allure-results/ and pruned
+ * test-results/. The user saw a wiped report set and an opaque failure instead
+ * of a 400. ui/projects.js is the shared source of truth for the list.
+ */
+function isKnownProject(s) {
+  return isSafeName(s) && projectNames.includes(s);
+}
+
+/**
+ * Repo-relative display paths for a feature id — "sites/<site>/features/<f>"
+ * and "sites/<site>/pages/<f>", or legacy "features/<f>" / "pages/<f>".
+ *
+ * These are not cosmetic. They are interpolated into the prompts sent to the
+ * Claude CLI by /api/heal, /api/scaffold-missing-steps and
+ * /api/coverage/draft-scenario. A stale "features/<f>/" there points the model
+ * at a folder that no longer exists, so it either cannot find the file it was
+ * asked to edit or recreates it in the wrong place.
+ */
+function relFeat(id) {
+  return featurePaths(id).relFeatureDir;
+}
+function relPages(id) {
+  return featurePaths(id).relPagesDir;
+}
+/** Bare folder name of a feature id — "login-user" from "moontower/login-user". */
+function featureName(id) {
+  return featurePaths(id).feature;
+}
+
+/**
+ * Resolve a feature id to its on-disk paths.
+ *
+ * Never returns null. An id that fails validation resolves to a sentinel path
+ * that cannot exist, so the `fs.existsSync(...)` check every caller already
+ * performs turns bad input into that endpoint's normal 404 instead of a
+ * TypeError that would take the server down. Callers still validate with
+ * isSafeFeatureId first to return a precise 400 — this is the backstop, so a
+ * missed guard degrades to "not found" rather than a crash or a traversal.
+ */
+function featurePaths(id) {
+  const resolved = sites.resolveFeature(ROOT, id);
+  if (resolved) return resolved;
+  const dead = path.join(ROOT, '.invalid-feature-id');
+  return {
+    id: String(id || ''),
+    site: sites.LEGACY_SITE,
+    feature: '',
+    isLegacy: true,
+    invalid: true,
+    featureDir: dead,
+    pagesDir: dead,
+    storiesDir: dead,
+    stepsRoot: dead,
+    relFeatureDir: '.invalid-feature-id',
+    relPagesDir: '.invalid-feature-id',
+    genDir: '.features-gen/.invalid-feature-id/',
+    exists: false,
+    label: String(id || ''),
+  };
+}
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname));
 
@@ -71,16 +192,20 @@ function safeSlug(input) {
     .slice(0, 60) || 'untitled';
 }
 
-// List feature folders. A feature has either .spec.ts files under tests/<name>/
-// or .feature files under features/<name>/ (Gherkin/BDD). Both counts are
-// surfaced in the response so the UI can show a single row per feature.
+// List feature folders across every site. A feature has either .spec.ts files
+// under tests/<name>/ or .feature files under <site>/features/<name>/.
+//
+// `name` is the feature ID the rest of the API expects — bare for the legacy
+// top-level layout, "<site>/<feature>" for a site — so the UI can keep passing
+// this value straight back to /api/run, /api/tags, etc. `site`, `siteName` and
+// `label` are added so the UI can group rows without parsing the id itself.
 app.get('/api/features', (_req, res) => {
   try {
     const featureMap = new Map();
     // Skip underscore-prefixed scaffolding/shared dirs (e.g. _shared/, _TEMPLATE
     // folders) — they hold step helpers, not user-facing features.
     const isFeatureDir = (name) => !name.startsWith('_') && !name.startsWith('.');
-    // 1) Classic POM tests
+    // 1) Classic POM tests — always top-level, no site dimension.
     if (fs.existsSync(CFG_PATHS.tests)) {
       for (const name of fs.readdirSync(CFG_PATHS.tests)) {
         if (!isFeatureDir(name)) continue;
@@ -88,24 +213,42 @@ app.get('/api/features', (_req, res) => {
         if (!stat || !stat.isDirectory()) continue;
         let specs = 0;
         try { specs = fs.readdirSync(path.join(CFG_PATHS.tests, name)).filter((f) => f.endsWith('.spec.ts')).length; } catch (_) {}
-        featureMap.set(name, { name, specs, features: 0 });
+        featureMap.set(name, {
+          name, specs, features: 0,
+          site: sites.LEGACY_SITE, siteName: 'Default', isLegacy: true, feature: name, label: name,
+        });
       }
     }
-    // 2) Gherkin .feature files — only count folders that contain a real
-    // .feature file. _shared/ has step defs only, so it's filtered out by
+    // 2) Gherkin .feature files, per site — only count folders that contain a
+    // real .feature file. _shared/ has step defs only, so it's filtered out by
     // both the underscore guard AND the zero-feature-file guard.
-    const featuresDir = path.join(ROOT, 'features');
-    if (fs.existsSync(featuresDir)) {
+    const siteList = [
+      { id: sites.LEGACY_SITE, name: 'Default', isLegacy: true },
+      ...sites.listSiteIds(ROOT).map((id) => ({ ...sites.readSiteMeta(ROOT, id), id, isLegacy: false })),
+    ];
+    for (const site of siteList) {
+      const featuresDir = sites.featuresRoot(ROOT, site.id);
+      if (!fs.existsSync(featuresDir)) continue;
       for (const name of fs.readdirSync(featuresDir)) {
         if (!isFeatureDir(name)) continue;
         const stat = fs.statSync(path.join(featuresDir, name), { throwIfNoEntry: false });
         if (!stat || !stat.isDirectory()) continue;
         let count = 0;
         try { count = fs.readdirSync(path.join(featuresDir, name)).filter((f) => f.endsWith('.feature')).length; } catch (_) {}
-        if (count === 0 && !featureMap.has(name)) continue; // skip folders with no scenarios
-        const existing = featureMap.get(name);
+        const id = sites.formatFeatureId(site.id, name);
+        if (count === 0 && !featureMap.has(id)) continue; // skip folders with no scenarios
+        const existing = featureMap.get(id);
         if (existing) existing.features = count;
-        else featureMap.set(name, { name, specs: 0, features: count });
+        else featureMap.set(id, {
+          name: id,
+          specs: 0,
+          features: count,
+          site: site.id,
+          siteName: site.name || site.id,
+          isLegacy: !!site.isLegacy,
+          feature: name,
+          label: site.isLegacy ? name : `${site.name || site.id} › ${name}`,
+        });
       }
     }
     res.json(Array.from(featureMap.values()));
@@ -114,10 +257,86 @@ app.get('/api/features', (_req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Sites — one self-contained folder per application under test.
+// ---------------------------------------------------------------------------
+
+// List every site with its metadata and feature folders.
+app.get('/api/sites', (_req, res) => {
+  try {
+    res.json(sites.listSites(ROOT));
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// Which site owns a URL, and where its code lives — WITHOUT creating anything.
+// The UI calls this as the URL field changes so it can show the target folder
+// and build a generation prompt that writes there. Deriving the id server-side
+// keeps one implementation of the rule instead of a copy in the browser that
+// could drift.
+app.get('/api/sites/resolve', (req, res) => {
+  const url = req.query.url;
+  if (!url || !isHttpUrl(String(url))) {
+    return res.status(400).json({ error: 'url must be a valid http(s) URL' });
+  }
+  const id = sites.siteIdFromUrl(String(url));
+  if (!sites.isSafeSegment(id)) {
+    return res.status(400).json({ error: `could not derive a site folder name from "${url}"` });
+  }
+  const exists = sites.listSiteIds(ROOT).includes(id);
+  res.json({
+    site: id,
+    exists,
+    name: exists ? sites.readSiteMeta(ROOT, id).name : id,
+    features: exists ? sites.listFeatures(ROOT, id) : [],
+    paths: {
+      root: `${sites.SITES_DIR}/${id}`,
+      features: sites.relFeaturesRoot(id),
+      pages: sites.relPagesRoot(id),
+      stories: sites.relStoriesRoot(id),
+    },
+  });
+});
+
+// Create (or refresh) a site folder skeleton: sites/<id>/{features,pages,user-stories}
+// plus site.json. Idempotent — posting an existing id updates its metadata and
+// leaves the work inside it untouched.
+app.post('/api/sites', (req, res) => {
+  try {
+    const { id, name, baseUrl, credentialsEnv } = req.body || {};
+    if (!baseUrl && !name && !id) {
+      return res.status(400).json({ error: 'one of id, name or baseUrl is required' });
+    }
+    if (baseUrl && !isHttpUrl(baseUrl)) {
+      return res.status(400).json({ error: 'baseUrl must be a valid http(s) URL' });
+    }
+    const wanted = id || sites.siteIdFromUrl(baseUrl || name);
+    if (!sites.isSafeSegment(wanted)) {
+      return res.status(400).json({ error: `site id must match ${SAFE_NAME_RE} (got "${wanted}")` });
+    }
+    // Reserve the shape the legacy layout occupies so a site can never shadow it.
+    if (wanted === 'features' || wanted === 'pages') {
+      return res.status(400).json({ error: `"${wanted}" is reserved` });
+    }
+    const site = sites.createSite(ROOT, { id: wanted, name, baseUrl, credentialsEnv });
+    res.json({ ok: true, site });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
 // Save a user-story file from form input. Manual authoring path — no AI.
+//
+// This is where a URL becomes a SITE. The story is filed under the site that
+// owns the URL, creating sites/<id>/{features,pages,user-stories} on first use,
+// so adding a second or third application never mixes it into the first one's
+// folders. Pass `site` explicitly to file under a known site; omit it and the
+// id is derived from the URL's host. Pass the legacy id to keep using the
+// original top-level user-stories/ layout.
 app.post('/api/save-story', (req, res) => {
   try {
-    const { url, title, ac, creds, storyId } = req.body || {};
+    const { url, title, ac, creds, storyId, site: siteParam } = req.body || {};
     if (!url || !title || !ac) {
       return res.status(400).json({ error: 'url, title, and ac are required' });
     }
@@ -128,9 +347,31 @@ app.post('/api/save-story', (req, res) => {
     if (rawId && !/^[A-Za-z0-9_-]{1,64}$/.test(rawId)) {
       return res.status(400).json({ error: 'storyId must match /^[A-Za-z0-9_-]{1,64}$/' });
     }
+
+    // Resolve which site owns this story.
+    let siteId;
+    if (siteParam === sites.LEGACY_SITE) {
+      siteId = sites.LEGACY_SITE;
+    } else if (siteParam) {
+      if (!sites.isSafeSegment(siteParam)) {
+        return res.status(400).json({ error: `site must match ${SAFE_NAME_RE}` });
+      }
+      siteId = siteParam;
+    } else {
+      siteId = sites.siteIdFromUrl(url);
+      if (!sites.isSafeSegment(siteId)) {
+        return res.status(400).json({ error: `could not derive a site folder name from "${url}" — pass site explicitly` });
+      }
+    }
+    // Materialise the site skeleton on first use so the generator has somewhere
+    // to write features/ and pages/ before any test exists.
+    if (!sites.isLegacy(siteId)) {
+      sites.createSite(ROOT, { id: siteId, name: siteParam ? undefined : sites.readSiteMeta(ROOT, siteId).name, baseUrl: url });
+    }
+
     const id = rawId || `UI-${Date.now().toString(36).toUpperCase()}`;
     const fileName = `${id}-${slug}.md`;
-    const dir = CFG_PATHS.stories;
+    const dir = sites.isLegacy(siteId) ? CFG_PATHS.stories : sites.storiesRoot(ROOT, siteId);
     fs.mkdirSync(dir, { recursive: true });
     const filePath = path.join(dir, fileName);
     // Defense-in-depth — even after regex validation, refuse to write
@@ -146,11 +387,89 @@ app.post('/api/save-story', (req, res) => {
       `## Acceptance Criteria\n${ac}\n`;
 
     fs.writeFileSync(filePath, content, 'utf8');
-    res.json({ ok: true, file: `user-stories/${fileName}`, storyId: id, slug });
+    res.json({
+      ok: true,
+      file: `${sites.relStoriesRoot(siteId)}/${fileName}`,
+      storyId: id,
+      slug,
+      site: siteId,
+      // Everything the client needs to build a generation prompt that writes
+      // into this site rather than the repo root.
+      paths: {
+        features: sites.relFeaturesRoot(siteId),
+        pages: sites.relPagesRoot(siteId),
+        stories: sites.relStoriesRoot(siteId),
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
 });
+
+/**
+ * Environment for every child process this server spawns.
+ *
+ * NO_COLOR is stripped. Playwright's runner hard-sets `FORCE_COLOR: "1"` on
+ * each worker it forks (playwright/lib/runner/index.js), and Node prints
+ *
+ *   Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+ *
+ * once per worker whenever both are present — so a run started from any shell
+ * that exports NO_COLOR (CI images and several terminal wrappers do) buries its
+ * own output in warnings. There is no way to stop Playwright setting
+ * FORCE_COLOR, so the conflict has to be resolved on this side.
+ *
+ * Measured on this suite: with NO_COLOR inherited, 4 warnings and 14 ANSI
+ * escapes; with it removed, 0 warnings and 6 escapes. Dropping it is better on
+ * both counts — the log viewer renders plain text and does not parse ANSI.
+ */
+function childEnv(extra) {
+  const env = { ...process.env, ...(extra || {}) };
+  delete env.NO_COLOR;
+  return env;
+}
+
+/**
+ * Local CLIs, resolved to the JS file their bin entry points at.
+ *
+ * These used to be spawned as `npx <tool>` with `shell: true` on Windows, which
+ * Node 22+ deprecates:
+ *
+ *   [DEP0190] DeprecationWarning: Passing args to a child process with shell
+ *   option true can lead to security vulnerabilities, as the arguments are not
+ *   escaped, only concatenated.
+ *
+ * The warning is printed once per spawn and lands in the run log the user
+ * reads. Running the entry point with this same Node binary needs no shell at
+ * all, which removes the deprecation AND the argv-injection surface the
+ * warning is about — argv is passed as a real array, so a feature or project
+ * name can never be re-parsed as shell syntax. It also skips npx's resolution
+ * step, so every run starts fractionally sooner.
+ */
+const LOCAL_CLI = {
+  playwright: path.join(ROOT, 'node_modules', '@playwright', 'test', 'cli.js'),
+  bddgen: path.join(ROOT, 'node_modules', 'playwright-bdd', 'dist', 'cli', 'index.js'),
+  // allure-commandline's bin is itself a Node script that shells out to the
+  // bundled Java launcher, so running it with this Node binary is equivalent.
+  allure: path.join(ROOT, 'node_modules', 'allure-commandline', 'bin', 'allure'),
+};
+
+/**
+ * Spawn a local CLI without a shell, falling back to npx when the package is
+ * not where we expect it (a consumer using this as a package may hoist
+ * node_modules differently, and a missing file must not take the runner down).
+ */
+function spawnLocalCli(tool, args, opts = {}) {
+  const entry = LOCAL_CLI[tool];
+  if (entry && fs.existsSync(entry)) {
+    return spawn(process.execPath, [entry, ...args], { cwd: ROOT, env: childEnv(), ...opts });
+  }
+  return spawn(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    [tool, ...args],
+    { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32', ...opts },
+  );
+}
 
 // Locate a JDK install on Windows so allure (a Java tool) can run from this
 // process even if JAVA_HOME isn't set in the parent shell yet. When multiple
@@ -208,11 +527,9 @@ function makeSafeWrite(res) {
 // even on failure (the actual test run will surface any real issue).
 function runBddgen(write) {
   return new Promise((resolve) => {
-    if (!fs.existsSync(path.join(ROOT, 'features'))) return resolve(); // nothing to compile
+    if (!fs.existsSync(path.join(ROOT, 'features')) && sites.listSiteIds(ROOT).length === 0) return resolve(); // nothing to compile
     write({ type: 'log', stream: 'stdout', text: '[ui] compiling .feature files (bddgen)…\n' });
-    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      ['bddgen', '--config', 'playwright.config.js'],
-      { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+    const proc = spawnLocalCli('bddgen', ['--config', 'playwright.config.js']);
     proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
     proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
     proc.on('close', (code) => {
@@ -231,11 +548,8 @@ function runBddgen(write) {
 // (via onProcCreated) so it can be killed if the response disconnects.
 function runPlaywrightProcess(args, write, onProcCreated) {
   return new Promise((resolve) => {
-    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
-      cwd: ROOT,
-      env: process.env,
-      shell: process.platform === 'win32',
-    });
+    // args[0] is 'playwright'; the CLI entry takes the rest.
+    const proc = spawnLocalCli('playwright', args.slice(1));
     onProcCreated?.(proc);
     proc.stdout.on('data', (data) => write({ type: 'log', stream: 'stdout', text: data.toString() }));
     proc.stderr.on('data', (data) => write({ type: 'log', stream: 'stderr', text: data.toString() }));
@@ -256,10 +570,10 @@ function rebuildAllure(write, onProcCreated) {
       return resolve();
     }
     write({ type: 'log', stream: 'stdout', text: '[ui] rebuilding Allure HTML report…\n' });
-    const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
+    const proc = spawnLocalCli('allure',
+      ['generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
         '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
-      { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
+      { env: childEnv(envWithJava()) });
     onProcCreated?.(proc);
     proc.stdout.on('data', (d) => write({ type: 'log', stream: 'stdout', text: d.toString() }));
     proc.stderr.on('data', (d) => write({ type: 'log', stream: 'stderr', text: d.toString() }));
@@ -280,6 +594,34 @@ function clearAllureResults(write) {
     if (fs.existsSync(CFG_PATHS.allureResults)) {
       fs.rmSync(CFG_PATHS.allureResults, { recursive: true, force: true });
       write({ type: 'log', stream: 'stdout', text: '[ui] cleared allure-results/ for fresh run\n' });
+    }
+  } catch (_) { /* best-effort */ }
+}
+
+// Playwright only recreates output folders for the tests that ACTUALLY run —
+// it never wipes test-results/ as a whole. So per-test artifact folders
+// (screenshots, videos, traces) from PREVIOUS runs of OTHER features or
+// browsers linger on disk, and the screenshot gallery (which lists everything
+// under test-results/) ends up showing stale, cross-feature, cross-browser
+// shots — e.g. 42 images for a single 14-scenario login run because 3 browsers'
+// worth accumulated. Clear the per-test artifact SUBDIRECTORIES before each run
+// so the gallery reflects only the current run. Top-level files are preserved:
+// .last-run.json (so --last-failed / "Re-run failed" still works) and
+// results.json (consumed afterwards by the report + history writers).
+function cleanTestArtifacts(write) {
+  try {
+    if (!fs.existsSync(CFG_PATHS.testResults)) return;
+    let removed = 0;
+    for (const name of fs.readdirSync(CFG_PATHS.testResults)) {
+      const p = path.join(CFG_PATHS.testResults, name);
+      let st;
+      try { st = fs.statSync(p); } catch (_) { continue; }
+      if (st.isDirectory()) {
+        try { fs.rmSync(p, { recursive: true, force: true }); removed++; } catch (_) { /* locked file — skip */ }
+      }
+    }
+    if (removed > 0 && write) {
+      write({ type: 'log', stream: 'stdout', text: `[ui] cleared ${removed} stale artifact folder(s) from test-results/ so the gallery shows only this run\n` });
     }
   } catch (_) { /* best-effort */ }
 }
@@ -333,9 +675,41 @@ function checkClaudeCli() {
   });
 }
 
+/**
+ * When this process started. Node loads ui/server.js once, but express.static
+ * serves ui/index.html fresh from disk on every request — so after a `git pull`
+ * the browser gets the NEW front-end while the server keeps running the OLD
+ * handlers. The mismatch shows up as a front-end calling an endpoint (or
+ * sending a parameter) the running server has never heard of, and the error it
+ * produces looks like a bug in the feature rather than a stale process.
+ */
+const SERVER_STARTED_AT = Date.now();
+
+/** Server-side files whose edits only take effect after a restart. */
+const RESTART_SENSITIVE = ['server.js', 'sites.js', 'projects.js', 'excel-writer.js', 'report-writer.js']
+  .map((f) => path.join(__dirname, f));
+
+/**
+ * True when any server-side source on disk is newer than this process — i.e.
+ * the code was changed after the server was started and a restart is due.
+ */
+function serverIsStale() {
+  for (const f of RESTART_SENSITIVE) {
+    try {
+      if (fs.statSync(f).mtimeMs > SERVER_STARTED_AT) return true;
+    } catch { /* file gone or unreadable — not a staleness signal */ }
+  }
+  return false;
+}
+
 app.get('/api/generate-status', async (_req, res) => {
   const available = await checkClaudeCli();
-  res.json({ available, running: !!activeGenerate });
+  res.json({
+    available,
+    running: !!activeGenerate,
+    stale: serverIsStale(),
+    startedAt: SERVER_STARTED_AT,
+  });
 });
 
 // Drive `claude --print` with a prompt piped via stdin. Streams NDJSON the
@@ -362,7 +736,15 @@ app.post('/api/generate-tests', async (req, res) => {
   if (activeRun) {
     return res.status(409).json({ error: 'a test run is in progress — stop it before generating new tests' });
   }
-  await streamClaudeWithPrompt(res, prompt);
+  // Compile the .feature files here rather than asking the model to run bddgen
+  // itself. Doing it in Node is faster (no extra model turn), deterministic, and
+  // cannot be skipped or mis-run. The prompt tells Claude not to run it.
+  await streamClaudeWithPrompt(res, prompt, {
+    afterSuccess: async (write) => {
+      write({ type: 'log', stream: 'stdout', text: '[ui] compiling .feature files (bddgen)…\n' });
+      await runBddgen(write);
+    },
+  });
 });
 
 // Heal a failing test by handing claude its failure context (error message,
@@ -372,7 +754,7 @@ app.post('/api/generate-tests', async (req, res) => {
 // prompt gets built.
 app.post('/api/heal', async (req, res) => {
   const { feature, fullTitle, file, line, errorMessage, errorStack, screenshot, category } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!fullTitle || typeof fullTitle !== 'string') {
@@ -388,14 +770,14 @@ app.post('/api/heal', async (req, res) => {
   if (activeGenerate) return res.status(409).json({ error: 'a Claude job is already in progress' });
   if (activeRun) return res.status(409).json({ error: 'a test run is in progress — stop it before healing' });
 
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   const featureFile = fs.existsSync(featureDir)
     ? fs.readdirSync(featureDir).filter((f) => f.endsWith('.feature') && !f.startsWith('_'))[0]
     : null;
   const stepsFile = fs.existsSync(featureDir)
     ? fs.readdirSync(featureDir).filter((f) => f.endsWith('.steps.ts'))[0]
     : null;
-  const pageDir = path.join(ROOT, 'pages', feature);
+  const pageDir = featurePaths(feature).pagesDir;
   const pomFiles = fs.existsSync(pageDir)
     ? fs.readdirSync(pageDir).filter((f) => f.endsWith('.ts'))
     : [];
@@ -403,7 +785,7 @@ app.post('/api/heal', async (req, res) => {
   const prompt = `A Playwright BDD test just failed. Diagnose the root cause and fix it.
 
 FAILED TEST:
-- Feature folder: features/${feature}/
+- Feature folder: ${relFeat(feature)}/
 - Spec path:      ${file || '(unknown)'}
 - Test title:     ${fullTitle}
 - Status:         ${category === 'broken' ? 'BROKEN (timeout / interrupted)' : 'FAILED (assertion)'}
@@ -413,9 +795,9 @@ ERROR MESSAGE:
 ${String(errorMessage).slice(0, 4000)}
 
 ${errorStack ? `STACK:\n${String(errorStack).slice(0, 4000)}\n\n` : ''}EXISTING FILES TO INSPECT (read these first):
-- Feature:   features/${feature}/${featureFile || '<missing>'}
-- Step defs: features/${feature}/${stepsFile || '<missing>'}
-- POM:       pages/${feature}/${pomFiles.join(', pages/' + feature + '/') || '<missing>'}
+- Feature:   ${relFeat(feature)}/${featureFile || '<missing>'}
+- Step defs: ${relFeat(feature)}/${stepsFile || '<missing>'}
+- POM:       ${pomFiles.length ? pomFiles.map((f) => `${relPages(feature)}/${f}`).join(', ') : '<missing>'}
 
 INSTRUCTIONS FOR CLAUDE:
 1. Read the screenshot if available — visual cues often tell you what the app actually rendered vs what the test expected.
@@ -497,7 +879,7 @@ Be strict but fair — flag only real testability problems, not stylistic nits. 
   try {
     proc = spawn(cmd, args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -527,33 +909,30 @@ Be strict but fair — flag only real testability problems, not stylistic nits. 
   proc.on('close', (code) => {
     clearTimeout(timer);
     activeGenerate = null;
-    if (code !== 0) {
-      // Claude CLI exiting non-zero with empty stderr is a classic transient
-      // failure signature (network blip, brief quota check, session refresh).
-      // Give the user an actionable message instead of the cryptic "exited 1".
-      const trimmedErr = stderr.trim();
-      const transient = code === 1 && trimmedErr.length === 0 && stdout.trim().length === 0;
-      return res.status(502).json({
-        error: transient
-          ? 'Claude CLI returned nothing (transient failure). Try again — it usually works on retry.'
-          : `claude exited ${code}`,
-        stderr: stderr.slice(0, 2000),
-        transient,
-      });
-    }
-    // Extract the JSON object from claude's response. Claude usually returns
-    // pure JSON when asked but occasionally wraps in ```json fences or adds a
-    // brief preamble; this scan finds the first balanced {…} block.
+    // Extract the JSON object from claude's response FIRST — the CLI often
+    // prints valid JSON to stdout yet still exits non-zero (post-run warning /
+    // telemetry / broken pipe), so a good result shouldn't be discarded over
+    // the exit code. Claude usually returns pure JSON but occasionally wraps in
+    // ```json fences or adds a preamble; this scan finds the first balanced {…}.
     const parsed = extractJsonObject(stdout);
-    if (!parsed) {
-      return res.status(502).json({
-        error: 'could not parse JSON from claude response',
-        rawPreview: stdout.slice(0, 500),
+    if (parsed) {
+      return res.json({
+        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+        summary: parsed.summary || '',
       });
     }
-    res.json({
-      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-      summary: parsed.summary || '',
+    // No usable output — Claude CLI exiting non-zero with empty stderr AND empty
+    // stdout is a classic transient signature (network blip, quota check,
+    // session refresh). Give an actionable message instead of a cryptic code.
+    const trimmedErr = stderr.trim();
+    const transient = code === 1 && trimmedErr.length === 0 && stdout.trim().length === 0;
+    return res.status(502).json({
+      error: transient
+        ? 'Claude CLI returned nothing (transient failure). Try again — it usually works on retry.'
+        : `claude exited ${code}${trimmedErr ? ': ' + trimmedErr.slice(0, 400) : ' — could not parse a response'}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
+      transient,
     });
   });
   proc.on('error', (err) => {
@@ -601,7 +980,13 @@ function extractJsonObject(s) {
 // --dangerously-skip-permissions`, feed `prompt` via stdin, and stream the
 // JSONL events back to the client as formatted NDJSON log lines. Owns the
 // activeGenerate slot so concurrency guards are consistent across callers.
-async function streamClaudeWithPrompt(res, prompt) {
+/**
+ * @param opts.afterSuccess optional async (write) => void, awaited after Claude
+ *   exits 0 and before the stream closes. Use it for deterministic follow-up
+ *   work — compiling BDD, regenerating reports — that would otherwise cost the
+ *   model a tool-call round trip to perform itself.
+ */
+async function streamClaudeWithPrompt(res, prompt, opts = {}) {
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('X-Accel-Buffering', 'no');
@@ -617,7 +1002,7 @@ async function streamClaudeWithPrompt(res, prompt) {
   try {
     proc = spawn(cmd, args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -672,13 +1057,22 @@ async function streamClaudeWithPrompt(res, prompt) {
     write({ type: 'done', exitCode: 1 });
     res.end();
   });
-  proc.on('close', (code) => {
+  proc.on('close', async (code) => {
     if (finished) return;
     finished = true;
     activeGenerate = null;
     if (lineBuf.trim()) {
       write({ type: 'log', stream: 'stdout', text: lineBuf + '\n' });
       lineBuf = '';
+    }
+    // Deterministic follow-up work runs here, in Node — not as another model
+    // turn. Only on success: there is nothing to compile after a failed run.
+    if (code === 0 && typeof opts.afterSuccess === 'function') {
+      try {
+        await opts.afterSuccess(write);
+      } catch (err) {
+        write({ type: 'log', stream: 'stderr', text: `[ui] post-step failed: ${err && err.message}\n` });
+      }
     }
     write({ type: 'done', exitCode: code == null ? 1 : code });
     res.end();
@@ -832,6 +1226,18 @@ function recordRunHistory({ feature, project, lastFailed } = {}) {
 // (which is one line per run) so the schemas stay flat and append-only.
 // Stored under reports/ for the same reason as run history.
 const TEST_HISTORY_MAX = 5000; // ~200 runs × 25 tests; keeps the file small
+// Playwright's JSON reporter sometimes prefixes a test's title chain with the
+// spec FILE PATH as a suite title (e.g. ".features-gen/features/x/x.feature:7").
+// Strip any path-like segment so a test's history key stays stable across runs —
+// otherwise the same test fragments into several keys and reads as flaky.
+function cleanTestTitle(ft) {
+  return String(ft || '')
+    .split('›')
+    .map((s) => s.trim())
+    .filter((s) => s && !/[\\/]/.test(s) && !/\.(feature|spec\.[jt]s|[jt]s)(?::\d+)?$/i.test(s))
+    .join(' › ');
+}
+
 function recordTestHistory({ feature, project } = {}) {
   const jsonPath = path.join(CFG_PATHS.testResults, 'results.json');
   if (!fs.existsSync(jsonPath)) return;
@@ -846,7 +1252,7 @@ function recordTestHistory({ feature, project } = {}) {
         if (!last) continue;
         let status = last.status;
         if (test.status === 'flaky') status = 'flaky';
-        const fullTitle = [...titles, spec.title].filter(Boolean).join(' › ');
+        const fullTitle = cleanTestTitle([...titles, spec.title].filter(Boolean).join(' › '));
         const featureFromFile = (suite.file || spec.file || '')
           .replace(/\\/g, '/')
           .replace(/^(?:.*\/)?\.?features-gen\/features\//, '')
@@ -888,7 +1294,7 @@ function recordTestHistory({ feature, project } = {}) {
 // /api/scaffold-missing-steps (existing) for any newly-invented steps.
 app.post('/api/coverage/draft-scenario', async (req, res) => {
   const { feature, acId, acText } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   const acN = parseInt(acId, 10);
@@ -911,7 +1317,7 @@ app.post('/api/coverage/draft-scenario', async (req, res) => {
   let existingSteps = '';
   let sampleScenario = '';
   let existingFeatureFile = '';
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   if (fs.existsSync(featureDir)) {
     const stepsFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.steps.ts'));
     if (stepsFile) {
@@ -930,11 +1336,11 @@ app.post('/api/coverage/draft-scenario', async (req, res) => {
   }
 
   let pomContent = '';
-  const pomDir = path.join(ROOT, 'pages', feature);
+  const pomDir = featurePaths(feature).pagesDir;
   if (fs.existsSync(pomDir)) {
     const pomFiles = fs.readdirSync(pomDir).filter((f) => f.endsWith('.ts'));
     for (const f of pomFiles) {
-      pomContent += `\n// ----- pages/${feature}/${f} -----\n${fs.readFileSync(path.join(pomDir, f), 'utf8').slice(0, 4000)}\n`;
+      pomContent += `\n// ----- ${relPages(feature)}/${f} -----\n${fs.readFileSync(path.join(pomDir, f), 'utf8').slice(0, 4000)}\n`;
     }
   }
 
@@ -951,7 +1357,7 @@ RULES for the scenario name — the FIRST scenario naming rule matters most:
 3. Then a "—" separator and a short human-readable description.
    Example valid names: "${acId}-POS-01 — successful login with valid credentials"
 
-EXISTING STEP DEFINITIONS (features/${feature}/${feature}.steps.ts — REUSE these phrasings when they fit; only invent new steps when nothing matches):
+EXISTING STEP DEFINITIONS (${relFeat(feature)}/${featureName(feature)}.steps.ts — REUSE these phrasings when they fit; only invent new steps when nothing matches):
 \`\`\`typescript
 ${existingSteps.slice(0, 15000) || '(no existing step definitions)'}
 \`\`\`
@@ -961,7 +1367,7 @@ ${sampleScenario ? `SAMPLE SCENARIO from the same .feature file (match its style
 ${sampleScenario}
 \`\`\`
 ` : ''}
-POM (pages/${feature}/) — reuse existing methods where they exist:
+POM (${relPages(feature)}/) — reuse existing methods where they exist:
 \`\`\`typescript
 ${pomContent.slice(0, 12000) || '(no POM found)'}
 \`\`\`
@@ -990,7 +1396,7 @@ If every step you use already exists in the steps file, return "newSteps": [].`;
   let proc;
   try {
     proc = spawn(cmd, args, {
-      cwd: ROOT, env: process.env,
+      cwd: ROOT, env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -1025,18 +1431,21 @@ If every step you use already exists in the steps file, return "newSteps": [].`;
     clearTimeout(timer);
     activeGenerate = null;
     if (res.writableEnded || res.destroyed) return;
-    if (code !== 0) {
-      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse first — the CLI can print a valid scenario and still exit non-zero.
     const parsed = extractJsonObject(stdout);
-    if (!parsed || !parsed.scenario) {
-      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    if (parsed && parsed.scenario) {
+      return res.json({
+        scenario: String(parsed.scenario).slice(0, 5000),
+        name: String(parsed.name || '').slice(0, 200),
+        newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+        featureFile: existingFeatureFile ? `${relFeat(feature)}/${existingFeatureFile}` : `${relFeat(feature)}/`,
+      });
     }
-    res.json({
-      scenario: String(parsed.scenario).slice(0, 5000),
-      name: String(parsed.name || '').slice(0, 200),
-      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
-      featureFile: existingFeatureFile ? `features/${feature}/${existingFeatureFile}` : `features/${feature}/`,
+    const errText = stderr.trim();
+    return res.status(502).json({
+      error: `Draft failed — claude exited ${code}. ${errText ? errText.slice(0, 500) : 'Claude produced no usable scenario. Check that the CLI is signed in, then try again.'}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
     });
   });
   proc.on('error', (err) => {
@@ -1060,7 +1469,7 @@ app.post('/api/explain-failure', async (req, res) => {
 
   // Validators — feature is path-validated even though we never write to
   // it (defense in depth; the user-story / feature-file reads use it).
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!fullTitle || typeof fullTitle !== 'string') {
@@ -1094,7 +1503,7 @@ app.post('/api/explain-failure', async (req, res) => {
         acsContext = acMatch ? acMatch[1].trim().slice(0, 2000) : '';
       }
     }
-    const featureDir = path.join(ROOT, 'features', feature);
+    const featureDir = featurePaths(feature).featureDir;
     if (fs.existsSync(featureDir)) {
       const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
       if (featureFile) {
@@ -1181,11 +1590,12 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
 }`;
 
   const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-  const args = ['--print', '--dangerously-skip-permissions'];
+  // Short, mechanical job — pin the fast model (override with AGENTIC_QA_CLAUDE_MODEL).
+  const args = withFastModel(['--print', '--dangerously-skip-permissions']);
   let proc;
   try {
     proc = spawn(cmd, args, {
-      cwd: ROOT, env: process.env,
+      cwd: ROOT, env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -1223,12 +1633,18 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
     clearTimeout(timer);
     activeGenerate = null;
     if (res.writableEnded || res.destroyed) return;
-    if (code !== 0) {
-      return res.status(502).json({ error: `claude exited ${code}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse first — the CLI can emit valid JSON yet still exit non-zero, so the
+    // exit code only matters when there's no usable output to parse.
     const parsed = extractJsonObject(stdout);
     if (!parsed) {
-      return res.status(502).json({ error: 'claude returned non-JSON', rawPreview: stdout.slice(0, 500) });
+      const errText = stderr.trim();
+      return res.status(502).json({
+        error: code !== 0
+          ? `Explain failed — claude exited ${code}. ${errText ? errText.slice(0, 500) : 'No output — check the CLI is signed in, then try again.'}`
+          : 'claude returned non-JSON',
+        stderr: stderr.slice(0, 2000),
+        rawPreview: stdout.slice(0, 500),
+      });
     }
     // Accept a couple of likely key drifts — claude sometimes renames keys
     // when the prompt is dense.
@@ -1282,7 +1698,7 @@ The severity field MUST be one of exactly these three lowercase strings: "blocke
 // into the right .steps.ts file. NDJSON-streamed so the user sees progress.
 app.post('/api/scaffold-missing-steps', async (req, res) => {
   const { feature } = req.body || {};
-  if (feature && !isSafeName(feature)) {
+  if (feature && !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   const claudeOk = await checkClaudeCli();
@@ -1301,9 +1717,7 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
   async function captureBddgen() {
     return new Promise((resolve) => {
       let buf = '';
-      const p = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        ['bddgen', '--config', 'playwright.config.js'],
-        { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
+      const p = spawnLocalCli('bddgen', ['--config', 'playwright.config.js']);
       p.stdout.on('data', (d) => { buf += d.toString(); });
       p.stderr.on('data', (d) => { buf += d.toString(); });
       p.on('close', () => resolve(buf));
@@ -1332,10 +1746,26 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
     // Un-escape: \' → '   \\ → \   (drop other backslash escapes back to the raw char)
     const phrase = escapedPhrase.replace(/\\(.)/g, '$1');
     const srcNorm = String(source).replace(/\\/g, '/');
-    const featMatch = srcNorm.match(/features\/([^/]+)\//);
-    const detectedFeature = featMatch ? featMatch[1] : null;
+    const detectedFeature = featureIdFromSourcePath(srcNorm);
     if (feature && detectedFeature !== feature) continue;
     missingSteps.push({ keyword, phrase, params: params.trim(), source: srcNorm, feature: detectedFeature });
+  }
+
+  // bddgen only reports a step with NO definition. A placeholder written by the
+  // recorder IS a definition, so a freshly-recorded feature looks fully
+  // implemented to the check above and nothing would ever be generated for it.
+  // Fold those phrases in explicitly.
+  for (const id of feature ? [feature] : allFeatureIds()) {
+    const dir = featurePaths(id).featureDir;
+    if (!fs.existsSync(dir)) continue;
+    const stepsFile = fs.readdirSync(dir).find((f) => f.endsWith('.steps.ts'));
+    if (!stepsFile) continue;
+    let src = '';
+    try { src = fs.readFileSync(path.join(dir, stepsFile), 'utf8'); } catch { continue; }
+    for (const s of stubbedPhrases(src)) {
+      if (missingSteps.some((m) => m.feature === id && m.phrase === s.phrase)) continue;
+      missingSteps.push({ keyword: s.keyword, phrase: s.phrase, params: '', source: `${relFeat(id)}/${stepsFile}`, feature: id, fromStub: true });
+    }
   }
 
   if (missingSteps.length === 0) {
@@ -1361,85 +1791,181 @@ app.post('/api/scaffold-missing-steps', async (req, res) => {
   for (const [feat, steps] of byFeature) {
     write({ type: 'log', stream: 'stdout', text: `\n[scaffold] feature "${feat}" — ${steps.length} step(s) to implement\n` });
 
-    const stepsDir = path.join(ROOT, 'features', feat);
+    const stepsDir = featurePaths(feat).featureDir;
     if (!fs.existsSync(stepsDir)) {
-      write({ type: 'log', stream: 'stderr', text: `[scaffold]   feature folder not found: features/${feat}/\n` });
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   feature folder not found: ${relFeat(feat)}/\n` });
       continue;
     }
     const stepsFileName = fs.readdirSync(stepsDir).find((f) => f.endsWith('.steps.ts'));
     if (!stepsFileName) {
-      write({ type: 'log', stream: 'stderr', text: `[scaffold]   no .steps.ts in features/${feat}/ — recorder/Save&Generate normally creates this\n` });
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   no .steps.ts in ${relFeat(feat)}/ — recorder/Save&Generate normally creates this\n` });
       continue;
     }
     const stepsPath = path.join(stepsDir, stepsFileName);
     const existingSteps = fs.readFileSync(stepsPath, 'utf8');
 
     // POMs give claude method context — pages/<feat>/*.ts
-    const pomDir = path.join(ROOT, 'pages', feat);
+    const pomDir = featurePaths(feat).pagesDir;
     const pomFiles = fs.existsSync(pomDir)
       ? fs.readdirSync(pomDir).filter((f) => f.endsWith('.ts'))
       : [];
     let pomContent = '';
     for (const f of pomFiles) {
       const txt = fs.readFileSync(path.join(pomDir, f), 'utf8');
-      pomContent += `\n// ----- pages/${feat}/${f} -----\n${txt.slice(0, 6000)}\n`;
+      pomContent += `\n// ----- ${relPages(feat)}/${f} -----\n${txt.slice(0, 6000)}\n`;
     }
 
     const stepList = steps.map((s, i) => `${i + 1}. ${s.keyword}: "${s.phrase}"`).join('\n');
-    const prompt = `Generate Playwright-BDD step definition implementations for these missing Gherkin steps. Return STRICT JSON, no markdown fences, no preamble.
+    const stubbing = isStubFile(existingSteps);
+    const featureSrcForPrompt = (() => {
+      try {
+        const ff = fs.readdirSync(stepsDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+        return ff ? fs.readFileSync(path.join(stepsDir, ff), 'utf8').slice(0, 6000) : '';
+      } catch { return ''; }
+    })();
+    // Depth from sites/<site>/pages/<feature>/X.ts back to the repo root differs
+    // from the legacy pages/<feature>/X.ts, and an import one level out is a
+    // compile error rather than something the model can be expected to guess.
+    const basePageImport = featurePaths(feat).isLegacy ? '../BasePage' : '../../../../pages/BasePage';
+    const appUrl = (() => {
+      try {
+        const meta = sites.readSiteMeta(ROOT, featurePaths(feat).site);
+        return meta && meta.baseUrl ? meta.baseUrl : '';
+      } catch { return ''; }
+    })();
 
-MISSING STEPS:
+    const prompt = `Generate Playwright-BDD step definitions for these Gherkin steps, AND the page object they wrap. Return STRICT JSON, no markdown fences, no preamble.
+
+STEPS TO IMPLEMENT:
 ${stepList}
 
-EXISTING STEP-DEFINITIONS FILE (features/${feat}/${stepsFileName}) — match its imports, createBdd tag-scoping, and POM-wrapping style:
+THE FEATURE FILE they come from (for context — what the scenario is trying to do):
+\`\`\`gherkin
+${featureSrcForPrompt}
+\`\`\`
+
+${stubbing
+  ? `CURRENT STEP-DEFINITIONS FILE (${relFeat(feat)}/${stepsFileName}) — these are PLACEHOLDERS that throw. You are REPLACING every one of them. Keep the same createBdd tag scope:`
+  : `EXISTING STEP-DEFINITIONS FILE (${relFeat(feat)}/${stepsFileName}) — match its imports, createBdd tag-scoping, and POM-wrapping style:`}
 \`\`\`typescript
 ${existingSteps.slice(0, 18000)}
 \`\`\`
 
-EXISTING PAGE OBJECT FILES under pages/${feat}/ — reuse these methods where they fit:
-\`\`\`typescript
-${pomContent.slice(0, 14000)}
-\`\`\`
+${pomFiles.length
+  ? `EXISTING PAGE OBJECT FILES under ${relPages(feat)}/ — reuse these methods where they fit, and extend them rather than duplicating:\n\`\`\`typescript\n${pomContent.slice(0, 14000)}\n\`\`\``
+  : `THERE ARE NO PAGE OBJECTS YET for this feature. You MUST create one under ${relPages(feat)}/.`}
 
-INSTRUCTIONS:
-1. Generate ONE complete step block per missing step. Use the SAME { Given, When, Then } binding pattern already in the steps file (e.g. tag-scoped createBdd).
-2. PREFER calling existing POM methods. If a needed method doesn't exist, use inline page.click / page.fill / page.getByRole / expect(...).toBeVisible — do NOT invent POM methods that aren't already in the POM files above.
-3. {string} or {int} args from the Gherkin phrase map to function parameters; type them as string / number.
-4. Each step should be 3-12 lines. Add no comments except where logic is non-obvious.
-5. If the same import would already be present in the existing steps file, omit it from newImports.
+PAGE OBJECT RULES (this framework's hard rules — a step file with a raw locator in it is a defect):
+- Every locator lives on a page object. NEVER call page.locator / page.getByRole / page.getByLabel inside a step definition.
+- A page object extends BasePage: \`import { BasePage } from '${basePageImport}';\`
+- It declares \`readonly url = '...'\`${appUrl ? ` (the app is at ${appUrl})` : ''} and \`readonly <name>: Locator\` properties initialised in the constructor.
+- Locate by ROLE + ACCESSIBLE NAME first: page.getByRole('button', { name: 'Save' }). Use getByLabel / getByPlaceholder for form fields. Resort to CSS only when nothing else identifies the element.
+- Methods are named for user intent (login(), addProduct()), not for selectors.
+- This app is live and may be slow to render: give first-paint assertions a generous timeout (15000).
+
+STEP RULES:
+1. ONE complete step block per step listed above, in that order. Use the SAME { Given, When, Then } binding already in the steps file (tag-scoped createBdd — keep the tag).
+2. Each step body constructs the page object and calls ONE intent method. Keep bodies 1-4 lines.
+2b. A step that says the user IS ON / OPENS / GOES TO a page must actually
+   NAVIGATE — its page-object method calls this.goto() (BasePage) or
+   page.goto(this.url) and then waits for the page to be ready. Nothing else in
+   the scenario navigates, so if this step does not, the run stays on
+   about:blank and every later step fails on an element that never loaded.
+3. {string} / {int} args map to typed parameters (string / number) in the order they appear in the phrase.
+4. Assertions belong in Then steps; use expect from '@playwright/test'.
+5. Do not import anything you do not use — this repo compiles with noUnusedLocals and noUnusedParameters.
+6. Driving the live app to confirm a selector is encouraged, but CLEAN UP AFTER
+   YOURSELF: delete every scratch/exploration script you create before you
+   answer. Nothing you write outside the page object and the steps file should
+   survive. Do not modify any existing file.
 
 OUTPUT EXACTLY this JSON shape:
 {
-  "steps": [
-    { "keyword": "When", "phrase": "I navigate to the Vendors List under Quick Inventory", "code": "When('I navigate to the Vendors List under Quick Inventory', async ({ page }) => {\\n  // ...\\n});" }
+  "pages": [
+    { "file": "ProductsPage.ts", "code": "import { type Locator, type Page, expect } from '@playwright/test';\\nimport { BasePage } from '${basePageImport}';\\n\\nexport class ProductsPage extends BasePage {\\n  readonly url = '...';\\n  readonly addButton: Locator;\\n  constructor(page: Page) {\\n    super(page);\\n    this.addButton = page.getByRole('button', { name: 'Add New Product' });\\n  }\\n  async openNewProductForm(): Promise<void> {\\n    await this.addButton.click();\\n  }\\n}\\n" }
   ],
-  "newImports": [],
-  "summary": "Implemented 4 steps using DashboardPage + page.getByRole."
+  "steps": [
+    { "keyword": "When", "phrase": "I click the {string} button", "code": "When('I click the {string} button', async ({ page }, name: string) => {\\n  await new ProductsPage(page).clickButton(name);\\n});" }
+  ],
+  "newImports": ["import { ProductsPage } from '../../pages/${featurePaths(feat).feature}/ProductsPage';"],
+  "summary": "Created ProductsPage and implemented 8 steps against it."
 }`;
 
     const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
     const claudeArgs = ['--print', '--dangerously-skip-permissions'];
-    write({ type: 'log', stream: 'stdout', text: `[scaffold]   calling claude…\n` });
+    write({ type: 'log', stream: 'stdout', text: `[scaffold]   calling claude… (prompt ${prompt.length} bytes)\n` });
+    // Set AGENTIC_QA_DUMP_PROMPT=<path> to inspect exactly what was sent. A
+    // prompt this large is assembled from several files, so when the CLI
+    // rejects one there is no other way to see what it actually received.
+    if (process.env.AGENTIC_QA_DUMP_PROMPT) {
+      try { fs.writeFileSync(process.env.AGENTIC_QA_DUMP_PROMPT, prompt, 'utf8'); } catch (_) { /* best effort */ }
+    }
 
-    const result = await new Promise((resolve) => {
+    // This job asks for a page object AND every step implementation, so it is
+    // the longest-running Claude call in the app — minutes, not seconds. The
+    // old 120s ceiling killed it mid-thought, and because the process was
+    // killed before writing anything the failure surfaced as "exited 1" with
+    // nothing on either stream, which looks like a crash rather than a
+    // timeout. That is what left recorded features stuck as placeholders.
+    // 15 minutes, not 10: a measured 5-step feature took 7m20s because the
+    // model drives the live app to verify its selectors before answering, and a
+    // feature with more steps has further to go. The heartbeat below is what
+    // makes a wait this long legible.
+    const SCAFFOLD_TIMEOUT_MS = Number(process.env.AGENTIC_QA_SCAFFOLD_TIMEOUT_MS) || 15 * 60_000;
+
+    const callClaude = () => new Promise((resolve) => {
       let p;
       try {
-        p = spawn(cmd, claudeArgs, { cwd: ROOT, env: process.env, shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
+        p = spawn(cmd, claudeArgs, { cwd: ROOT, env: childEnv(), shell: process.platform === 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
       } catch (err) {
         return resolve({ code: 1, out: '', err: err.message });
       }
       activeGenerate = { proc: p, startedAt: Date.now() };
       let out = '', err = '';
+      let timedOut = false;
       p.stdout.on('data', (d) => { out += d.toString(); });
       p.stderr.on('data', (d) => { err += d.toString(); });
       try { p.stdin.write(prompt); p.stdin.end(); } catch (_) {}
-      const timer = setTimeout(() => { if (!p.killed) killProcessTree(p); }, 120_000);
-      p.on('close', (code) => { clearTimeout(timer); activeGenerate = null; resolve({ code, out, err }); });
-      p.on('error', (e) => { clearTimeout(timer); activeGenerate = null; resolve({ code: 1, out: '', err: e.message }); });
+      // Heartbeat so a multi-minute generation doesn't look like a hang.
+      const started = Date.now();
+      const beat = setInterval(() => {
+        write({ type: 'log', stream: 'stdout', text: `[scaffold]   still working… ${Math.round((Date.now() - started) / 1000)}s\n` });
+      }, 20_000);
+      const timer = setTimeout(() => {
+        timedOut = true;
+        if (!p.killed) killProcessTree(p);
+      }, SCAFFOLD_TIMEOUT_MS);
+      const finish = (r) => { clearTimeout(timer); clearInterval(beat); activeGenerate = null; resolve({ ...r, timedOut }); };
+      p.on('close', (code) => finish({ code, out, err }));
+      p.on('error', (e) => finish({ code: 1, out: '', err: e.message }));
     });
 
+    let result = await callClaude();
+    // Retry once on a silent failure — exit non-zero with nothing on either
+    // stream. NOT on a timeout: that is not transient, and a second attempt
+    // would just burn another full timeout before failing the same way.
+    if (result.code !== 0 && !result.timedOut && !result.out.trim() && !result.err.trim()) {
+      write({ type: 'log', stream: 'stdout', text: `[scaffold]   claude exited ${result.code} with no output — retrying once…\n` });
+      result = await callClaude();
+    }
+    if (result.timedOut) {
+      write({
+        type: 'log',
+        stream: 'stderr',
+        text: `[scaffold]   claude did not finish within ${Math.round(SCAFFOLD_TIMEOUT_MS / 1000)}s and was stopped. ` +
+          `Set AGENTIC_QA_SCAFFOLD_TIMEOUT_MS to allow longer, or implement the steps by hand.\n`,
+      });
+    }
+
     if (result.code !== 0) {
-      write({ type: 'log', stream: 'stderr', text: `[scaffold]   claude exited ${result.code}: ${result.err.slice(0, 400)}\n` });
+      // Report BOTH streams. The CLI writes refusals and usage errors to
+      // stdout, so logging only stderr produced "claude exited 1:" with
+      // nothing after it — a dead end when diagnosing a failed scaffold.
+      const detail = [
+        result.err && result.err.trim() ? `stderr: ${result.err.trim().slice(0, 400)}` : '',
+        result.out && result.out.trim() ? `stdout: ${result.out.trim().slice(0, 400)}` : '',
+      ].filter(Boolean).join(' | ') || '(no output on either stream)';
+      write({ type: 'log', stream: 'stderr', text: `[scaffold]   claude exited ${result.code} — ${detail}\n` });
       continue;
     }
     const parsed = extractJsonObject(result.out);
@@ -1448,9 +1974,42 @@ OUTPUT EXACTLY this JSON shape:
       continue;
     }
 
+    // Write the page objects first — the steps about to be written import them,
+    // so a half-applied result should at worst leave an unused POM rather than
+    // steps referencing a file that does not exist.
+    const pomsWritten = [];
+    for (const p of Array.isArray(parsed.pages) ? parsed.pages : []) {
+      const name = path.basename(String(p.file || ''));
+      const code = String(p.code || '').trim();
+      if (!name.endsWith('.ts') || !/^[A-Za-z0-9._-]+$/.test(name) || !code) {
+        write({ type: 'log', stream: 'stderr', text: `[scaffold]   skipped a page object with a bad name or empty body\n` });
+        continue;
+      }
+      const target = path.join(pomDir, name);
+      // Defence in depth: basename() plus the charset check above should make
+      // this impossible, but a POM path is attacker-adjacent (it comes back
+      // from a model) and writing outside pages/ would be severe.
+      if (!path.resolve(target).startsWith(path.resolve(pomDir) + path.sep)) {
+        write({ type: 'log', stream: 'stderr', text: `[scaffold]   refused a page-object path outside ${relPages(feat)}/\n` });
+        continue;
+      }
+      if (fs.existsSync(target)) {
+        write({ type: 'log', stream: 'stdout', text: `[scaffold]   kept existing ${relPages(feat)}/${name} (not overwritten)\n` });
+        continue;
+      }
+      fs.mkdirSync(pomDir, { recursive: true });
+      fs.writeFileSync(target, code.endsWith('\n') ? code : code + '\n', 'utf8');
+      pomsWritten.push(name);
+      write({ type: 'log', stream: 'stdout', text: `[scaffold]   wrote page object → ${relPages(feat)}/${name}\n` });
+    }
+
     // Update the .steps.ts file: add new imports + append step blocks under
     // a clearly-marked banner so the user can find/audit what was generated.
-    let updated = existingSteps;
+    //
+    // A placeholder file is REPLACED, not appended to: its stubs already define
+    // every phrase, so appending would register each one twice and Cucumber
+    // would fail the run with an ambiguous-step error.
+    let updated = stubbing ? stubHeaderReplacement(existingSteps) : existingSteps;
     const newImports = Array.isArray(parsed.newImports) ? parsed.newImports : [];
     for (const imp of newImports) {
       const trimmed = String(imp).trim();
@@ -1464,9 +2023,11 @@ OUTPUT EXACTLY this JSON shape:
         updated = trimmed + '\n' + updated;
       }
     }
-    const banner = `\n\n// ---- auto-generated step definitions (scaffold-missing-steps) ----\n`;
+    const banner = stubbing
+      ? `\n\n`
+      : `\n\n// ---- auto-generated step definitions (scaffold-missing-steps) ----\n`;
     const stepBlocks = parsed.steps.map((s) => String(s.code || '').trim()).filter(Boolean).join('\n\n');
-    updated = updated.trimEnd() + banner + stepBlocks + '\n';
+    updated = pruneBddBindings(updated.trimEnd() + banner + stepBlocks + '\n');
     fs.writeFileSync(stepsPath, updated, 'utf8');
 
     totalGenerated += parsed.steps.length;
@@ -1477,7 +2038,7 @@ OUTPUT EXACTLY this JSON shape:
       phrase: s.phrase || '',
       code: String(s.code || '').trim(),
     }));
-    write({ type: 'log', stream: 'stdout', text: `[scaffold]   wrote ${parsed.steps.length} step(s) → features/${feat}/${stepsFileName}\n` });
+    write({ type: 'log', stream: 'stdout', text: `[scaffold]   wrote ${parsed.steps.length} step(s) → ${relFeat(feat)}/${stepsFileName}\n` });
     if (parsed.summary) write({ type: 'log', stream: 'stdout', text: `[scaffold]   ${parsed.summary}\n` });
   }
 
@@ -1549,12 +2110,7 @@ app.post('/api/recorder/start', (req, res) => {
   ];
   let proc;
   try {
-    proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', args, {
-      cwd: ROOT,
-      env: process.env,
-      shell: process.platform === 'win32',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    proc = spawnLocalCli('playwright', args.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (err) {
     return res.status(500).json({ error: `failed to spawn codegen: ${err.message}` });
   }
@@ -1652,21 +2208,57 @@ app.post('/api/recorder/convert', async (req, res) => {
   if (!code || typeof code !== 'string' || code.trim().length < 20) {
     return res.status(400).json({ error: 'code (the captured Playwright script) is required' });
   }
-  if (feature && !isSafeName(feature)) {
+  if (feature && !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   const claudeOk = await checkClaudeCli();
   if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
   if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
 
-  // Load existing step defs so claude prefers existing Given/When/Then phrasings.
+  // Does this feature already have a step that opens the app?
+  //
+  // `playwright codegen` always starts its script with page.goto(startUrl), and
+  // the conversion used to drop that unconditionally as "Background". For a
+  // feature that already has a login/landing step that is right. For a NEW
+  // feature there is no Background to inherit, so the scenario ended up with
+  // nothing that navigates: the run began on about:blank and every step failed
+  // on an element that had never loaded. Decide per feature.
+  const NAV_PHRASE_RE = /\b(i am on|i open|i go to|i navigate to the .* page|visit)\b/i;
+  let featureHasNavigation = false;
+  try {
+    const fp = featurePaths(feature);
+    if (feature && fs.existsSync(fp.featureDir)) {
+      for (const f of fs.readdirSync(fp.featureDir)) {
+        if (!f.endsWith('.steps.ts') && !f.endsWith('.feature')) continue;
+        const src = fs.readFileSync(path.join(fp.featureDir, f), 'utf8');
+        if (/\.goto\(/.test(src) || NAV_PHRASE_RE.test(src)) { featureHasNavigation = true; break; }
+      }
+    }
+  } catch { /* treat as "no navigation" — adding one is the safe default */ }
+  const recordedUrl = (activeRecorder && activeRecorder.url) || (req.body && req.body.url) || '';
+
+  // What steps already exist, so claude reuses a phrase instead of inventing one.
+  //
+  // Two parts, on purpose:
+  //  - the compact phrase index (authoritative, complete, tag-scoped) — ~0.7-1.7KB
+  //    where dumping the raw .steps.ts was 8-10KB, and the raw dump was also
+  //    truncated at 30KB so on a big feature it silently hid definitions;
+  //  - a trimmed slice of the real file, purely so new steps match the house style.
+  let stepPhraseIndex = '';
+  let recorderIndex = null;
+  try {
+    recorderIndex = stepIndex.readStepIndex({ root: ROOT });
+    const tags = featureTagsFor(feature);
+    stepPhraseIndex = stepIndex.renderForPrompt(recorderIndex, tags);
+  } catch (_) { /* fall back to the raw sample below */ }
+
   let existingSteps = '';
   if (feature) {
-    const stepsDir = path.join(ROOT, 'features', feature);
+    const stepsDir = featurePaths(feature).featureDir;
     if (fs.existsSync(stepsDir)) {
       const stepsFile = fs.readdirSync(stepsDir).find((f) => f.endsWith('.steps.ts'));
       if (stepsFile) {
-        try { existingSteps = fs.readFileSync(path.join(stepsDir, stepsFile), 'utf8').slice(0, 30_000); }
+        try { existingSteps = fs.readFileSync(path.join(stepsDir, stepsFile), 'utf8').slice(0, 6_000); }
         catch (_) { /* missing/unreadable — claude will invent new steps */ }
       }
     }
@@ -1679,7 +2271,11 @@ CAPTURED PLAYWRIGHT CODE (from \`playwright codegen\`):
 ${code.slice(0, 8000)}
 \`\`\`
 
-${existingSteps ? `EXISTING STEP DEFINITIONS for feature "${feature}" — REUSE these phrasings when the captured action maps to an existing step. Do not invent new steps when an existing one fits.
+${stepPhraseIndex ? `STEP PHRASES ALREADY AVAILABLE to feature "${feature}" (complete and authoritative — every one of these is implemented and in scope). REUSE these verbatim whenever the captured action maps to one. Do NOT invent a new step when one of these fits, and do NOT list any of these under newSteps.
+
+${stepPhraseIndex}
+` : ''}
+${existingSteps ? `STYLE SAMPLE — how step definitions are written in this feature (for matching house style only; the authoritative phrase list is above):
 
 \`\`\`typescript
 ${existingSteps}
@@ -1687,8 +2283,10 @@ ${existingSteps}
 ` : ''}
 INSTRUCTIONS:
 1. Output ONE Scenario block in Gherkin. Start with a one-line "Scenario:" name that describes what the user just did, then Given/When/Then steps.
-2. Prefer existing step phrasings from the file above when they match.
-3. Skip browser navigation that just goes back to the start URL (treat that as the Background — don't add a Given for it unless the existing steps already have one).
+2. Prefer existing step phrasings from the list above when they match.
+3. ${featureHasNavigation
+  ? `Skip browser navigation that just goes back to the start URL — this feature already has a step that opens the app, so treat navigation as Background and don't add a Given for it.`
+  : `THIS FEATURE HAS NO STEP THAT OPENS THE APP YET, so the scenario MUST start with a Given that navigates to ${recordedUrl || 'the start URL'} — e.g. "Given I am on the <app> login page". Without it the run begins on about:blank and every later step fails on an element that was never loaded. Do NOT omit it.`}
 4. Group multiple consecutive clicks/fills on the same form into a higher-level When step where it makes sense ("When I fill the sign-in form and submit" instead of 5 separate fill/click whens) — but only IF that matches the existing-step style.
 5. Output STRICT JSON with this exact shape, nothing else:
 
@@ -1704,12 +2302,13 @@ If every step you used already exists in the steps file, return newSteps: [].`;
 
   // Run claude --print synchronously and parse JSON out of its response.
   const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-  const args = ['--print', '--dangerously-skip-permissions'];
+  // Short, mechanical job — pin the fast model (override with AGENTIC_QA_CLAUDE_MODEL).
+  const args = withFastModel(['--print', '--dangerously-skip-permissions']);
   let proc;
   try {
     proc = spawn(cmd, args, {
       cwd: ROOT,
-      env: process.env,
+      env: childEnv(),
       shell: process.platform === 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -1732,17 +2331,82 @@ If every step you used already exists in the steps file, return newSteps: [].`;
   proc.on('close', (exitCode) => {
     clearTimeout(timer);
     activeGenerate = null;
-    if (exitCode !== 0) {
-      return res.status(502).json({ error: `claude exited ${exitCode}`, stderr: stderr.slice(0, 2000) });
-    }
+    // Parse the model output FIRST, regardless of exit code. The Claude CLI
+    // frequently prints a valid answer to stdout and STILL exits non-zero
+    // (a post-run telemetry/update warning, a broken stdout pipe on Windows,
+    // etc.). Bailing on exitCode before parsing threw away good scenarios and
+    // surfaced a bare "claude exited 1" — that was the recorder→Gherkin bug.
     const parsed = extractJsonObject(stdout);
-    if (!parsed || !parsed.scenario) {
-      return res.status(502).json({ error: 'could not parse scenario from claude response', rawPreview: stdout.slice(0, 500) });
+    if (parsed && parsed.scenario) {
+      if (exitCode !== 0 && stderr.trim()) {
+        console.warn(`[recorder/convert] claude exited ${exitCode} but produced a usable scenario; stderr: ${stderr.trim().slice(0, 300)}`);
+      }
+      // Backstop for instruction 3. A scenario with nothing that opens the app
+      // is not merely imperfect — it cannot pass, because the run starts on
+      // about:blank. Too important to leave to the model complying, so it is
+      // enforced here: if neither the feature nor the new scenario navigates,
+      // prepend a Given that does. The scaffolder then implements it like any
+      // other step, against the site's own URL.
+      if (!featureHasNavigation && !NAV_PHRASE_RE.test(parsed.scenario)) {
+        const siteLabel = featurePaths(feature).site;
+        const navPhrase = `I am on the ${sites.isLegacy(siteLabel) ? 'application' : siteLabel} start page`;
+        parsed.scenario = String(parsed.scenario).replace(
+          /^(\s*Scenario(?: Outline)?:[^\n]*\n)/,
+          `$1    Given ${navPhrase}\n`,
+        );
+        const already = (Array.isArray(parsed.newSteps) ? parsed.newSteps : [])
+          .some((s) => (typeof s === 'string' ? s : (s && s.phrase) || '').includes(navPhrase));
+        if (!already) {
+          parsed.newSteps = [
+            { phrase: `Given ${navPhrase}`, rationale: 'opens the app — without it the run starts on about:blank' },
+            ...(Array.isArray(parsed.newSteps) ? parsed.newSteps : []),
+          ];
+        }
+        console.log(`[recorder/convert] added a navigation Given — the scenario had none and neither does the feature`);
+      }
+      // Verify the model's "this step is new" claim against the index rather
+      // than trusting it. A false positive here is expensive: it scaffolds a
+      // duplicate definition of a step that already works, and duplicates are
+      // exactly what the tag-scoped step library already suffers from.
+      let claimedNew = Array.isArray(parsed.newSteps) ? parsed.newSteps : [];
+      let correctedNew = claimedNew;
+      const alreadyExisted = [];
+      if (recorderIndex && claimedNew.length) {
+        const tags = featureTagsFor(feature);
+        correctedNew = claimedNew.filter((s) => {
+          const phrase = typeof s === 'string' ? s : (s && s.phrase) || '';
+          if (!phrase) return true;
+          const verdict = stepIndex.matchStep(phrase, recorderIndex, { tags });
+          if (verdict.status === 'none') return true;
+          alreadyExisted.push(phrase);
+          return false;
+        });
+        if (alreadyExisted.length) {
+          console.log(`[recorder/convert] dropped ${alreadyExisted.length} "new" step(s) that already exist: ${alreadyExisted.join(' | ')}`);
+        }
+      }
+      return res.json({
+        scenario: parsed.scenario,
+        name: parsed.name || '',
+        newSteps: correctedNew,
+        // Surfaced so the review panel can say why the list shrank.
+        alreadyImplemented: alreadyExisted,
+      });
     }
-    res.json({
-      scenario: parsed.scenario,
-      name: parsed.name || '',
-      newSteps: Array.isArray(parsed.newSteps) ? parsed.newSteps : [],
+    // No usable output — surface the actual reason instead of a bare exit code.
+    const errText = stderr.trim();
+    if (errText) console.error('[recorder/convert] claude stderr:', errText);
+    // Exit 1 with no stderr and no stdout is almost always an un-authenticated
+    // CLI or an exhausted usage limit — give the user an actionable hint.
+    const hint = errText
+      ? errText.slice(0, 600)
+      : (stdout.trim()
+        ? 'Claude replied but not in the expected JSON format — try Convert again.'
+        : 'Claude produced no output. The CLI is likely not signed in (open a terminal, run `claude`, and log in) or a usage limit was hit.');
+    return res.status(502).json({
+      error: `Convert failed — claude exited ${exitCode}. ${hint}`,
+      stderr: stderr.slice(0, 2000),
+      rawPreview: stdout.slice(0, 500),
     });
   });
   proc.on('error', (err) => {
@@ -1755,9 +2419,234 @@ If every step you used already exists in the steps file, return newSteps: [].`;
 // Append a Gherkin scenario to the target feature's .feature file. The file
 // must already exist — recorder is for ADDING scenarios to an existing
 // feature, not for scaffolding new ones (that's what Save & Generate is for).
+/**
+ * Normalise a recorded scenario block to the repo's Gherkin indentation:
+ * outermost line (the `@tag` or `Scenario:`) at 2 spaces, inner lines keeping
+ * their relative depth.
+ *
+ * The previous `scenario.replace(/^\s+/, '')` stripped the leading newline AND
+ * the first line's indent in one go, so an appended scenario landed with
+ * `Scenario:` hard against the left margin while its steps stayed indented.
+ * Gherkin parses either way, which is why it went unnoticed — it just looked
+ * wrong next to every hand-authored scenario in the same file.
+ */
+function normalizeScenarioBlock(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^[ \t]*/)[0].length);
+  const base = indents.length ? Math.min(...indents) : 0;
+  return lines.map((l) => (l.trim() ? '  ' + l.slice(base) : '')).join('\n');
+}
+
+/**
+ * Write a placeholder <slug>.steps.ts for a freshly-created feature.
+ *
+ * Why this is not optional: `bddgen` EXITS 1 when a scenario has a step with no
+ * definition, and when it fails it compiles nothing — `.features-gen/` keeps
+ * the previous run's specs. So a recorded feature with no steps file would not
+ * just be unrunnable itself, it would break `npm test` for the whole repo and
+ * leave every other feature running stale compiled specs. The recorder chains
+ * straight into /api/scaffold-missing-steps, but that needs the Claude CLI; if
+ * it is missing or the user closes the modal, the broken build is what's left.
+ *
+ * Each stub THROWS rather than passing. A stub that quietly passed would make
+ * the new scenario green while proving nothing, which is the one outcome this
+ * framework treats as worse than a red suite (see CLAUDE.md, strict-AC rule).
+ * Scaffolding overwrites this file with real implementations.
+ */
+/**
+ * Marker written into placeholder step files. The scaffolder looks for it:
+ * bddgen only reports a step as "missing" when NOTHING defines it, and a stub
+ * is a definition — so without this marker the stubs would make the scaffolder
+ * believe the work was already done and the feature would stay unimplemented
+ * forever. It also tells the scaffolder to REPLACE the file rather than append
+ * to it, which would otherwise register each phrase twice (an ambiguous-step
+ * error at run time).
+ */
+const STUB_MARKER = 'agentic-qa:stub';
+
+/** Body text that identifies a step as an unimplemented placeholder. */
+const STUB_BODY_RE = /Step not implemented yet/;
+
+/**
+ * Phrases in a steps file that are still placeholders, in file order.
+ *
+ * Detection is per-BLOCK and keys off what the body actually does, not off the
+ * marker alone: files written by an earlier version of the stub generator carry
+ * no marker, and a partially-scaffolded file can hold real and placeholder
+ * steps side by side. Both must still be picked up.
+ */
+function stubbedPhrases(src) {
+  const text = String(src || '');
+  const out = [];
+  const re = /\b(Given|When|Then)\(\s*'((?:[^'\\]|\\.)*)'\s*,/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    // Look only as far as the next step registration, so one placeholder
+    // cannot make every step after it look unimplemented.
+    const rest = text.slice(m.index + m[0].length);
+    const next = rest.search(/\b(Given|When|Then)\(\s*'/);
+    const body = next === -1 ? rest : rest.slice(0, next);
+    if (STUB_BODY_RE.test(body)) {
+      out.push({ keyword: m[1], phrase: m[2].replace(/\\(.)/g, '$1') });
+    }
+  }
+  return out;
+}
+
+/** Does this steps file still contain placeholders? */
+function isStubFile(src) {
+  const text = String(src || '');
+  return text.includes(STUB_MARKER) || STUB_BODY_RE.test(text);
+}
+
+/**
+ * Feature id from a path bddgen reports, in either layout:
+ *   sites/acme/features/checkout/checkout.feature:6:5 -> "acme/checkout"
+ *   features/login-user/login.feature:3:1             -> "login-user"
+ * Matching only /features\/([^/]+)\// returned the bare folder name for a site
+ * path, which never equalled the "<site>/<feature>" id the caller passes — so
+ * every step of every site-scoped feature was filtered out and scaffolding
+ * silently did nothing.
+ */
+function featureIdFromSourcePath(p) {
+  const norm = String(p || '').replace(/\\/g, '/');
+  const m = norm.match(/(?:^|\/)(?:sites\/([^/]+)\/)?features\/([^/]+)\//);
+  if (!m) return null;
+  return sites.formatFeatureId(m[1] || sites.LEGACY_SITE, m[2]);
+}
+
+/**
+ * Strip a placeholder file down to the parts worth keeping — its imports and
+ * the tag-scoped createBdd binding — discarding the stub bodies and the
+ * placeholder banner. What the scaffolder generates is then appended to this,
+ * so the file ends up with exactly one definition per phrase.
+ */
+function stubHeaderReplacement(src) {
+  const lines = String(src).replace(/\r\n/g, '\n').split('\n');
+  const kept = [];
+  for (const line of lines) {
+    if (/^\s*\/\//.test(line)) continue;                 // drop the stub banner
+    if (/^\s*(Given|When|Then)\(/.test(line)) break;      // stop at the first stub
+    kept.push(line);
+  }
+  const head = kept.join('\n').trimEnd();
+  return `// Step definitions generated by "Scaffold missing steps".\n` +
+    `// Locators belong on the page object, not here — see the imports below.\n\n` +
+    `${head}\n`;
+}
+
+/**
+ * Drop unused names from a `const { Given, When, Then } = createBdd(...)`
+ * binding so the file satisfies noUnusedLocals.
+ *
+ * The header is carried over verbatim from the placeholder file, which always
+ * destructures all three, while the generated steps may use only some. Asking
+ * the model to get this right is unreliable — it reported having dropped
+ * `Given` in its summary while still emitting it — so it is decided here from
+ * what the finished file actually calls.
+ */
+function pruneBddBindings(src) {
+  const text = String(src);
+  return text.replace(
+    /const\s*\{([^}]*)\}\s*=\s*createBdd\(/,
+    (whole, names) => {
+      const declared = names.split(',').map((n) => n.trim()).filter(Boolean);
+      // Count registrations only after the binding line, so the binding itself
+      // is never mistaken for a use.
+      const body = text.slice(text.indexOf(whole) + whole.length);
+      const used = declared.filter((n) => new RegExp(`\\b${n}\\s*\\(`).test(body));
+      // Never produce an empty binding — that is a syntax error. If nothing
+      // matched, something is off with the generated file; leave it alone and
+      // let the type-checker report the truth.
+      if (used.length === 0 || used.length === declared.length) return whole;
+      return `const { ${used.join(', ')} } = createBdd(`;
+    },
+  );
+}
+
+/** Every feature id in the repo, across all sites. */
+function allFeatureIds() {
+  const out = [];
+  for (const site of [sites.LEGACY_SITE, ...sites.listSiteIds(ROOT)]) {
+    for (const name of sites.listFeatures(ROOT, site)) out.push(sites.formatFeatureId(site, name));
+  }
+  return out;
+}
+
+function writeStubSteps(featureDir, slug, tag, featureSrc) {
+  const stepsPath = path.join(featureDir, `${slug}.steps.ts`);
+  if (fs.existsSync(stepsPath)) return null; // never clobber real work
+
+  // Keyword per step, resolving And/But to whatever they continue.
+  const emitted = new Map(); // pattern -> keyword
+  let last = 'Given';
+  for (const line of stepIndex.featureStepLines(featureSrc)) {
+    const kw = (line.match(/^\s*(Given|When|Then|And|But|\*)\b/) || [])[1] || 'Given';
+    if (kw === 'Given' || kw === 'When' || kw === 'Then') last = kw;
+    // Quoted literals become {string} parameters, matching how bddgen's own
+    // snippets and the rest of this repo's steps are written.
+    const pattern = stepIndex.stripKeyword(line).replace(/"[^"]*"/g, '{string}');
+    if (pattern && !emitted.has(pattern)) emitted.set(pattern, last);
+  }
+  if (emitted.size === 0) return null;
+
+  // Two constraints pull in opposite directions here:
+  //  - playwright-bdd VALIDATES the argument count at bddgen time: a step
+  //    whose pattern has two {string}s must declare the fixtures object plus
+  //    two parameters, or bddgen fails with "Function has 0 arguments, but
+  //    expected 3" — the exact failure this stub exists to prevent.
+  //  - this repo type-checks with noUnusedLocals AND noUnusedParameters, so
+  //    declaring them and not using them is also an error.
+  // An empty `{}` fixtures pattern binds nothing, and TypeScript exempts
+  // parameters prefixed with `_` from the unused check. Both satisfied.
+  const body = [...emitted.entries()].map(([pattern, kw]) => {
+    const esc = pattern.replace(/'/g, "\\'");
+    const argc = (pattern.match(/\{string\}/g) || []).length;
+    const args = Array.from({ length: argc }, (_, i) => `_arg${i + 1}: string`);
+    const sig = ['{}', ...args].join(', ');
+    return `${kw}('${esc}', async (${sig}) => {\n` +
+      `  throw new Error('Step not implemented yet: ${esc}');\n});`;
+  }).join('\n\n');
+
+  const src =
+    `// ${STUB_MARKER} — PLACEHOLDER step definitions for ${slug}, written when this\n` +
+    `// feature was created by the Test Recorder. Every step throws on purpose: the\n` +
+    `// scenario must fail honestly until it is implemented, and bddgen needs a\n` +
+    `// definition for each step or it refuses to compile ANY feature in the repo.\n` +
+    `//\n` +
+    `// "Scaffold missing steps" replaces this whole file with real implementations\n` +
+    `// and creates the page object they wrap. Do not delete the marker on the first\n` +
+    `// line until then — it is how the scaffolder knows there is work left to do.\n\n` +
+    `import { createBdd } from 'playwright-bdd';\n\n` +
+    `// Tag-scoped so these phrases stay invisible to every other feature.\n` +
+    `const { Given, When, Then } = createBdd(undefined, { tags: '${tag}' });\n\n` +
+    `${body}\n`;
+
+  fs.writeFileSync(stepsPath, src, 'utf8');
+  return `${slug}.steps.ts`;
+}
+
+/** "vendor-order-flow" -> "Vendor Order Flow", for a new Feature: line. */
+function titleFromSlug(slug) {
+  return String(slug || '')
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+// Append a recorded scenario to a feature — creating the feature, and the site
+// that owns it, when `createIfMissing` is set.
+//
+// The recorder used to be append-only: its picker listed existing features and
+// this endpoint 404'd on anything else, so a brand-new application could never
+// be started by recording it. You had to hand-write a story and generate first,
+// which is the opposite of what recording is for.
 app.post('/api/recorder/append', (req, res) => {
-  const { feature, scenario } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  const { feature, scenario, createIfMissing, url, title } = req.body || {};
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!scenario || typeof scenario !== 'string' || scenario.trim().length < 10) {
@@ -1766,22 +2655,83 @@ app.post('/api/recorder/append', (req, res) => {
   if (scenario.length > 10_000) {
     return res.status(413).json({ error: 'scenario too long' });
   }
-  const featureDir = path.join(ROOT, 'features', feature);
+  if (url && !isHttpUrl(url)) {
+    return res.status(400).json({ error: 'url must be a valid http(s) URL' });
+  }
+
+  const fp = featurePaths(feature);
+  let featureDir = fp.featureDir;
+  let created = false;
+
   if (!fs.existsSync(featureDir)) {
-    return res.status(404).json({ error: `feature folder not found: features/${feature}/` });
+    if (!createIfMissing) {
+      return res.status(404).json({ error: `feature folder not found: ${relFeat(feature)}/` });
+    }
+    // Refuse to scaffold a new feature at the repo root in a project that has
+    // already moved to per-site folders: it would be invisible in the grouped
+    // UI and would mix one app's tests into the shared namespace.
+    if (fp.isLegacy && sites.listSiteIds(ROOT).length > 0) {
+      return res.status(400).json({
+        error: 'this project uses per-site folders — pass the feature as "<site>/<feature>"',
+      });
+    }
+    try {
+      if (!fp.isLegacy) {
+        // Materialise the site skeleton (idempotent) so features/, pages/ and
+        // user-stories/ all exist before anything is written into them.
+        sites.createSite(ROOT, { id: fp.site, baseUrl: url || undefined });
+      }
+      fs.mkdirSync(featureDir, { recursive: true });
+      created = true;
+    } catch (err) {
+      return res.status(500).json({ error: `could not create ${relFeat(feature)}/: ${err.message}` });
+    }
   }
-  const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
-  if (!featureFile) {
-    return res.status(404).json({ error: `no .feature file in features/${feature}/` });
-  }
-  const filePath = path.join(featureDir, featureFile);
+
+  let featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+
   try {
+    if (!featureFile) {
+      if (!createIfMissing) {
+        return res.status(404).json({ error: `no .feature file in ${relFeat(feature)}/` });
+      }
+      // A brand-new feature file needs the Feature: header AND a tag, because
+      // step definitions are tag-scoped — without one the steps scaffolded next
+      // would have no scope to bind to, and generic phrases would leak into
+      // every other feature's pool.
+      const slug = fp.feature;
+      featureFile = `${slug}.feature`;
+      const header =
+        `@${slug}\n` +
+        `Feature: ${title && String(title).trim() ? String(title).trim().slice(0, 120) : titleFromSlug(slug)}\n`;
+      const featureSrc = `${header}\n${normalizeScenarioBlock(scenario)}\n`;
+      fs.writeFileSync(path.join(featureDir, featureFile), featureSrc, 'utf8');
+      // Placeholder steps so bddgen can compile — see writeStubSteps.
+      const stubFile = writeStubSteps(featureDir, slug, `@${slug}`, featureSrc);
+      return res.json({
+        ok: true,
+        file: `${relFeat(feature)}/${featureFile}`,
+        scenarioBytes: scenario.length,
+        created: true,
+        site: fp.site,
+        tag: `@${slug}`,
+        stubSteps: stubFile ? `${relFeat(feature)}/${stubFile}` : null,
+      });
+    }
+
+    const filePath = path.join(featureDir, featureFile);
     const existing = fs.readFileSync(filePath, 'utf8');
     // Ensure exactly one blank line between the previous content and the new scenario.
     const trimmed = existing.replace(/\s+$/, '');
-    const appended = `${trimmed}\n\n${scenario.replace(/^\s+/, '').trimEnd()}\n`;
+    const appended = `${trimmed}\n\n${normalizeScenarioBlock(scenario)}\n`;
     fs.writeFileSync(filePath, appended, 'utf8');
-    res.json({ ok: true, file: `features/${feature}/${featureFile}`, scenarioBytes: scenario.length });
+    res.json({
+      ok: true,
+      file: `${relFeat(feature)}/${featureFile}`,
+      scenarioBytes: scenario.length,
+      created,
+      site: fp.site,
+    });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
@@ -1815,17 +2765,21 @@ app.get('/api/pr-impact', (req, res) => {
   }
   const allChanged = [...new Set([...committed, ...uncommitted])].filter(Boolean);
 
-  const featuresRoot = path.join(ROOT, 'features');
-  let features = [];
-  try {
-    features = fs.readdirSync(featuresRoot)
-      .filter((n) => !n.startsWith('_') && !n.startsWith('.') && fs.statSync(path.join(featuresRoot, n)).isDirectory());
-  } catch { features = []; }
+  // Feature IDs across every site: bare "login-user" for the legacy top-level
+  // layout, "acme/checkout" for a site. Matching below maps a changed path back
+  // to one of these ids, so impact stays scoped to the site that owns the file.
+  const allSiteIds = [sites.LEGACY_SITE, ...sites.listSiteIds(ROOT)];
+  const features = [];
+  for (const siteId of allSiteIds) {
+    for (const name of sites.listFeatures(ROOT, siteId)) {
+      features.push(sites.formatFeatureId(siteId, name));
+    }
+  }
 
   const featureScenarios = new Map();
   const featureSteps = new Map();
   for (const f of features) {
-    const dir = path.join(featuresRoot, f);
+    const dir = featurePaths(f).featureDir;
     try {
       const files = fs.readdirSync(dir);
       const featureFile = files.find((x) => x.endsWith('.feature') && !x.startsWith('_'));
@@ -1844,41 +2798,102 @@ app.get('/api/pr-impact', (req, res) => {
     impact.get(feature).add(reason);
   };
 
+  // A package.json change only counts as cross-cutting (i.e. flags EVERY
+  // feature) when it actually changes dependencies. Version bumps, script
+  // edits, and npm metadata shouldn't blanket-flag the whole suite — otherwise
+  // "impacted" degrades to "all features" on any branch that touched
+  // package.json, and "Run impacted" runs everything. Compared by parsing the
+  // dependency maps at `base` vs. now; memoized so we do it at most once.
+  let _pkgDepsCache = null;
+  function pkgDepsChanged() {
+    if (_pkgDepsCache !== null) return _pkgDepsCache;
+    try {
+      const cur = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+      let baseJson;
+      try {
+        baseJson = JSON.parse(execSync(`git show ${base}:package.json`, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+      } catch {
+        _pkgDepsCache = true; return true; // can't read base copy → assume it matters
+      }
+      const deps = (p) => JSON.stringify({
+        d: p.dependencies || {}, dd: p.devDependencies || {},
+        pd: p.peerDependencies || {}, od: p.optionalDependencies || {},
+      });
+      _pkgDepsCache = deps(cur) !== deps(baseJson);
+    } catch {
+      _pkgDepsCache = true; // on any error, be conservative
+    }
+    return _pkgDepsCache;
+  }
+
+  // Every path pattern below has two forms — the legacy top-level one and the
+  // site-scoped one. `sitePrefix` captures which site a changed file belongs to
+  // (undefined for legacy) so a POM or story change in one site can never flag
+  // features in another.
+  const F_RE = /^(?:sites\/([^/]+)\/)?features\/([^/]+)\//;
+  const P_RE = /^(?:sites\/([^/]+)\/)?pages\/([^/]+)\//;
+  const S_RE = /^(?:sites\/([^/]+)\/)?user-stories\/(.+)\.md$/i;
+  const SHARED_RE = /^(?:sites\/[^/]+\/)?features\/_shared\//;
+  /** Features belonging to the site a changed file lives under. */
+  const featuresOfSite = (siteId) =>
+    features.filter((f) => featurePaths(f).site === (siteId || sites.LEGACY_SITE));
+
   for (const file of allChanged) {
     const norm = file.replace(/\\/g, '/');
-    const fMatch = norm.match(/^features\/([^/]+)\//);
-    if (fMatch && features.includes(fMatch[1])) {
-      const kind = norm.endsWith('.feature') ? 'scenario file' :
-        norm.endsWith('.steps.ts') ? 'step defs' : 'file';
-      addImpact(fMatch[1], `Direct: ${kind} changed`);
-      continue;
+
+    const fMatch = norm.match(F_RE);
+    if (fMatch) {
+      const id = sites.formatFeatureId(fMatch[1] || sites.LEGACY_SITE, fMatch[2]);
+      if (features.includes(id)) {
+        const kind = norm.endsWith('.feature') ? 'scenario file' :
+          norm.endsWith('.steps.ts') ? 'step defs' : 'file';
+        addImpact(id, `Direct: ${kind} changed`);
+        continue;
+      }
     }
-    const pMatch = norm.match(/^pages\/([^/]+)\//);
+
+    const pMatch = norm.match(P_RE);
     if (pMatch) {
-      const pageDir = pMatch[1];
+      const pageSite = pMatch[1];
+      const pageDir = pMatch[2];
       const fileName = path.basename(norm, path.extname(norm));
-      for (const [feat, stepsCode] of featureSteps.entries()) {
+      for (const feat of featuresOfSite(pageSite)) {
+        const stepsCode = featureSteps.get(feat);
+        if (!stepsCode) continue;
         const importRe = new RegExp(`from\\s+['\"][^'\"]*pages/${pageDir}(?:/[^'\"]*)?['\"]`, 'g');
         const classRe = new RegExp(`\\b${fileName}\\b`, 'g');
         if (importRe.test(stepsCode) || classRe.test(stepsCode)) {
-          addImpact(feat, `POM: pages/${pageDir}/ referenced`);
+          addImpact(feat, `POM: ${sites.relPagesRoot(pageSite || sites.LEGACY_SITE)}/${pageDir}/ referenced`);
         }
       }
       continue;
     }
-    const sMatch = norm.match(/^user-stories\/(.+)\.md$/i);
+
+    const sMatch = norm.match(S_RE);
     if (sMatch) {
-      const storyName = sMatch[1].toLowerCase();
-      for (const f of features) {
-        const slug = f.toLowerCase().replace(/-/g, '');
+      const storyName = sMatch[2].toLowerCase();
+      for (const f of featuresOfSite(sMatch[1])) {
+        const slug = featurePaths(f).feature.toLowerCase().replace(/-/g, '');
         if (storyName.replace(/-/g, '').includes(slug) || slug.includes(storyName.replace(/-/g, ''))) {
-          addImpact(f, `Story changed: ${path.basename(sMatch[1])}`);
+          addImpact(f, `Story changed: ${path.basename(sMatch[2])}`);
         }
       }
       continue;
     }
-    const cfgMatch = norm.match(/^(playwright\.config\.js|package\.json|features\/_shared\/|utils\/)/);
+
+    // A change to a site's own _shared/ steps is cross-cutting WITHIN that
+    // site only; playwright.config.js / package.json / utils/ are global.
+    const sharedMatch = norm.match(SHARED_RE);
+    if (sharedMatch) {
+      const owner = norm.match(/^sites\/([^/]+)\//);
+      for (const f of featuresOfSite(owner && owner[1])) addImpact(f, `Global: ${sharedMatch[0]} changed`);
+      continue;
+    }
+    const cfgMatch = norm.match(/^(playwright\.config\.js|package\.json|utils\/)/);
     if (cfgMatch) {
+      // Skip a package.json change that didn't touch dependencies — it isn't
+      // genuinely cross-cutting, so it shouldn't mark every feature impacted.
+      if (cfgMatch[1] === 'package.json' && !pkgDepsChanged()) continue;
       for (const f of features) addImpact(f, `Global: ${cfgMatch[1]} changed`);
     }
   }
@@ -1946,12 +2961,12 @@ function parseFeatureFileTags(content) {
 // GET /api/tags?feature=X — list all scenarios + their current tags
 app.get('/api/tags', (req, res) => {
   const feature = String(req.query.feature || '').trim();
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
-    return res.status(404).json({ error: `features/${feature}/ does not exist` });
+    return res.status(404).json({ error: `${relFeat(feature)}/ does not exist` });
   }
   const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
   if (!featureFile) return res.json({ feature, scenarios: [] });
@@ -1962,7 +2977,7 @@ app.get('/api/tags', (req, res) => {
   // Collate the union of tags across the file so the UI can offer them as
   // quick-pick suggestions (common existing tags).
   const knownTags = [...new Set(scenarios.flatMap((s) => s.tags))].sort();
-  res.json({ feature, featureFile: `features/${feature}/${featureFile}`, scenarios, knownTags });
+  res.json({ feature, featureFile: `${relFeat(feature)}/${featureFile}`, scenarios, knownTags });
 });
 
 // POST /api/tags — replace the tag line above a scenario. Body:
@@ -1970,7 +2985,7 @@ app.get('/api/tags', (req, res) => {
 // Passing an empty tags array removes the tag line.
 app.post('/api/tags', (req, res) => {
   const { feature, scenarioName, tags } = req.body || {};
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   if (!scenarioName || typeof scenarioName !== 'string') {
@@ -1987,9 +3002,9 @@ app.post('/api/tags', (req, res) => {
   if (cleanTags.length > 15) {
     return res.status(400).json({ error: 'max 15 tags per scenario' });
   }
-  const featureDir = path.join(ROOT, 'features', feature);
+  const featureDir = featurePaths(feature).featureDir;
   if (!fs.existsSync(featureDir)) {
-    return res.status(404).json({ error: `features/${feature}/ does not exist` });
+    return res.status(404).json({ error: `${relFeat(feature)}/ does not exist` });
   }
   const featureFile = fs.readdirSync(featureDir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
   if (!featureFile) return res.status(404).json({ error: 'no .feature file found' });
@@ -2018,7 +3033,7 @@ app.post('/api/tags', (req, res) => {
   const out = lines.join(content.includes('\r\n') ? '\r\n' : '\n');
   try { fs.writeFileSync(filePath, out, 'utf8'); }
   catch (err) { return res.status(500).json({ error: String(err.message) }); }
-  res.json({ ok: true, feature, scenarioName, tags: cleanTags, file: `features/${feature}/${featureFile}` });
+  res.json({ ok: true, feature, scenarioName, tags: cleanTags, file: `${relFeat(feature)}/${featureFile}` });
 });
 
 // ------------------- Scheduled Runs -----------------------------------------
@@ -2031,18 +3046,58 @@ app.post('/api/tags', (req, res) => {
 const SCHEDULES_DIR = path.join(ROOT, '.claude');
 const SCHEDULES_FILE = path.join(SCHEDULES_DIR, 'schedules.json');
 const SCHEDULE_LOGS_DIR = path.join(ROOT, 'reports', 'scheduled-runs');
-const SCHEDULE_TICK_MS = 30_000;
+const SCHEDULE_OUTPUT_DIR = path.join(ROOT, 'test-results-scheduled');
+// How often the scheduler checks for due schedules. This is also the worst-case
+// lateness for a "daily at 09:00" — computeNextRun works out the exact instant,
+// but nothing fires until the next tick observes it. 5s keeps a timed run
+// visibly punctual; the check itself is one small JSON read.
+const SCHEDULE_TICK_MS = 5_000;
+const SCHEDULE_ID_RE = /^sch_[a-z0-9_]+$/;
+// Retention caps. Scheduled runs are fire-and-forget and nothing used to prune
+// their output, so an every-N-minute schedule grew both dirs without bound (a
+// 1-minute schedule left behind 161 logs + 151 artifact dirs / ~74 MB). Keep a
+// useful window of recent history and drop the rest after each run.
+const SCHEDULE_LOG_RETENTION = 20;       // logs kept per schedule
+const SCHEDULE_ARTIFACT_RETENTION = 40;  // test-results-scheduled/ dirs kept in total
+const SCHEDULE_LOG_MAX_BYTES = 256 * 1024; // largest log body served to the UI
+// Hard ceiling on a single scheduled run. This is a safety net, not a policy
+// timer: a scheduled run holds the run lock, so one that wedges (a hung page
+// against a slow live app, a browser that never exits) would otherwise block
+// every later scheduled AND interactive run for the life of the process.
+// A full headed matrix legitimately takes tens of minutes, hence 30.
+// Overridable via env so the kill path can be exercised without a 30 min wait.
+const SCHEDULE_RUN_MAX_MS = Number(process.env.AGENTIC_QA_SCHEDULE_MAX_MS) || 30 * 60_000;
+
+// Last list this process parsed successfully. Used as the fallback for a failed
+// read so a corrupt file can never present as "the user has no schedules".
+let lastGoodSchedules = null;
 
 function loadSchedules() {
   try {
-    if (!fs.existsSync(SCHEDULES_FILE)) return [];
-    return JSON.parse(fs.readFileSync(SCHEDULES_FILE, 'utf8'));
-  } catch { return []; }
+    if (!fs.existsSync(SCHEDULES_FILE)) { lastGoodSchedules = []; return []; }
+    const parsed = JSON.parse(fs.readFileSync(SCHEDULES_FILE, 'utf8'));
+    if (!Array.isArray(parsed)) throw new Error('schedules.json is not an array');
+    lastGoodSchedules = parsed;
+    return parsed;
+  } catch (err) {
+    // A half-written or corrupt file must NOT read back as an empty list: a
+    // caller that then saves turns a transient read failure into permanent
+    // deletion of every schedule. Fall back to the last good copy instead.
+    console.error('loadSchedules failed (keeping last known good):', err.message);
+    return lastGoodSchedules ? JSON.parse(JSON.stringify(lastGoodSchedules)) : [];
+  }
 }
 function saveSchedules(list) {
+  if (!Array.isArray(list)) return;
   try {
     if (!fs.existsSync(SCHEDULES_DIR)) fs.mkdirSync(SCHEDULES_DIR, { recursive: true });
-    fs.writeFileSync(SCHEDULES_FILE, JSON.stringify(list, null, 2), 'utf8');
+    // Write-then-rename. A truncating in-place write can be interrupted (crash,
+    // kill, or a second UI instance started on another port sharing this file)
+    // and leave an empty or half-written schedules.json behind.
+    const tmp = `${SCHEDULES_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(list, null, 2), 'utf8');
+    fs.renameSync(tmp, SCHEDULES_FILE);
+    lastGoodSchedules = list;
   } catch (err) { console.error('saveSchedules failed:', err.message); }
 }
 function computeNextRun(schedule, fromTs) {
@@ -2080,40 +3135,245 @@ function humanFrequency(s) {
   return 'Unknown';
 }
 
-function fireScheduledRun(schedule) {
+// The `line` reporter renders progress by overwriting a single terminal line
+// with cursor-up + erase-line escapes. Written to a file those escapes make the
+// log unreadable, but the *lines* themselves are more useful than the one final
+// line a terminal would leave visible — so drop the control sequences and keep
+// every line.
+function stripTerminalControl(s) {
+  // Match the ESC byte explicitly (\x1b). A bare /\[[0-9;]*[A-Za-z]/ would also
+  // eat the "[f" out of test lines like "[firefox] > ...".
+  return String(s).replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+}
+
+// Pull the pass/fail tallies out of a `line` reporter run so a schedule card can
+// show "33 passed" instead of a bare ✓. Returns null when no summary is present
+// (run still in flight, crashed before reporting, or bddgen failed).
+function parseRunSummary(text) {
+  const tail = stripTerminalControl(text).slice(-4000);
+  const count = (re) => { const m = tail.match(re); return m ? Number(m[1]) : 0; };
+  const passed = count(/(\d+)\s+passed/);
+  const failed = count(/(\d+)\s+failed/);
+  const flaky = count(/(\d+)\s+flaky/);
+  const skipped = count(/(\d+)\s+skipped/);
+  const total = passed + failed + flaky + skipped;
+  if (!total) return null;
+  // Duration is printed alongside the final tally, so take the last match.
+  const durations = tail.match(/\((\d+(?:\.\d+)?(?:ms|s|m))\)/g) || [];
+  const duration = durations.length
+    ? durations[durations.length - 1].slice(1, -1)
+    : '';
+  return { passed, failed, flaky, skipped, total, duration };
+}
+
+// Keep only the newest SCHEDULE_LOG_RETENTION logs for one schedule.
+function pruneScheduleLogs(scheduleId) {
+  try {
+    if (!fs.existsSync(SCHEDULE_LOGS_DIR)) return;
+    const prefix = `${scheduleId}-`;
+    const logs = fs.readdirSync(SCHEDULE_LOGS_DIR)
+      .filter((f) => f.startsWith(prefix) && f.endsWith('.log'))
+      .map((f) => ({ f, ts: Number(f.slice(prefix.length, -4)) || 0 }))
+      .sort((a, b) => b.ts - a.ts);
+    for (const { f } of logs.slice(SCHEDULE_LOG_RETENTION)) {
+      fs.rmSync(path.join(SCHEDULE_LOGS_DIR, f), { force: true });
+    }
+  } catch (err) { console.error('pruneScheduleLogs:', err.message); }
+}
+
+// Cap test-results-scheduled/ by total dir count. Artifacts land here from every
+// schedule with no per-schedule namespacing, and nothing in the UI ever reads
+// them back — they exist only for a manual `playwright show-trace`.
+function pruneScheduleArtifacts() {
+  try {
+    if (!fs.existsSync(SCHEDULE_OUTPUT_DIR)) return;
+    const dirs = fs.readdirSync(SCHEDULE_OUTPUT_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => {
+        const full = path.join(SCHEDULE_OUTPUT_DIR, e.name);
+        const stat = fs.statSync(full, { throwIfNoEntry: false });
+        return { full, ts: stat ? stat.mtimeMs : 0 };
+      })
+      .sort((a, b) => b.ts - a.ts);
+    for (const { full } of dirs.slice(SCHEDULE_ARTIFACT_RETENTION)) {
+      fs.rmSync(full, { recursive: true, force: true });
+    }
+  } catch (err) { console.error('pruneScheduleArtifacts:', err.message); }
+}
+
+// ---- Scheduled-run event fan-out -------------------------------------------
+// An interactive run streams NDJSON straight down its own /api/run response.
+// A scheduled run has no client to stream to, so it publishes the SAME event
+// shapes here and every open UI renders them live — same log, same Gherkin step
+// timeline, same pass/fail pills — instead of the run happening invisibly.
+const runStreamClients = new Set();
+
+function broadcastRunEvent(obj) {
+  const frame = `data: ${JSON.stringify(obj)}\n\n`;
+  for (const res of [...runStreamClients]) {
+    if (res.writableEnded || res.destroyed) { runStreamClients.delete(res); continue; }
+    try { res.write(frame); } catch (_) { runStreamClients.delete(res); }
+  }
+}
+
+async function fireScheduledRun(schedule) {
+  // One Playwright run at a time. Overlapping an interactive run would put two
+  // bddgen processes into .features-gen at once; skip this fire and let the
+  // next tick pick it up rather than corrupting the compiled specs.
+  if (activeRun) {
+    broadcastRunEvent({ type: 'sched_skipped', name: schedule.name, id: schedule.id, reason: 'another run is already in progress' });
+    return;
+  }
   if (!fs.existsSync(SCHEDULE_LOGS_DIR)) fs.mkdirSync(SCHEDULE_LOGS_DIR, { recursive: true });
   const logPath = path.join(SCHEDULE_LOGS_DIR, `${schedule.id}-${Date.now()}.log`);
   const logStream = fs.createWriteStream(logPath, { flags: 'a' });
   logStream.write(`\n=== Scheduled run: ${schedule.name} @ ${new Date().toISOString()} ===\n`);
   const args = ['playwright', 'test'];
-  if (schedule.feature) args.push(`.features-gen/features/${schedule.feature}/`);
-  if (schedule.project) args.push(`--project=${schedule.project}`);
+  if (schedule.feature) args.push(featurePaths(schedule.feature).genDir);
+  if (schedule.project) {
+    args.push(`--project=${schedule.project}`);
+  } else {
+    // Same reasoning as /api/run: a schedule saved with no project must not
+    // start including the emulated device projects just because they exist.
+    for (const name of desktopProjectNames) args.push(`--project=${name}`);
+  }
   if (schedule.tagFilter) args.push(`--grep=${schedule.tagFilter}`);
   args.push('--grep-invert=@destructive');
-  // Headless by default for scheduled runs (no user watching).
-  const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  // Compile BDD first, then run.
-  const bdd = spawn(npx, ['bddgen'], { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
-  bdd.stdout.on('data', (d) => logStream.write(d));
-  bdd.stderr.on('data', (d) => logStream.write(d));
-  bdd.on('close', () => {
-    const proc = spawn(npx, args, { cwd: ROOT, env: process.env, shell: process.platform === 'win32' });
-    proc.stdout.on('data', (d) => logStream.write(d));
-    proc.stderr.on('data', (d) => logStream.write(d));
-    proc.on('close', (code) => {
-      logStream.write(`\n=== exit code ${code} ===\n`);
-      logStream.end();
-      const list = loadSchedules();
-      const s = list.find((x) => x.id === schedule.id);
-      if (s) {
-        s.lastRun = Date.now();
-        s.lastRunExitCode = code;
-        s.nextRun = computeNextRun(s, s.lastRun);
-        saveSchedules(list);
-      }
-    });
-    proc.on('error', () => { logStream.write('\n=== spawn error ===\n'); logStream.end(); });
+  // Isolate scheduled-run artifacts from the INTERACTIVE gallery and reports.
+  // A schedule can fire every minute and (with empty feature/project) run the
+  // whole matrix across every browser; without isolation those screenshots pile
+  // into test-results/ and the gallery shows dozens of unrelated shots after any
+  // interactive run. Route scheduled artifacts to a separate output dir and use
+  // the lightweight `line` reporter so scheduled runs never overwrite
+  // test-results/, results.json, playwright-report/ or allure-results/.
+  args.push(`--output=${path.basename(SCHEDULE_OUTPUT_DIR)}`);
+  // `line` for the durable log tail we parse tallies from, plus the live-step
+  // reporter so a scheduled run drives the UI's Gherkin step timeline exactly
+  // like an interactive one. The step reporter only writes [LIVE_STEP] lines to
+  // stdout — it produces no files, so artifact isolation is unaffected.
+  args.push('--reporter=line,./ui/live-step-reporter.js');
+  // Headless unless the schedule opts in. Opting in means "let me watch the
+  // real browsers run at the scheduled time"; it stays off by default because
+  // an unattended every-N-minutes schedule that pops browser windows and
+  // steals focus is unusable.
+  if (schedule.headed) {
+    args.push('--headed');
+    // Mirror /api/run: one window for a single project, otherwise a worker per
+    // project so they come up together instead of one at a time.
+    args.push(`--workers=${schedule.project ? 1 : desktopProjectNames.length}`);
+  }
+  // Fan-out writer: the log file keeps the durable record (and feeds the tally
+  // parser), while the SSE hub drives any open UI. Reusing runBddgen /
+  // runPlaywrightProcess means scheduled runs emit byte-identical event shapes
+  // to interactive ones, so the browser needs no special-case rendering.
+  let tail = '';
+  const write = (obj) => {
+    if (obj && obj.type === 'log' && obj.text) {
+      logStream.write(obj.text);
+      tail = (tail + obj.text).slice(-8000);
+    }
+    broadcastRunEvent({ ...obj, scheduled: true, scheduleId: schedule.id });
+  };
+
+  broadcastRunEvent({
+    type: 'sched_start',
+    id: schedule.id,
+    name: schedule.name,
+    feature: schedule.feature || 'all features',
+    project: schedule.project || desktopProjectNames.join(' + '),
+    headed: !!schedule.headed,
   });
+
+  let code = 1;
+  let watchdog = null;
+  let timedOut = false;
+  try {
+    await runBddgen(write);
+    write({ type: 'start', cmd: 'npx ' + args.join(' '), cwd: ROOT });
+    code = await runPlaywrightProcess(args, write, (p) => {
+      // Hold the run lock so an interactive Run is refused (409) rather than
+      // colliding, and so the Stop button can kill a visible scheduled run.
+      activeRun = { proc: p, startedAt: Date.now(), scheduleId: schedule.id };
+      // Release valve for the lock above. Without this, one wedged run blocks
+      // the runner permanently — and a run that never exits is exactly what
+      // happens when a short interval stacks headed runs against a slow app.
+      watchdog = setTimeout(() => {
+        timedOut = true;
+        write({
+          type: 'log',
+          stream: 'stderr',
+          text: `[ui] scheduled run exceeded ${SCHEDULE_RUN_MAX_MS < 60_000 ? `${Math.round(SCHEDULE_RUN_MAX_MS / 1000)}s` : `${Math.round(SCHEDULE_RUN_MAX_MS / 60000)} min`} — killing it (and its browsers) so later runs are not blocked\n`,
+        });
+        killProcessTree(p);
+      }, SCHEDULE_RUN_MAX_MS);
+    });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[ui] scheduled run failed: ${err && err.message}\n` });
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    activeRun = null;
+    logStream.write(`\n=== exit code ${code}${timedOut ? ' (killed: exceeded time limit)' : ''} ===\n`);
+    logStream.end();
+  }
+
+  const stats = parseRunSummary(tail);
+  const list = loadSchedules();
+  const s = list.find((x) => x.id === schedule.id);
+  if (s) {
+    s.lastRun = Date.now();
+    s.lastRunExitCode = code;
+    // null when the run produced no summary (crash / bddgen failure) — the
+    // card falls back to the bare ✓/✗ in that case.
+    s.lastRunStats = stats;
+    s.nextRun = computeNextRun(s, s.lastRun);
+    saveSchedules(list);
+  }
+  pruneScheduleLogs(schedule.id);
+  pruneScheduleArtifacts();
+  broadcastRunEvent({ type: 'sched_done', id: schedule.id, name: schedule.name, exitCode: code, stats });
+  // Tell someone when an unattended run goes red. Fire-and-forget: a webhook
+  // that is down must never wedge the scheduler or hold the run lock.
+  notifyScheduleFailure(schedule, code, stats).catch(() => {});
+}
+
+/**
+ * POST a failure summary to the schedule's webhook.
+ *
+ * Only fires on failure — a green run every 15 minutes is noise, and noise is
+ * how people learn to ignore alerts. Never throws: the caller is the scheduler.
+ */
+async function notifyScheduleFailure(schedule, exitCode, stats) {
+  const url = schedule && schedule.webhookUrl;
+  if (!url || !isHttpUrl(url)) return;
+  const failed = (stats && (stats.failed || stats.flaky)) || 0;
+  if (exitCode === 0 && !failed) return;
+
+  const payload = {
+    event: 'scheduled_run_failed',
+    schedule: { id: schedule.id, name: schedule.name, feature: schedule.feature || '(all)', project: schedule.project || '(desktop browsers)' },
+    exitCode,
+    // stats is null when the run died before reporting (crash, bddgen failure).
+    summary: stats || null,
+    text: stats
+      ? `QA scheduled run "${schedule.name}" failed — ${stats.failed || 0} failed, ${stats.flaky || 0} flaky, ${stats.passed || 0} passed (${stats.duration || 'n/a'})`
+      : `QA scheduled run "${schedule.name}" failed before reporting (exit ${exitCode})`,
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    console.log(`[schedule] webhook for "${schedule.name}" -> ${resp.status}`);
+  } catch (err) {
+    console.error(`[schedule] webhook for "${schedule.name}" failed: ${err && err.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 setInterval(() => {
@@ -2146,16 +3406,25 @@ app.get('/api/schedules', (_req, res) => {
 });
 
 app.post('/api/schedules', (req, res) => {
-  const { id, name, feature, project, tagFilter, mode, intervalMinutes, hour, minute, dayOfWeek, enabled } = req.body || {};
+  const { id, name, feature, project, tagFilter, mode, intervalMinutes, hour, minute, dayOfWeek, enabled, headed, webhookUrl } = req.body || {};
   if (!name || typeof name !== 'string' || name.length > 80) {
     return res.status(400).json({ error: 'name required (max 80 chars)' });
   }
-  if (feature && !isSafeName(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
-  if (project && !isSafeName(project)) return res.status(400).json({ error: `project must match ${SAFE_NAME_RE}` });
+  if (feature && !isSafeFeatureId(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+  if (project && !isKnownProject(project)) return res.status(400).json({ error: `unknown project "${project}" — expected one of: ${projectNames.join(", ")}` });
   if (tagFilter && typeof tagFilter !== 'string') return res.status(400).json({ error: 'tagFilter must be a string' });
   if (tagFilter && tagFilter.length > 200) return res.status(400).json({ error: 'tagFilter too long' });
   if (tagFilter && !/^[@A-Za-z0-9_.\s\-()!&|]+$/.test(tagFilter)) {
     return res.status(400).json({ error: 'tagFilter contains invalid characters (allowed: letters, digits, @, _, -, ., spaces, boolean ops)' });
+  }
+  if (headed !== undefined && headed !== null && typeof headed !== 'boolean') {
+    return res.status(400).json({ error: 'headed must be a boolean' });
+  }
+  if (webhookUrl) {
+    if (typeof webhookUrl !== 'string' || !isHttpUrl(webhookUrl)) {
+      return res.status(400).json({ error: 'webhookUrl must be a valid http(s) URL' });
+    }
+    if (webhookUrl.length > 2048) return res.status(400).json({ error: 'webhookUrl too long' });
   }
   if (!['interval', 'daily', 'weekly'].includes(mode)) {
     return res.status(400).json({ error: 'mode must be interval / daily / weekly' });
@@ -2186,31 +3455,105 @@ app.post('/api/schedules', (req, res) => {
     minute: (mode === 'daily' || mode === 'weekly') ? Number(minute) : undefined,
     dayOfWeek: mode === 'weekly' ? Number(dayOfWeek) : undefined,
     enabled: enabled !== false,
+    // Opt-in visible browsers for this schedule's runs.
+    headed: headed === true,
+    // Optional: POST a summary here when this schedule's run fails.
+    webhookUrl: webhookUrl || '',
     createdAt: Date.now(),
   };
   record.nextRun = computeNextRun(record, Date.now());
   const existingIdx = list.findIndex((s) => s.id === record.id);
   if (existingIdx >= 0) {
-    // Preserve lastRun/exitCode on update
+    // Preserve lastRun/exitCode/stats on update
     record.lastRun = list[existingIdx].lastRun;
     record.lastRunExitCode = list[existingIdx].lastRunExitCode;
+    record.lastRunStats = list[existingIdx].lastRunStats;
     record.createdAt = list[existingIdx].createdAt;
     list[existingIdx] = record;
   } else {
     list.push(record);
   }
   saveSchedules(list);
-  res.json({ ok: true, schedule: { ...record, humanFrequency: humanFrequency(record) } });
+  // Non-blocking advice. A short interval does not break anything now that a
+  // fire is skipped while another run holds the lock, but the user should know
+  // most fires will be no-ops — and that a headed run of the whole suite opens
+  // a browser window per worker.
+  const warnings = [];
+  if (record.mode === 'interval' && record.intervalMinutes < 10) {
+    const scope = record.feature ? `the "${record.feature}" feature` : 'every feature';
+    warnings.push(`Every ${record.intervalMinutes} min is shorter than a typical run of ${scope}. Overlapping fires are skipped, so most ticks will do nothing — consider 15-30 min.`);
+  }
+  if (record.headed) {
+    const windows = record.project ? 1 : desktopProjectNames.length;
+    warnings.push(`Visible mode opens ${windows} browser window${windows === 1 ? '' : 's'} (each is ~8 OS processes) every time this fires.`);
+  }
+  res.json({ ok: true, schedule: { ...record, humanFrequency: humanFrequency(record) }, warnings });
 });
 
 app.delete('/api/schedules/:id', (req, res) => {
   const id = String(req.params.id || '');
-  if (!/^sch_[a-z0-9_]+$/.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
+  if (!SCHEDULE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
   const list = loadSchedules();
   const filtered = list.filter((s) => s.id !== id);
   if (filtered.length === list.length) return res.status(404).json({ error: 'schedule not found' });
   saveSchedules(filtered);
   res.json({ ok: true, deleted: id });
+});
+
+// A scheduled run never streams to a client — its output goes to
+// reports/scheduled-runs/<id>-<ts>.log and nothing read those files back, so the
+// only feedback in the UI was a ✓/✗ on the card. These two routes make the runs
+// inspectable: a list of recent runs, and the body of one of them.
+app.get('/api/schedules/:id/logs', (req, res) => {
+  const id = String(req.params.id || '');
+  if (!SCHEDULE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
+  try {
+    if (!fs.existsSync(SCHEDULE_LOGS_DIR)) return res.json({ logs: [], retention: SCHEDULE_LOG_RETENTION });
+    const prefix = `${id}-`;
+    const logs = fs.readdirSync(SCHEDULE_LOGS_DIR)
+      .filter((f) => f.startsWith(prefix) && f.endsWith('.log'))
+      .map((f) => {
+        const ts = Number(f.slice(prefix.length, -4)) || 0;
+        const stat = fs.statSync(path.join(SCHEDULE_LOGS_DIR, f), { throwIfNoEntry: false });
+        return { ts, size: stat ? stat.size : 0 };
+      })
+      .filter((l) => l.ts > 0)
+      .sort((a, b) => b.ts - a.ts);
+    res.json({ logs, retention: SCHEDULE_LOG_RETENTION });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+app.get('/api/schedules/:id/logs/:ts', (req, res) => {
+  const id = String(req.params.id || '');
+  const ts = String(req.params.ts || '');
+  if (!SCHEDULE_ID_RE.test(id)) return res.status(400).json({ error: 'invalid schedule id' });
+  if (!/^\d+$/.test(ts)) return res.status(400).json({ error: 'invalid timestamp' });
+  // Both segments are pattern-validated and the filename is rebuilt from them,
+  // so no caller-supplied path can escape SCHEDULE_LOGS_DIR.
+  const file = path.join(SCHEDULE_LOGS_DIR, `${id}-${ts}.log`);
+  try {
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    if (!stat || !stat.isFile()) return res.status(404).json({ error: 'log not found' });
+    let content = fs.readFileSync(file, 'utf8');
+    let truncated = false;
+    if (content.length > SCHEDULE_LOG_MAX_BYTES) {
+      // Keep the tail: the summary and any failure output are at the end.
+      content = content.slice(-SCHEDULE_LOG_MAX_BYTES);
+      truncated = true;
+    }
+    content = stripTerminalControl(content);
+    res.json({
+      ts: Number(ts),
+      size: stat.size,
+      truncated,
+      summary: parseRunSummary(content),
+      content,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
 });
 
 // Coverage-gap detector: cross-reference the ACs in a story with the
@@ -2220,7 +3563,7 @@ app.delete('/api/schedules/:id', (req, res) => {
 // covered/uncovered status + which scenarios cover each AC.
 app.get('/api/coverage-gaps', (req, res) => {
   const feature = String(req.query.feature || '').trim();
-  if (!feature || !isSafeName(feature)) {
+  if (!feature || !isSafeFeatureId(feature)) {
     return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
   }
   try {
@@ -2234,7 +3577,7 @@ app.get('/api/coverage-gaps', (req, res) => {
       if (matches.length > 0) storyFile = matches[0];
     }
     // Locate the .feature file.
-    const featureDir = path.join(ROOT, 'features', feature);
+    const featureDir = featurePaths(feature).featureDir;
     let featureFile = null;
     if (fs.existsSync(featureDir)) {
       const matches = fs.readdirSync(featureDir).filter((f) => f.endsWith('.feature') && !f.startsWith('_'));
@@ -2289,7 +3632,7 @@ app.get('/api/coverage-gaps', (req, res) => {
     res.json({
       feature,
       storyFile: storyFile ? `user-stories/${storyFile}` : null,
-      featureFile: featureFile ? `features/${feature}/${featureFile}` : null,
+      featureFile: featureFile ? `${relFeat(feature)}/${featureFile}` : null,
       coverage,
       orphanScenarios,
       summary: {
@@ -2323,7 +3666,9 @@ app.get('/api/flaky-tests', (req, res) => {
     // Group by (feature, project, fullTitle) — the unique key for a test instance
     const groups = new Map();
     for (const e of entries) {
-      const key = `${e.feature}|${e.project}|${e.fullTitle}`;
+      // Normalize the title so history recorded with a path-y fullTitle (older
+      // runs) groups with the clean-title runs for the same test.
+      const key = `${e.feature}|${e.project}|${cleanTestTitle(e.fullTitle)}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(e);
     }
@@ -2348,12 +3693,20 @@ app.get('/api/flaky-tests', (req, res) => {
       const passRate = passes / window.length;
       const flakyStatusCount = window.filter((r) => r.status === 'flaky').length;
 
-      // Real flaky tests: at least minFlips status flips AND pass-rate not 0 or 1.
-      // OR: Playwright already marked it flaky at least once.
-      if ((flips >= minFlips && passRate > 0 && passRate < 1) || flakyStatusCount > 0) {
+      // Recency gate: a test that flipped historically but has been green for
+      // its last few runs has stabilized — it's not *currently* flaky. Only
+      // surface tests with at least one non-pass in the recent window, so the
+      // count reflects live instability rather than long-healed history.
+      const recentWindow = Math.min(8, window.length);
+      const recentlyUnstable = window.slice(-recentWindow).some((r) => r.status !== 'passed');
+
+      // Real flaky tests: at least minFlips status flips AND pass-rate not 0 or 1,
+      // OR Playwright already marked it flaky at least once — AND it's been
+      // unstable recently (not stabilized).
+      if (recentlyUnstable && ((flips >= minFlips && passRate > 0 && passRate < 1) || flakyStatusCount > 0)) {
         const last = runs[runs.length - 1];
         flaky.push({
-          fullTitle: last.fullTitle,
+          fullTitle: cleanTestTitle(last.fullTitle) || last.fullTitle,
           spec: last.spec,
           feature: last.feature,
           project: last.project,
@@ -2374,6 +3727,23 @@ app.get('/api/flaky-tests', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
+});
+
+// Reset local run/flaky history — clears the accumulated per-test history
+// (flaky detection) and the per-run summaries (status-bar sparkline). Both are
+// gitignored, per-machine, and rebuild automatically on the next run. Used by
+// the "reset history" action on the flaky pill.
+app.post('/api/reset-history', (_req, res) => {
+  const removed = [];
+  for (const f of ['test-history.jsonl', 'history.jsonl']) {
+    const p = path.join(CFG_PATHS.reports, f);
+    try {
+      if (fs.existsSync(p)) { fs.rmSync(p); removed.push(f); }
+    } catch (err) {
+      return res.status(500).json({ error: `could not remove ${f}: ${err.message}`, removed });
+    }
+  }
+  res.json({ ok: true, removed });
 });
 
 // Return the last N run summaries (default 30) for the status-bar sparkline.
@@ -2425,7 +3795,7 @@ app.get('/api/last-failures', (_req, res) => {
             last.status;
           failures.push({
             title: spec.title,
-            fullTitle: [...titles, spec.title].filter(Boolean).join(' › '),
+            fullTitle: cleanTestTitle([...titles, spec.title].filter(Boolean).join(' › ')),
             file: (suite.file || spec.file || '').replace(/\\/g, '/'),
             line: spec.line,
             project: test.projectName,
@@ -2468,10 +3838,10 @@ app.post('/api/run', async (req, res) => {
   if (Array.isArray(features) && features.length > 0) {
     if (features.length > 50) return res.status(400).json({ error: 'features array too long (max 50)' });
     for (const f of features) {
-      if (typeof f !== 'string' || !isSafeName(f)) {
+      if (typeof f !== 'string' || !isSafeFeatureId(f)) {
         return res.status(400).json({ error: `each features entry must match ${SAFE_NAME_RE} (got "${f}")` });
       }
-      const inFeatures = fs.existsSync(path.join(ROOT, 'features', f));
+      const inFeatures = fs.existsSync(featurePaths(f).featureDir);
       const inTests = fs.existsSync(path.join(CFG_PATHS.tests, f));
       if (!inFeatures && !inTests) {
         return res.status(404).json({ error: `feature "${f}" does not exist under features/ or tests/` });
@@ -2480,18 +3850,20 @@ app.post('/api/run', async (req, res) => {
     featuresArr = features;
   }
   if (feature !== undefined && feature !== null && feature !== '') {
-    if (!isSafeName(feature)) {
+    if (!isSafeFeatureId(feature)) {
       return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE} (got "${feature}")` });
     }
-    const inFeatures = fs.existsSync(path.join(ROOT, 'features', feature));
+    const inFeatures = fs.existsSync(featurePaths(feature).featureDir);
     const inTests = fs.existsSync(path.join(CFG_PATHS.tests, feature));
     if (!inFeatures && !inTests) {
       return res.status(404).json({ error: `feature "${feature}" does not exist under features/ or tests/` });
     }
   }
   if (project !== undefined && project !== null && project !== '') {
-    if (!isSafeName(project)) {
-      return res.status(400).json({ error: `project must match ${SAFE_NAME_RE} (got "${project}")` });
+    if (!isKnownProject(project)) {
+      return res.status(400).json({
+        error: `unknown project "${project}" — expected one of: ${projectNames.join(', ')}`,
+      });
     }
   }
 
@@ -2509,12 +3881,20 @@ app.post('/api/run', async (req, res) => {
   } else if (featuresArr) {
     // Multiple features (e.g. "Run N impacted features") — Playwright accepts
     // several positional test-dir args in one invocation.
-    for (const f of featuresArr) args.push(`.features-gen/features/${f}/`);
+    for (const f of featuresArr) args.push(featurePaths(f).genDir);
   } else if (feature) {
     // Specific feature picked → filter the BDD compiled tests by feature dir.
-    args.push(`.features-gen/features/${feature}/`);
+    args.push(featurePaths(feature).genDir);
   }
-  if (project) args.push(`--project=${project}`);
+  if (project) {
+    args.push(`--project=${project}`);
+  } else {
+    // No project = the UI's "All browsers" matrix: every configured project,
+    // desktop browsers AND emulated devices, in one pass. Named explicitly
+    // rather than relying on Playwright's "run all projects" default so the
+    // set the UI advertises is the set that actually runs.
+    for (const name of projectNames) args.push(`--project=${name}`);
+  }
   // Optional tag filter (Playwright supports boolean expressions like "@smoke and not @slow").
   if (tagFilter && typeof tagFilter === 'string' && tagFilter.trim()) {
     const clean = tagFilter.trim();
@@ -2524,13 +3904,35 @@ app.post('/api/run', async (req, res) => {
     args.push(`--grep=${clean}`);
   }
   // Default-skip @destructive tag (e.g. signup AC1/AC2 that creates real
-  // tenants on prod). Override with `?destructive=1` in the request.
-  if (!req.body?.destructive) args.push('--grep-invert=@destructive');
+  // tenants on prod, or order-flow that submits real vendor orders). Override
+  // with `destructive: true` in the request body. The UI no longer sends that
+  // flag at all — the opt-in checkbox was removed — so an interactive run
+  // always skips them; `npm run test:destructive` is the deliberate path. The
+  // branch stays for API callers that opt in explicitly.
+  if (!req.body?.destructive) {
+    args.push('--grep-invert=@destructive');
+  } else {
+    // Destructive scenarios submit real, persistent data. Force retries=0 so a
+    // transient failure can never re-run and double-submit (e.g. send the same
+    // orders twice) — matches the safety note in the destructive .feature files.
+    args.push('--retries=0');
+  }
   if (headed !== false) {
     args.push('--headed');
-    // In headed mode, force a single worker so the user can actually watch
-    // each test execute in sequence (8 parallel browser windows are unusable).
-    args.push('--workers=1');
+    if (project) {
+      // Single project headed: one worker so you can follow the run in one
+      // window instead of 8 windows of the same browser fighting for focus.
+      args.push('--workers=1');
+    } else {
+      // Headed matrix: the whole point is watching every browser and device
+      // side by side, so clamping to one worker would defeat it — the projects
+      // would open one at a time. Playwright interleaves projects across
+      // workers (measured: 4 distinct engines starting inside 80ms with 7
+      // workers), so a worker per project gets them all up together. It does
+      // not guarantee a strict one-window-per-project ordering — the scheduler
+      // decides which test each free worker picks up.
+      args.push(`--workers=${projectNames.length}`);
+    }
   }
 
   res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
@@ -2550,6 +3952,9 @@ app.post('/api/run', async (req, res) => {
 
   try {
     clearAllureResults(write);
+    // Remove stale per-test artifact folders so the screenshot gallery reflects
+    // ONLY this run (Playwright leaves prior runs' folders in place otherwise).
+    cleanTestArtifacts(write);
     // Compile .feature files first so BDD scenarios are present in the
     // generated dir before Playwright walks the testDir.
     await runBddgen(write);
@@ -2591,15 +3996,24 @@ app.post('/api/run', async (req, res) => {
       write({ type: 'log', stream: 'stderr', text: `[history] failed to record per-test history: ${err.message}\n` });
     }
 
-    // Regenerate consolidated test-case Excel (reports/Test-Cases.xlsx)
-    // joining tests/<feature>/testcases.json with the latest run results.
+    // Regenerate the test-case Excel — one workbook per site
+    // (reports/Test-Cases-<site>.xlsx), joining each site's testcases.json with
+    // the latest run results. Sites that did not run keep their existing
+    // workbook rather than having their result columns blanked.
     try {
       const excel = await writeTestCasesExcel({
         root: ROOT,
         paths: CFG_PATHS,
         onLog: (msg) => write({ type: 'log', stream: 'stdout', text: msg + '\n' }),
       });
-      if (excel) write({ type: 'excel_written', file: excel.path, features: excel.features });
+      if (excel) {
+        write({
+          type: 'excel_written',
+          file: excel.path,          // first workbook — kept for older clients
+          features: excel.features,
+          files: excel.files,        // every workbook written by this run
+        });
+      }
     } catch (err) {
       write({ type: 'log', stream: 'stderr', text: `[excel] generation failed: ${err.message}\n` });
     }
@@ -2628,10 +4042,10 @@ app.post('/api/allure-generate', (req, res) => {
   const write = makeSafeWrite(res);
   write({ type: 'start', cmd: 'npx allure generate allure-results --clean -o allure-report' });
 
-  const proc = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['allure', 'generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
+  const proc = spawnLocalCli('allure',
+    ['generate', path.relative(ROOT, CFG_PATHS.allureResults) || 'allure-results',
       '--clean', '-o', path.relative(ROOT, CFG_PATHS.allureReport) || 'allure-report'],
-    { cwd: ROOT, env: envWithJava(), shell: process.platform === 'win32' });
+    { env: childEnv(envWithJava()) });
 
   let finished = false;
   res.on('close', () => {
@@ -2697,18 +4111,449 @@ app.get('/api/screenshots', (_req, res) => {
   }
 });
 
+// Live event stream for runs the browser did not start itself — currently
+// scheduled runs. Server-Sent Events rather than a WebSocket: the traffic is
+// one-way, EventSource reconnects on its own, and it needs no extra dependency.
+app.get('/api/run-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  // Defeat proxy buffering, which would otherwise hold events until the socket
+  // closed — the exact opposite of "live".
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (res.flushHeaders) res.flushHeaders();
+  res.write(': connected\n\n');
+  runStreamClients.add(res);
+  // Comment-only heartbeat keeps idle intermediaries from dropping the socket.
+  const beat = setInterval(() => {
+    if (res.writableEnded || res.destroyed) return;
+    try { res.write(': ping\n\n'); } catch (_) { /* pruned on next broadcast */ }
+  }, 20_000);
+  const cleanup = () => { clearInterval(beat); runStreamClients.delete(res); };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
+});
+
+// The runnable Playwright projects, so the UI's browser dropdowns are built
+// from the same list playwright.config.js uses instead of a hardcoded copy.
+// `kind` lets the UI group desktop browsers apart from emulated devices.
+app.get('/api/projects', (_req, res) => {
+  res.json({
+    projects: ALL_PROJECTS.map((p) => ({ name: p.name, label: p.label, kind: p.kind })),
+    // What "All browsers" runs: every project, desktop + emulated devices.
+    matrix: projectNames,
+    // What a schedule saved with no explicit browser runs — deliberately just
+    // the desktop three, so an unattended every-N-minutes schedule doesn't
+    // quietly run the full 7-project matrix against the live app.
+    scheduleDefault: desktopProjectNames,
+  });
+});
+
+/** reports/ filename of a site's test-case workbook. Mirrors ui/excel-writer.js. */
+function excelWorkbookName(site) {
+  return sites.isLegacy(site) ? 'Test-Cases.xlsx' : `Test-Cases-${site}.xlsx`;
+}
+
+/**
+ * Sites represented in the latest run, or null when that is unknown (no
+ * results.json, or a run still in flight). null must not be read as "nothing
+ * ran" — the UI shows every workbook in that case rather than hiding one.
+ */
+function sitesFromLastRun() {
+  const jsonPath = path.join(CFG_PATHS.testResults, 'results.json');
+  try {
+    if (!fs.existsSync(jsonPath)) return null;
+    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    const out = new Set();
+    (function walk(suites) {
+      for (const suite of suites || []) {
+        for (const spec of suite.specs || []) {
+          const norm = String(spec.file || suite.file || '').replace(/\\/g, '/');
+          const m = norm.replace(/^(?:.*\/)?\.?features-gen\//, '').match(/^sites\/([^/]+)\//);
+          out.add(m ? m[1] : sites.LEGACY_SITE);
+        }
+        walk(suite.suites);
+      }
+    })(data.suites);
+    return out.size ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 app.get('/api/report-status', (_req, res) => {
   try {
     const allReports = fs.existsSync(CFG_PATHS.reports) ? fs.readdirSync(CFG_PATHS.reports) : [];
+    const mdReports = allReports.filter((f) => f.endsWith('.md'));
+    // reports/ keeps every report ever generated, so a flat listing puts a
+    // report from a run weeks ago next to the one you just produced with no way
+    // to tell them apart. Work out which features actually ran last so the UI
+    // can lead with those and fold the rest away.
+    const features = featuresFromLastRun({ root: ROOT, paths: CFG_PATHS });
+    const lastRunReports = features
+      ? mdReports.filter((f) => [...features].some((slug) => reportMatchesFeature(f, slug)))
+      // null (not []) when the last run is unknown — no results.json yet, or a
+      // run in flight. The UI must show everything rather than hide reports.
+      : null;
+
+    // The same for Excel: there is now one workbook per site, so lead with the
+    // one belonging to the site that just ran and fold the others away.
+    const ranSites = sitesFromLastRun();
+    const excelReports = allReports.filter((f) => f.endsWith('.xlsx'));
+    const lastRunExcel = ranSites
+      ? excelReports.filter((f) => [...ranSites].some((s) => f === excelWorkbookName(s)))
+      : null;
+    const reportTimes = {};
+    for (const f of allReports) {
+      const stat = fs.statSync(path.join(CFG_PATHS.reports, f), { throwIfNoEntry: false });
+      if (stat && stat.isFile()) reportTimes[f] = stat.mtimeMs;
+    }
     res.json({
       playwright: fs.existsSync(path.join(CFG_PATHS.playwrightReport, 'index.html')),
       allure: fs.existsSync(path.join(CFG_PATHS.allureReport, 'index.html')),
-      aiReports: allReports.filter((f) => f.endsWith('.md')),
-      excelReports: allReports.filter((f) => f.endsWith('.xlsx')),
+      aiReports: mdReports,
+      excelReports,
+      lastRunExcel,
+      lastRunReports,
+      lastRunFeatures: features ? [...features] : null,
+      lastRunSites: ranSites ? [...ranSites] : null,
+      reportTimes,
     });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message) });
   }
+});
+
+// ---- Security scanner ------------------------------------------------------
+// Validate a target is a real http(s) URL before we make requests to it.
+function isHttpUrl(s) {
+  try { const u = new URL(String(s)); return u.protocol === 'http:' || u.protocol === 'https:'; }
+  catch { return false; }
+}
+
+// POST /api/security-scan — streams progress as NDJSON, ends with the full
+// result ({type:'result'}) and a {type:'done'}. Reuses the lib/security engine.
+app.post('/api/security-scan', async (req, res) => {
+  const { target, passive, active, probeFiles, zap } = req.body || {};
+  if (!isHttpUrl(target)) return res.status(400).json({ error: 'target must be a valid http(s) URL' });
+
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  write({ type: 'start', target });
+  try {
+    const result = await security.runSecurityScan(target, {
+      passive: passive !== false,
+      active: active !== false,
+      probeFiles: !!probeFiles,
+      zap: !!zap,
+      reportsDir: CFG_PATHS.reports,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({ type: 'result', result });
+    write({ type: 'done', exitCode: 0 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[security] scan failed: ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
+});
+
+// GET /api/security-report — the last persisted scan (reports/security/latest.json).
+app.get('/api/security-report', (_req, res) => {
+  try {
+    const p = path.join(CFG_PATHS.reports, 'security', 'latest.json');
+    if (!fs.existsSync(p)) return res.json({ exists: false });
+    res.json({ exists: true, result: JSON.parse(fs.readFileSync(p, 'utf8')) });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// POST /api/security-review — Claude turns the latest findings into a
+// prioritized remediation plan. Reuses the shared streamClaudeWithPrompt path.
+app.post('/api/security-review', async (req, res) => {
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+  let result = req.body && req.body.result;
+  if (!result) {
+    const p = path.join(CFG_PATHS.reports, 'security', 'latest.json');
+    if (fs.existsSync(p)) { try { result = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) {} }
+  }
+  if (!result || !Array.isArray(result.findings)) {
+    return res.status(400).json({ error: 'no scan findings available — run a scan first' });
+  }
+  await streamClaudeWithPrompt(res, security.buildReviewPrompt(result));
+});
+
+// ---- Step index ------------------------------------------------------------
+
+// GET /api/steps — every step definition that already exists, with tag scope.
+// Cheap (plain file parsing, no AI) and the basis for skipping AI calls when a
+// step is already implemented.
+app.get('/api/steps', (_req, res) => {
+  try {
+    const index = stepIndex.readStepIndex({ root: ROOT });
+    res.json({
+      files: index.files,
+      count: index.steps.length,
+      byScope: index.byScope,
+      duplicates: stepIndex.findDuplicates(index),
+      // Paste-ready library for the generation prompt, so Claude does not spend
+      // round trips grepping the repo to find out what already exists.
+      promptBlock: stepIndex.renderLibraryForPrompt(index),
+      steps: index.steps,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// POST /api/steps/match — which steps already have definitions, and which
+// genuinely need code written.
+//
+// This is the fast path: a step that matches an existing definition (exactly,
+// or through its {string} placeholders) needs NO Claude call. Only the ones
+// that come back "none" do. Answers in milliseconds.
+//
+// Body: { feature: "<slug>" }  or  { gherkin: "<feature text>" }
+//       plus optional { tags: ["@login"] } when passing raw gherkin.
+app.post('/api/steps/match', (req, res) => {
+  const { feature, gherkin, tags } = req.body || {};
+  let src = gherkin;
+
+  if (!src) {
+    if (!feature) return res.status(400).json({ error: 'provide feature or gherkin' });
+    if (!isSafeFeatureId(feature)) return res.status(400).json({ error: `feature must match ${SAFE_NAME_RE}` });
+    const dir = featurePaths(feature).featureDir;
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: `feature "${feature}" not found` });
+    let picked = null;
+    try {
+      picked = fs.readdirSync(dir).find((f) => f.endsWith('.feature') && !f.startsWith('_'));
+    } catch { /* handled below */ }
+    if (!picked) return res.status(404).json({ error: `no .feature file in ${relFeat(feature)}` });
+    try { src = fs.readFileSync(path.join(dir, picked), 'utf8'); }
+    catch (err) { return res.status(500).json({ error: String(err && err.message) }); }
+  }
+
+  if (typeof src !== 'string' || !src.trim()) return res.status(400).json({ error: 'gherkin is empty' });
+  if (src.length > 200_000) return res.status(413).json({ error: 'gherkin too large' });
+
+  try {
+    const index = stepIndex.readStepIndex({ root: ROOT });
+    const analysis = stepIndex.analyzeFeature(src, index);
+    // Caller-supplied tags win when raw gherkin carries none of its own.
+    if (Array.isArray(tags) && tags.length && !analysis.tags.length) {
+      const re = stepIndex.analyzeFeature(
+        tags.map((t) => String(t)).join(' ') + '\n' + src,
+        index
+      );
+      return res.json({ ...re, needsAi: re.results.filter((r) => r.status === 'none').map((r) => r.text) });
+    }
+    res.json({ ...analysis, needsAi: analysis.results.filter((r) => r.status === 'none').map((r) => r.text) });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// ---- Exploratory testing ---------------------------------------------------
+
+// One crawl at a time. A crawl drives its own Chromium independently of a
+// Playwright test run, so it does NOT take the activeRun lock — but two
+// concurrent crawls would fight over reports/exploration/latest.json.
+let activeExplore = false;
+
+// POST /api/explore/run — crawl the live app and diff it against the suite.
+//
+// Credentials: taken from the request, falling back to QA_EMAIL / QA_PASSWORD.
+// They are passed straight to the engine and never persisted or echoed — the
+// only thing written to the stream is the engine's own log lines, which carry
+// no secrets, and the report on disk contains no credentials.
+app.post('/api/explore/run', async (req, res) => {
+  const { baseUrl, email, password, mode, maxRoutes } = req.body || {};
+  if (!isHttpUrl(baseUrl)) return res.status(400).json({ error: 'baseUrl must be a valid http(s) URL' });
+  if (String(baseUrl).length > 2048) return res.status(400).json({ error: 'baseUrl too long' });
+  const em = email || process.env.QA_EMAIL;
+  const pw = password || process.env.QA_PASSWORD;
+  if (!em || !pw) {
+    return res.status(400).json({ error: 'credentials required — enter them here or set QA_EMAIL / QA_PASSWORD' });
+  }
+  if (mode !== undefined && !['passive', 'guarded'].includes(mode)) {
+    return res.status(400).json({ error: 'mode must be passive or guarded' });
+  }
+  let cap;
+  if (maxRoutes !== undefined && maxRoutes !== null && maxRoutes !== '') {
+    cap = Number(maxRoutes);
+    if (!Number.isFinite(cap) || cap < 1 || cap > 60) {
+      return res.status(400).json({ error: 'maxRoutes must be between 1 and 60' });
+    }
+  }
+  if (activeExplore) return res.status(409).json({ error: 'an exploratory crawl is already running' });
+
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  activeExplore = true;
+  write({ type: 'start', baseUrl, mode: mode || 'guarded' });
+  try {
+    // "What does the suite already cover?" must be answered against the site
+    // that owns this URL — comparing the crawl to another application's page
+    // objects would report every control as untested.
+    const exploreSite = sites.siteIdFromUrl(baseUrl);
+    const known = sites.listSiteIds(ROOT).includes(exploreSite);
+    const corpusSite = known ? exploreSite : sites.LEGACY_SITE;
+    write({ type: 'log', stream: 'stdout', text: `[explore] comparing against ${sites.relFeaturesRoot(corpusSite)}/\n` });
+    const result = await explore.runExploration({
+      root: ROOT,
+      baseUrl,
+      email: em,
+      password: pw,
+      mode: mode || 'guarded',
+      maxRoutes: cap,
+      featuresDir: sites.featuresRoot(ROOT, corpusSite),
+      pagesDir: sites.pagesRoot(ROOT, corpusSite),
+      reportsDir: CFG_PATHS.reports,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({
+      type: 'result',
+      ok: !!result.ok,
+      error: result.error || null,
+      summary: result.ok ? result.analysis.summary : null,
+      groups: result.ok ? result.analysis.findingGroups : [],
+      routeReports: result.ok ? result.analysis.routeReports : [],
+    });
+    write({ type: 'done', exitCode: result.ok ? 0 : 1 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[explore] crawl failed: ${err.message}\n` });
+    write({ type: 'result', ok: false, error: String(err && err.message) });
+    write({ type: 'done', exitCode: 1 });
+  } finally {
+    activeExplore = false;
+    if (!res.writableEnded) res.end();
+  }
+});
+
+// GET /api/explore/report — the latest crawl's surface map + ranked gaps.
+app.get('/api/explore/report', (_req, res) => {
+  const p = path.join(CFG_PATHS.reports, 'exploration', 'latest.json');
+  if (!fs.existsSync(p)) return res.json({ available: false });
+  try {
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const stat = fs.statSync(p, { throwIfNoEntry: false });
+    res.json({
+      available: true,
+      ranAt: stat ? stat.mtimeMs : null,
+      mode: data.crawl && data.crawl.mode,
+      traversal: data.crawl && data.crawl.traversal,
+      summary: data.analysis && data.analysis.summary,
+      groups: (data.analysis && data.analysis.findingGroups) || [],
+      routeReports: (data.analysis && data.analysis.routeReports) || [],
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message) });
+  }
+});
+
+// POST /api/explore/draft — Claude drafts Gherkin for the top gaps. Reuses the
+// same streamClaudeWithPrompt path as generate/heal/security-review, so it
+// obeys the single-Claude-job lock and streams into the existing log viewer.
+//
+// The prompt (lib/explore/index.js buildScenarioPrompt) constrains it hard:
+// drafts go to specs/ for review, never straight into .feature files, and it is
+// told not to draft anything that mutates data — destructive gaps are listed
+// for a human to write with the @destructive tag this repo already uses.
+app.post('/api/explore/draft', async (req, res) => {
+  const claudeOk = await checkClaudeCli();
+  if (!claudeOk) return res.status(501).json({ error: 'claude CLI not found on PATH' });
+  if (activeGenerate) return res.status(409).json({ error: 'another Claude job is in progress' });
+  let payload = req.body && req.body.result;
+  if (!payload) {
+    const p = path.join(CFG_PATHS.reports, 'exploration', 'latest.json');
+    if (fs.existsSync(p)) { try { payload = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) {} }
+  }
+  if (!payload || !payload.analysis || !Array.isArray(payload.analysis.findings)) {
+    return res.status(400).json({ error: 'no exploration findings available — run a crawl first' });
+  }
+  await streamClaudeWithPrompt(res, explore.buildScenarioPrompt(payload.crawl, payload.analysis));
+});
+
+// ---- API testing -----------------------------------------------------------
+app.get('/api/api-test/suites', (_req, res) => {
+  try { res.json({ suites: apiTesting.listSuites(ROOT) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/api-test/run', async (req, res) => {
+  const { file } = req.body || {};
+  // Suite filename must be a plain <name>.json under api-tests/ — no traversal.
+  if (!file || typeof file !== 'string' || file.includes('/') || file.includes('\\') || file.includes('..') || !/^[A-Za-z0-9._-]+\.json$/.test(file)) {
+    return res.status(400).json({ error: 'file must be a .json suite name under api-tests/' });
+  }
+  if (!fs.existsSync(path.join(ROOT, 'api-tests', file))) {
+    return res.status(404).json({ error: `suite not found: api-tests/${file}` });
+  }
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  try {
+    const suite = apiTesting.loadSuite(ROOT, file);
+    const summary = await apiTesting.runSuite(suite, {
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+      now: () => Date.now(),
+    });
+    write({ type: 'result', summary });
+    write({ type: 'done', exitCode: summary.failed > 0 ? 1 : 0 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[api] ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
+});
+
+// ---- Performance budgets ---------------------------------------------------
+app.get('/api/perf/budgets', (_req, res) => {
+  try { res.json({ budget: perfEngine.loadBudget(ROOT) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/perf/budgets', (req, res) => {
+  try { res.json({ budget: perfEngine.saveBudget(ROOT, (req.body && req.body.budget) || {}) }); }
+  catch (err) { res.status(500).json({ error: String(err && err.message) }); }
+});
+
+app.post('/api/perf/run', async (req, res) => {
+  const { target } = req.body || {};
+  if (!isHttpUrl(target)) return res.status(400).json({ error: 'target must be a valid http(s) URL' });
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.on('error', () => {});
+  const write = makeSafeWrite(res);
+  try {
+    const result = await perfEngine.runPerf(target, {
+      rootDir: ROOT,
+      startedAt: new Date().toISOString(),
+      onLog: (m) => write({ type: 'log', stream: 'stdout', text: m + '\n' }),
+    });
+    write({ type: 'result', result });
+    write({ type: 'done', exitCode: result.passed ? 0 : 1 });
+  } catch (err) {
+    write({ type: 'log', stream: 'stderr', text: `[perf] ${err.message}\n` });
+    write({ type: 'done', exitCode: 1 });
+  }
+  if (!res.writableEnded) res.end();
 });
 
 app.listen(PORT, HOST, () => {

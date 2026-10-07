@@ -1,0 +1,87 @@
+{
+  "name": "JSONPlaceholder demo (public test API)",
+  "baseUrl": "https://jsonplaceholder.typicode.com",
+  "variables": {
+    "runLabel": "qa-smoke"
+  },
+  "requests": [
+    {
+      "name": "Fetch post #1 (status, latency, header, JSON checks + capture)",
+      "method": "GET",
+      "path": "/posts/1",
+      "expect": {
+        "status": 200,
+        "maxLatencyMs": 8000,
+        "bodyContains": "userId",
+        "headers": { "content-type": "application/json" },
+        "json": {
+          "$.id": 1,
+          "$.userId": "number",
+          "$.title": "string"
+        }
+      },
+      "capture": { "AUTHOR_ID": "$.userId" }
+    },
+    {
+      "name": "Fetch the post's author (uses captured AUTHOR_ID + nested path)",
+      "method": "GET",
+      "path": "/users/{{AUTHOR_ID}}",
+      "expect": {
+        "status": 200,
+        "maxLatencyMs": 8000,
+        "json": {
+          "$.id": "exists",
+          "$.name": "string",
+          "$.address.city": "string",
+          "$.company.name": "string"
+        }
+      },
+      "capture": { "AUTHOR_NAME": "$.name" }
+    },
+    {
+      "name": "List the author's posts (whole body is an array)",
+      "method": "GET",
+      "path": "/posts?userId={{AUTHOR_ID}}",
+      "expect": {
+        "status": 200,
+        "maxLatencyMs": 8000,
+        "json": {
+          "$": "array",
+          "$[0].userId": 1
+        }
+      }
+    },
+    {
+      "name": "Create a post (POST body with interpolation + 201 + capture)",
+      "method": "POST",
+      "path": "/posts",
+      "headers": { "Content-Type": "application/json" },
+      "body": {
+        "title": "{{runLabel}}: post by {{AUTHOR_NAME}}",
+        "body": "Created by the Agentic QA API tester.",
+        "userId": "{{AUTHOR_ID}}"
+      },
+      "expect": {
+        "status": 201,
+        "maxLatencyMs": 8000,
+        "json": { "$.id": "number" }
+      },
+      "capture": { "NEW_POST_ID": "$.id" }
+    }
+  ],
+  "__doc__": {
+    "purpose": "A ready-to-run example for the API testing feature. It talks to jsonplaceholder.typicode.com — a free public fake REST API — so it works with no setup (needs internet).",
+    "run_in_ui": "Topbar → API & Perf → API tests → pick 'JSONPlaceholder demo' → Run API suite.",
+    "run_in_cli": "npm run qa:api -- example-jsonplaceholder.json   (exit code 1 if any assertion fails).",
+    "what_it_shows": [
+      "status  — exact HTTP status code",
+      "maxLatencyMs — request must return within N ms",
+      "bodyContains — raw substring must appear in the response",
+      "headers — case-insensitive substring match on a response header",
+      "json — dot-path checks: literal value ($.id: 1), type ('number'/'string'/'array'), existence ('exists'), nesting ($.address.city), array index ($[0].userId)",
+      "capture — pull a value from one response ($.userId) into a variable (AUTHOR_ID) reused by later requests via {{AUTHOR_ID}}",
+      "{{VAR}} — resolves from variables, captured values, then process.env (so secrets can come from the environment, e.g. {{PASSWORD}})"
+    ],
+    "note": "Files starting with _ (like _TEMPLATE.json) are treated as templates and are NOT listed as runnable suites."
+  }
+}

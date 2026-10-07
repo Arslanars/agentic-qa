@@ -1,0 +1,41 @@
+{
+  "name": "Example API suite",
+  "baseUrl": "https://api.example.com",
+  "variables": {
+    "email": "qa@example.com"
+  },
+  "requests": [
+    {
+      "name": "login",
+      "method": "POST",
+      "path": "/login",
+      "headers": { "Content-Type": "application/json" },
+      "body": { "email": "{{email}}", "password": "{{PASSWORD}}" },
+      "expect": {
+        "status": 200,
+        "maxLatencyMs": 800,
+        "bodyContains": "token",
+        "headers": { "content-type": "application/json" },
+        "json": { "$.token": "exists", "$.user.role": "admin" }
+      },
+      "capture": { "TOKEN": "$.token" }
+    },
+    {
+      "name": "list items (authenticated)",
+      "method": "GET",
+      "path": "/items",
+      "headers": { "Authorization": "Bearer {{TOKEN}}" },
+      "expect": {
+        "status": 200,
+        "maxLatencyMs": 1000,
+        "json": { "$.items": "array" }
+      }
+    }
+  ],
+  "__doc__": {
+    "how": "Copy this file to api-tests/<name>.json (no leading underscore) and run `npm run qa:api -- <name>.json`. Files starting with _ are treated as templates and skipped.",
+    "placeholders": "{{VAR}} resolves against variables, values captured from earlier responses, then process.env — so secrets (e.g. PASSWORD) stay out of the file.",
+    "expect": "status = exact code · maxLatencyMs = upper bound · bodyContains = substring · headers = case-insensitive substring match · json = dot-path checks where the value is 'exists' | 'array' | 'number' | 'string' | 'boolean' | 'object' | a literal to equal.",
+    "capture": "Pull a value out of the JSON response (by dot-path) into a variable reusable by later requests."
+  }
+}

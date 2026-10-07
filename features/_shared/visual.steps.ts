@@ -5,7 +5,7 @@
 //   Then the "login-page" should match its visual baseline
 //
 // On the FIRST run, Playwright auto-creates the baseline screenshot under
-// .features-gen/features/<feature>/<spec>.feature.spec.js-snapshots/. On
+// .features-gen/<...>/<feature>/<spec>.feature.spec.js-snapshots/. On
 // subsequent runs the step fails if the rendered page differs from the
 // baseline beyond Playwright's default `maxDiffPixelRatio`. When it fails,
 // Playwright attaches expected/actual/diff PNGs to the test result; the
@@ -14,7 +14,9 @@
 // To regenerate baselines after intentional UI changes:
 //   npm run baselines:update
 //
-// The step is intentionally LEFT UNTAGGED so any feature can use it without
+// It lives at the REPO ROOT, not inside a site: visual regression is framework
+// infrastructure that every application under test can use. It is intentionally
+// LEFT UNTAGGED so any feature of any site can use it without
 // opting into a tag scope. The step phrase is specific enough that it won't
 // collide with feature-local step pools.
 

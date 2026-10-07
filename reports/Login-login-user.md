@@ -2,29 +2,22 @@
 
 <!-- agentic-qa:auto-start -->
 
-**Last run:** 2026-07-01 16:40:20
-**Browser:** chromium
-**Status:** ✅ PASS (14/14)
-**Duration:** 212.4 s
+**Last run:** 2026-09-22 17:47:16
+**Browser:** chromium + firefox + webkit + ipad-pro-11 + galaxy-tab-s4 + iphone-14 + galaxy-s24
+**Status:** ✅ PASS (7/7)
+**Duration:** 35.9 s
 
 ## Results
 
-| Spec | Test | Status | Duration | Error |
-|------|------|--------|---------:|-------|
-| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | ✅ PASS | 16.9 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-01 — wrong password is rejected | ✅ PASS | 14.7 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-02 — non-existent email is rejected | ✅ PASS | 17.8 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-03 — empty email is rejected | ✅ PASS | 31.2 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-04 — empty password is rejected | ✅ PASS | 29.0 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-05 — both fields empty are rejected | ✅ PASS | 26.6 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-06 — invalid email format (no @) flags typeMismatch | ✅ PASS | 28.4 s | — |
-| `login.feature.spec.js` | Login User › AC1-NEG-07 — invalid email format (missing domain) flags typeMismatch | ✅ PASS | 29.7 s | — |
-| `login.feature.spec.js` | Login User › UI-01 — password field is masked by default | ✅ PASS | 2.0 s | — |
-| `login.feature.spec.js` | Login User › UI-02 — show/hide password button toggles the input type | ✅ PASS | 2.1 s | — |
-| `login.feature.spec.js` | Login User › UI-03 — Enter key in the password field submits the form | ✅ PASS | 4.7 s | — |
-| `login.feature.spec.js` | Login User › NAV-01 — "Forgot password?" link navigates to /forgot-password | ✅ PASS | 2.9 s | — |
-| `login.feature.spec.js` | Login User › NAV-02 — "Sign up" link navigates to /signup | ✅ PASS | 2.6 s | — |
-| `login.feature.spec.js` | Login User › NAV-03 — "← Back" link navigates to the homepage | ✅ PASS | 3.8 s | — |
+| Spec | Test | Browser | Status | Duration | Error |
+|------|------|---------|--------|---------:|-------|
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `chromium` | ✅ PASS | 4.8 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `firefox` | ✅ PASS | 4.5 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `webkit` | ✅ PASS | 5.2 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `ipad-pro-11` | ✅ PASS | 6.5 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `galaxy-tab-s4` | ✅ PASS | 4.8 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `iphone-14` | ✅ PASS | 5.7 s | — |
+| `login.feature.spec.js` | Login User › AC1-POS-01 — successful login with valid credentials | `galaxy-s24` | ✅ PASS | 4.3 s | — |
 
 ## Artifacts
 
